@@ -143,54 +143,6 @@ function extractErrorMessage(error: unknown): string {
   return error.message || 'Request failed.'
 }
 
-const JIRA_LEGACY_STORAGE_KEY = 'atm:jira-legacy-settings'
-
-type JiraLegacyState = {
-  jira_mcp_base_url: string
-  jira_project_key: string
-  jira_project_name: string
-}
-
-function loadJiraLegacyState(): JiraLegacyState {
-  if (typeof window === 'undefined') {
-    return { jira_mcp_base_url: '', jira_project_key: '', jira_project_name: '' }
-  }
-  try {
-    const raw = localStorage.getItem(JIRA_LEGACY_STORAGE_KEY)
-    if (!raw) return { jira_mcp_base_url: '', jira_project_key: '', jira_project_name: '' }
-    const parsed = JSON.parse(raw) as Partial<JiraLegacyState>
-    return {
-      jira_mcp_base_url: parsed.jira_mcp_base_url || '',
-      jira_project_key: parsed.jira_project_key || '',
-      jira_project_name: parsed.jira_project_name || '',
-    }
-  } catch {
-    return { jira_mcp_base_url: '', jira_project_key: '', jira_project_name: '' }
-  }
-}
-
-function saveJiraLegacyState(state: JiraLegacyState) {
-  if (typeof window === 'undefined') return
-  try {
-    localStorage.setItem(JIRA_LEGACY_STORAGE_KEY, JSON.stringify(state))
-  } catch {
-    // Ignore local persistence errors.
-  }
-}
-
-function hasStoredAccessToken(): boolean {
-  if (typeof window === 'undefined') return false
-  return Boolean(localStorage.getItem('tm_access_token') || localStorage.getItem('token'))
-}
-
-async function listLegacyIntegrations() {
-  if (!hasStoredAccessToken()) {
-    return []
-  }
-  const response = await api.get<{ integrations: Array<{ id: number; service_name: string; is_active: boolean }> }>('/integrations')
-  return response.data.integrations || []
-}
-
 function is404(error: unknown): boolean {
   return axios.isAxiosError(error) && error.response?.status === 404
 }
@@ -215,29 +167,7 @@ function buildLegacyProjectKey(name: string): string {
   return (cleaned || 'PROJECT').slice(0, 12)
 }
 
-let cachedJiraSettingsApiSupport: boolean | null = null
 let cachedProjectGithubApiSupport: boolean | null = null
-
-async function hasJiraSettingsApi(): Promise<boolean> {
-  if (cachedJiraSettingsApiSupport != null) return cachedJiraSettingsApiSupport
-  try {
-    const response = await axios.get('/openapi.json', { timeout: 5000 })
-    const paths = response.data?.paths
-    if (!paths || typeof paths !== 'object') {
-      // Schema unreadable (e.g. dev server returned the SPA HTML instead of
-      // proxying /openapi.json) — assume supported; the 404 fallback decides.
-      return true
-    }
-    const hasLegacyPath = Boolean(paths['/api/settings/jira'])
-    const hasV1Path = Boolean(paths['/api/v1/settings/jira'])
-    cachedJiraSettingsApiSupport = hasLegacyPath || hasV1Path
-    return cachedJiraSettingsApiSupport
-  } catch {
-    // If detection fails, prefer modern path and keep 404 fallback logic below.
-    cachedJiraSettingsApiSupport = true
-    return cachedJiraSettingsApiSupport
-  }
-}
 
 async function hasProjectGithubApi(): Promise<boolean> {
   if (cachedProjectGithubApiSupport != null) return cachedProjectGithubApiSupport
@@ -580,168 +510,23 @@ export const apiService = {
   },
 
   async getJiraSettings(): Promise<{ jira_token_set: boolean; jira_token_preview: string; jira_mcp_base_url: string; jira_project_key?: string | null; jira_project_name?: string | null }> {
-    const supportsSettingsApi = await hasJiraSettingsApi()
-    if (!supportsSettingsApi) {
-      const legacy = loadJiraLegacyState()
-      const integrations = await listLegacyIntegrations().catch(() => [])
-      const jiraConnected = integrations.some(i => i.service_name === 'jira' && i.is_active)
-      return {
-        jira_token_set: jiraConnected,
-        jira_token_preview: jiraConnected ? 'connected-via-integrations' : '',
-        jira_mcp_base_url: legacy.jira_mcp_base_url,
-        jira_project_key: legacy.jira_project_key || null,
-        jira_project_name: legacy.jira_project_name || null,
-      }
-    }
-    try {
-      const response = await api.get('/settings/jira')
-      return response.data
-    } catch (error) {
-      if (!is404(error)) throw error
-      const legacy = loadJiraLegacyState()
-      const integrations = await listLegacyIntegrations().catch(() => [])
-      const jiraConnected = integrations.some(i => i.service_name === 'jira' && i.is_active)
-      return {
-        jira_token_set: jiraConnected,
-        jira_token_preview: jiraConnected ? 'connected-via-integrations' : '',
-        jira_mcp_base_url: legacy.jira_mcp_base_url,
-        jira_project_key: legacy.jira_project_key || null,
-        jira_project_name: legacy.jira_project_name || null,
-      }
-    }
+    const response = await api.get('/settings/jira')
+    return response.data
   },
 
   async saveJiraSettings(payload: { jira_token?: string; jira_mcp_base_url?: string; jira_project_key?: string; jira_project_name?: string }): Promise<{ jira_token_set: boolean; jira_token_preview: string; jira_mcp_base_url: string; jira_project_key?: string | null; jira_project_name?: string | null }> {
-    const supportsSettingsApi = await hasJiraSettingsApi()
-    if (!supportsSettingsApi) {
-      const legacy = loadJiraLegacyState()
-      const nextLegacy: JiraLegacyState = {
-        jira_mcp_base_url: payload.jira_mcp_base_url !== undefined ? payload.jira_mcp_base_url : legacy.jira_mcp_base_url,
-        jira_project_key: payload.jira_project_key !== undefined ? payload.jira_project_key : legacy.jira_project_key,
-        jira_project_name: payload.jira_project_name !== undefined ? payload.jira_project_name : legacy.jira_project_name,
-      }
-
-      let integrations = await listLegacyIntegrations().catch(() => [])
-      const existing = integrations.find(i => i.service_name === 'jira')
-
-      if (payload.jira_token !== undefined) {
-        const token = payload.jira_token.trim()
-
-        if (!token) {
-          if (existing) {
-            await api.delete(`/integrations/${existing.id}`)
-          }
-        } else {
-          if (existing) {
-            await api.delete(`/integrations/${existing.id}`)
-          }
-          await api.post('/integrations/jira/connect', null, {
-            params: {
-              auth_code: token,
-              workspace_id: nextLegacy.jira_mcp_base_url || undefined,
-            },
-          })
-        }
-
-        integrations = await listLegacyIntegrations().catch(() => [])
-      }
-
-      saveJiraLegacyState(nextLegacy)
-      const jiraConnected = integrations.some(i => i.service_name === 'jira' && i.is_active)
-
-      return {
-        jira_token_set: jiraConnected,
-        jira_token_preview: jiraConnected ? 'connected-via-integrations' : '',
-        jira_mcp_base_url: nextLegacy.jira_mcp_base_url,
-        jira_project_key: nextLegacy.jira_project_key || null,
-        jira_project_name: nextLegacy.jira_project_name || null,
-      }
-    }
-    try {
-      const response = await api.patch('/settings/jira', payload)
-      return response.data
-    } catch (error) {
-      if (!is404(error)) throw error
-
-      const legacy = loadJiraLegacyState()
-      const nextLegacy: JiraLegacyState = {
-        jira_mcp_base_url: payload.jira_mcp_base_url !== undefined ? payload.jira_mcp_base_url : legacy.jira_mcp_base_url,
-        jira_project_key: payload.jira_project_key !== undefined ? payload.jira_project_key : legacy.jira_project_key,
-        jira_project_name: payload.jira_project_name !== undefined ? payload.jira_project_name : legacy.jira_project_name,
-      }
-
-      let integrations = await listLegacyIntegrations().catch(() => [])
-      const existing = integrations.find(i => i.service_name === 'jira')
-
-      if (payload.jira_token !== undefined) {
-        const token = payload.jira_token.trim()
-
-        if (!token) {
-          if (existing) {
-            await api.delete(`/integrations/${existing.id}`)
-          }
-        } else {
-          if (existing) {
-            await api.delete(`/integrations/${existing.id}`)
-          }
-          await api.post('/integrations/jira/connect', null, {
-            params: {
-              auth_code: token,
-              workspace_id: nextLegacy.jira_mcp_base_url || undefined,
-            },
-          })
-        }
-
-        integrations = await listLegacyIntegrations().catch(() => [])
-      }
-
-      saveJiraLegacyState(nextLegacy)
-      const jiraConnected = integrations.some(i => i.service_name === 'jira' && i.is_active)
-
-      return {
-        jira_token_set: jiraConnected,
-        jira_token_preview: jiraConnected ? 'connected-via-integrations' : '',
-        jira_mcp_base_url: nextLegacy.jira_mcp_base_url,
-        jira_project_key: nextLegacy.jira_project_key || null,
-        jira_project_name: nextLegacy.jira_project_name || null,
-      }
-    }
+    const response = await api.patch('/settings/jira', payload)
+    return response.data
   },
 
   async testJiraConnection(): Promise<{ ok: boolean; user?: string; error?: string }> {
-    const supportsSettingsApi = await hasJiraSettingsApi()
-    if (!supportsSettingsApi) {
-      const integrations = await listLegacyIntegrations().catch(() => [])
-      const jiraConnected = integrations.some(i => i.service_name === 'jira' && i.is_active)
-      return jiraConnected
-        ? { ok: true, user: 'jira-integration-connected' }
-        : { ok: false, error: 'Jira integration is not connected' }
-    }
-    try {
-      const response = await api.post('/settings/jira/test')
-      return response.data
-    } catch (error) {
-      if (!is404(error)) throw error
-      const integrations = await listLegacyIntegrations().catch(() => [])
-      const jiraConnected = integrations.some(i => i.service_name === 'jira' && i.is_active)
-      return jiraConnected
-        ? { ok: true, user: 'jira-integration-connected' }
-        : { ok: false, error: 'Jira integration is not connected' }
-    }
+    const response = await api.post('/settings/jira/test')
+    return response.data
   },
 
   async listJiraProjects(): Promise<JiraProject[]> {
-    const supportsSettingsApi = await hasJiraSettingsApi()
-    if (!supportsSettingsApi) {
-      return []
-    }
-    try {
-      const response = await api.get<{ projects: JiraProject[] }>('/settings/jira/projects')
-      return response.data.projects
-    } catch (error) {
-      if (!is404(error)) throw error
-      return []
-    }
+    const response = await api.get<{ projects: JiraProject[] }>('/settings/jira/projects')
+    return response.data.projects
   },
 
   async getJiraCreateMeta(projectKey?: string): Promise<{ project_key: string; issue_types: { id: string; name: string }[] }> {
@@ -1820,120 +1605,6 @@ export const apiService = {
 
   async updateNotificationPreferences(preferences: any): Promise<any> {
     const response = await api.put('/settings/preferences/notifications', preferences)
-    return response.data
-  },
-
-  // Privacy
-  async getPrivacySettings(): Promise<any> {
-    const response = await api.get('/settings/privacy')
-    return response.data
-  },
-
-  async updatePrivacySettings(settings: any): Promise<any> {
-    const response = await api.put('/settings/privacy', settings)
-    return response.data
-  },
-
-  // Community
-  async getCommunityPreferences(): Promise<{ preferred_communities: string[] }> {
-    const response = await api.get('/settings/community-preferences')
-    return response.data
-  },
-
-  async updateCommunityPreferences(communities: string[]): Promise<{ preferred_communities: string[] }> {
-    const response = await api.put('/settings/community-preferences', {
-      preferred_communities: communities,
-    })
-    return response.data
-  },
-
-  // ── Phase 4: Data & Integrations ──────────────────────────────────────────
-
-  async requestDataExport(exportType: string = 'full', format: string = 'json'): Promise<any> {
-    const response = await api.post('/data/export-request', null, {
-      params: { export_type: exportType, format }
-    })
-    return response.data
-  },
-
-  async listDataExports(status?: string): Promise<any> {
-    const response = await api.get('/data/exports', {
-      params: { status }
-    })
-    return response.data
-  },
-
-  async listIntegrations(): Promise<any> {
-    const response = await api.get('/integrations')
-    return response.data
-  },
-
-  async connectIntegration(service: string, authCode: string, workspaceId?: string): Promise<any> {
-    const response = await api.post(`/integrations/${service}/connect`, {
-      auth_code: authCode,
-      workspace_id: workspaceId
-    })
-    return response.data
-  },
-
-  async disconnectIntegration(integrationId: number): Promise<any> {
-    const response = await api.delete(`/integrations/${integrationId}`)
-    return response.data
-  },
-
-  async listWebhooks(integrationId: number): Promise<any> {
-    const response = await api.get(`/integrations/${integrationId}/webhooks`)
-    return response.data
-  },
-
-  async createWebhook(integrationId: number, eventType: string, targetUrl: string): Promise<any> {
-    const response = await api.post(`/integrations/${integrationId}/webhooks`, {
-      event_type: eventType,
-      target_url: targetUrl
-    })
-    return response.data
-  },
-
-  // ── Phase 5: Billing & Subscription ───────────────────────────────────────
-
-  async getSubscription(): Promise<any> {
-    const response = await api.get('/subscription')
-    return response.data
-  },
-
-  async upgradeSubscription(plan: string, billingCycle: string = 'monthly'): Promise<any> {
-    const response = await api.post('/subscription/upgrade', null, {
-      params: { plan, billing_cycle: billingCycle }
-    })
-    return response.data
-  },
-
-  async listInvoices(status?: string, limit: number = 20): Promise<any> {
-    const response = await api.get('/billing/invoices', {
-      params: { status, limit }
-    })
-    return response.data
-  },
-
-  async listPaymentMethods(): Promise<any> {
-    const response = await api.get('/billing/payment-methods')
-    return response.data
-  },
-
-  async addPaymentMethod(methodType: string, cardLast4?: string, billingName?: string, setAsDefault: boolean = false): Promise<any> {
-    const response = await api.post('/billing/payment-methods', null, {
-      params: {
-        method_type: methodType,
-        card_last4: cardLast4,
-        billing_name: billingName,
-        set_as_default: setAsDefault
-      }
-    })
-    return response.data
-  },
-
-  async deletePaymentMethod(methodId: number): Promise<any> {
-    const response = await api.delete(`/billing/payment-methods/${methodId}`)
     return response.data
   },
 

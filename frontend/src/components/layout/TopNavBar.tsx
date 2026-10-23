@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   BookOpen, FolderGit2, Github, GraduationCap, LayoutDashboard,
-  LogOut, Moon, Settings, Sun, Users, UsersRound, Zap, ChevronDown, Menu,
+  LogOut, Moon, Settings, Sun, Users, Zap, ChevronDown, Menu,
 } from 'lucide-react'
 import { useAppStore } from '@/store/useAppStore'
 import { ROLE_LABELS, canAccess } from '@/types/domain'
@@ -16,7 +16,6 @@ const NAV = [
   { to: '/projects', label: 'Projects', icon: FolderGit2 },
   { to: '/jira-confluence', label: 'Jira and Confluence', icon: BookOpen },
   { to: '/upskilling', label: 'Upskilling', icon: GraduationCap },
-  { to: '/community', label: 'Community', icon: UsersRound },
   { to: '/users', label: 'Users', icon: Users },
   { to: '/settings', label: 'Settings', icon: Settings },
 ]

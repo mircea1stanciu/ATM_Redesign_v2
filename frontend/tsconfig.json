@@ -22,27 +22,5 @@
     }
   },
   "include": ["src"],
-  // Not imported anywhere in the app (leftover Next.js pages under src/app and unused prototypes).
-  // They are not bundled; remove an entry when the file is used again.
-  "exclude": [
-    "src/app",
-    "src/components/AdminDashboard.tsx",
-    "src/components/ChatAwareLayout.tsx",
-    "src/components/ChatInterface.tsx",
-    "src/components/EnhancedChatInterface.tsx",
-    "src/components/FloorPlanEditor.tsx",
-    "src/components/Footer.tsx",
-    "src/components/Header.tsx",
-    "src/components/LoginForm.tsx",
-    "src/components/MessengerViewTemp.tsx",
-    "src/components/ModelSelector.tsx",
-    "src/components/OfficeManagement.tsx",
-    "src/components/PersistentChatSidebar.tsx",
-    "src/components/RegisterForm.tsx",
-    "src/components/ResizableChatPanel.tsx",
-    "src/components/SideChatPanel.tsx",
-    "src/components/projects/IssueDetail.tsx",
-    "src/components/projects/ProjectsPage.tsx"
-  ],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
