@@ -5,7 +5,8 @@ import {
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { useAppStore } from '@/store/useAppStore'
-import { ROLE_LABELS, canAccess } from '@/types/domain'
+import { ROLE_LABELS, ROUTE_PERMISSIONS } from '@/types/domain'
+import { hasPermission } from '@/hooks/usePermission'
 import type { UserRole } from '@/types/domain'
 import TopNavBar from './TopNavBar'
 
@@ -111,7 +112,7 @@ export default function AppLayout() {
 
       {/* Navigation */}
       <nav className="flex-1 space-y-1 px-3 py-4">
-        {NAV.filter(item => canAccess(user?.role, item.to)).map(item => (
+        {NAV.filter(item => !ROUTE_PERMISSIONS[item.to] || hasPermission(user, ROUTE_PERMISSIONS[item.to])).map(item => (
           <NavLink
             key={item.to}
             to={item.to}

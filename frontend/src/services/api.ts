@@ -94,7 +94,7 @@ api.interceptors.response.use(
   (error) => {
     if (axios.isAxiosError(error) && error.response?.status === 401) {
       const requestUrl = error.config?.url || ''
-      const isSessionValidationEndpoint = requestUrl.includes('/auth/me')
+      const isSessionValidationEndpoint = /(^|\/)me$/.test(requestUrl)
       if (isSessionValidationEndpoint) {
         notifyAuthExpired('unauthorized')
       }
@@ -143,23 +143,37 @@ function extractErrorMessage(error: unknown): string {
   return error.message || 'Request failed.'
 }
 
+export interface UserUpdatePayload {
+  email?: string
+  full_name?: string
+  password?: string
+  role?: string
+  scope_tag?: string | null
+  assigned_lead_id?: string | null
+  project_ids?: string[]
+  is_active?: boolean
+}
+
+export interface UserCreatePayload extends UserUpdatePayload {
+  email: string
+  password: string
+  full_name: string
+}
+
+// The backend takes numeric ids; the UI keeps them as strings.
+function toUserPayload(data: UserUpdatePayload): Record<string, unknown> {
+  const payload: Record<string, unknown> = { ...data }
+  if ('assigned_lead_id' in data) payload.assigned_lead_id = data.assigned_lead_id ? Number(data.assigned_lead_id) : null
+  if (data.project_ids) payload.project_ids = data.project_ids.map(Number)
+  return payload
+}
+
 function normalizeUserResponse(user: any): UserResponse {
   return {
     ...user,
     id: String(user?.id ?? ''),
     assigned_lead_id: user?.assigned_lead_id != null ? String(user.assigned_lead_id) : null,
   }
-}
-
-// The install's single organization; cached so user-management actions don't refetch /auth/me each time.
-let cachedOrganizationId: number | null = null
-
-async function organizationId(): Promise<number> {
-  if (cachedOrganizationId != null) return cachedOrganizationId
-  const me = await api.get<any>('/auth/me')
-  const orgId = me.data?.organization?.id
-  cachedOrganizationId = typeof orgId === 'number' && Number.isFinite(orgId) ? orgId : 1
-  return cachedOrganizationId
 }
 
 export const apiService = {
@@ -182,8 +196,8 @@ export const apiService = {
   },
 
   async me(): Promise<UserResponse> {
-    const response = await api.get<UserResponse>('/auth/me')
-    return response.data
+    const response = await api.get<UserResponse>('/me')
+    return normalizeUserResponse(response.data)
   },
 
   async listProjects(): Promise<Project[]> {
@@ -287,28 +301,24 @@ export const apiService = {
     return response.data
   },
 
-  // Admin: user management (organization-scoped routes until phase 04 rebuilds the Users screen).
+  // User management: role, scope tag, lead and projects.
   async listUsers(): Promise<UserResponse[]> {
-    const orgId = await organizationId()
-    const response = await api.get<any[]>(`/organizations/${orgId}/users`)
+    const response = await api.get<any[]>('/users')
     return response.data.map(normalizeUserResponse)
   },
 
-  async createUser(payload: { email: string; password: string; full_name: string; role: string }): Promise<UserResponse> {
-    const orgId = await organizationId()
-    const response = await api.post<{ user: any }>(`/organizations/${orgId}/users`, { username: payload.email, ...payload })
-    return normalizeUserResponse(response.data.user)
+  async createUser(payload: UserCreatePayload): Promise<UserResponse> {
+    const response = await api.post<any>('/users', toUserPayload(payload))
+    return normalizeUserResponse(response.data)
   },
 
-  async updateUser(userId: string, data: { email?: string; full_name?: string; role?: string; assigned_lead_id?: string | null; is_active?: boolean; password?: string }): Promise<UserResponse> {
-    const orgId = await organizationId()
-    const response = await api.patch<{ user: any }>(`/organizations/${orgId}/users/${userId}`, data)
-    return normalizeUserResponse(response.data.user)
+  async updateUser(userId: string, data: UserUpdatePayload): Promise<UserResponse> {
+    const response = await api.patch<any>(`/users/${userId}`, toUserPayload(data))
+    return normalizeUserResponse(response.data)
   },
 
   async deleteUser(userId: string): Promise<void> {
-    const orgId = await organizationId()
-    await api.delete(`/organizations/${orgId}/users/${userId}`)
+    await api.delete(`/users/${userId}`)
   },
 
   // Admin: settings

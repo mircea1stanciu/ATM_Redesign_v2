@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import axios from 'axios'
 import { Bot, FlaskConical, FolderGit2, Loader2, ScanSearch, Sparkles } from 'lucide-react'
+import { usePermission } from '@/hooks/usePermission'
 import { useAppStore } from '@/store/useAppStore'
 import { apiService } from '@/services/api'
 import { runDisplayName } from '@/utils/runName'
@@ -59,8 +60,7 @@ function TestTab({ onAskAi }: { onAskAi: (prompt: ChatPrompt) => void }) {
 
 export default function AiImplementationTab() {
   const selectedProjectId = useAppStore(s => s.selectedProjectId)
-  const user = useAppStore(s => s.user)
-  const canEdit = user?.role !== 'viewer'
+  const canEdit = usePermission('code.edit')
   const [params, setParams] = useSearchParams()
   const tab: AiTab = (['analysis', 'assistant', 'test'] as AiTab[]).includes(params.get('tab') as AiTab) ? params.get('tab') as AiTab : 'analysis'
   const setTab = useCallback((next: AiTab) => setParams(p => { p.set('tab', next); return p }, { replace: true }), [setParams])

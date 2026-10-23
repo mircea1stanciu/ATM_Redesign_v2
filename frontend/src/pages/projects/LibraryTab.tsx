@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AlertCircle, Boxes, CheckCircle2, Download, Loader2, Package, RefreshCcw, Rocket, Terminal, XCircle } from 'lucide-react'
+import { usePermission } from '@/hooks/usePermission'
 import { useAppStore } from '@/store/useAppStore'
 import { apiService } from '@/services/api'
 import type { LibraryInstallResult, LibraryManifest, SetupInstallResult, SetupPlan } from '@/types/domain'
 
 export default function LibraryTab() {
   const selectedProjectId = useAppStore(s => s.selectedProjectId)
-  const user = useAppStore(s => s.user)
-  const canInstall = user?.role === 'admin' || user?.role === 'automation_lead'
-    || user?.role === 'super_admin' || user?.role === 'org_admin'
+  const canInstall = usePermission('run.execute')
 
   const [manifests, setManifests] = useState<LibraryManifest[]>([])
   const [loading, setLoading] = useState(false)

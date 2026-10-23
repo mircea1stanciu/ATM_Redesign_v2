@@ -7,7 +7,8 @@ import {
   LogOut, Moon, Settings, Sun, Users, Zap, ChevronDown, Menu,
 } from 'lucide-react'
 import { useAppStore } from '@/store/useAppStore'
-import { ROLE_LABELS, canAccess } from '@/types/domain'
+import { ROLE_LABELS, ROUTE_PERMISSIONS } from '@/types/domain'
+import { hasPermission } from '@/hooks/usePermission'
 import type { UserRole } from '@/types/domain'
 import type { JiraProject } from '@/types/domain'
 
@@ -109,7 +110,7 @@ export default function TopNavBar({
 
         {/* Main Navigation */}
         <nav className="hidden lg:flex items-center gap-0.5 flex-1 mx-4">
-          {NAV.filter(item => canAccess(user?.role, item.to)).map(item => (
+          {NAV.filter(item => !ROUTE_PERMISSIONS[item.to] || hasPermission(user, ROUTE_PERMISSIONS[item.to])).map(item => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -217,6 +218,7 @@ export default function TopNavBar({
           <div ref={userRef} className="relative">
             <button
               onClick={() => setUserDropdownOpen(!userDropdownOpen)}
+              aria-label="Account menu"
               className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-all group"
             >
               <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-gradient text-xs font-bold text-white shadow-soft">

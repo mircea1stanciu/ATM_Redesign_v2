@@ -11,6 +11,7 @@ import {
   Unlink,
   RefreshCcw,
 } from 'lucide-react'
+import { usePermission } from '@/hooks/usePermission'
 import { useAppStore } from '@/store/useAppStore'
 import { apiService, CONNECTION_STATUS_CHANGED_EVENT } from '@/services/api'
 import type { ConfluencePageItem } from '@/types/domain'
@@ -59,10 +60,7 @@ function ConfluenceSubnav() {
 
 export default function ConfluenceReleaseManagementTab() {
   const user = useAppStore(s => s.user)
-  const canManageConfig =
-    user?.role === 'admin' || user?.role === 'super_admin' || user?.role === 'org_admin' ||
-    user?.role === 'automation_lead' ||
-    ((user?.role === 'automation_user' || user?.role === 'viewer') && Boolean(user?.assigned_lead_id))
+  const canManageConfig = usePermission('project.members.manage') || Boolean(user?.assigned_lead_id)
 
   const [settings, setSettings] = useState<ConfluenceSettingsView | null>(null)
   const [settingsLoading, setSettingsLoading] = useState(true)
