@@ -37,10 +37,10 @@ dependencies = [
     "celery[redis]>=5.4.0",
     "redis>=5.0.4",
 
-    # Docker SDK (pentru runner)
+    # Docker SDK (test runner)
     "docker>=7.1.0",
 
-    # HTTP client (pentru MCP / GitHub API)
+    # HTTP client (MCP / GitHub API)
     "httpx>=0.27.0",
 
     # WebSocket
@@ -50,12 +50,10 @@ dependencies = [
     "python-dotenv>=1.0.1",
     "structlog>=24.2.0",
 
-    # Imported by the app at startup (main.py): rate limiting, 2FA, QR codes, AI agents
+    # Imported by the app at startup (main.py): rate limiting, 2FA, QR codes
     "slowapi>=0.1.9",
     "pyotp>=2.9.0",
     "qrcode[pil]>=7.4.2",
-    "langchain-core>=1.0.0",
-    "langchain-openai>=1.0.0",
 ]
 
 [project.optional-dependencies]
@@ -87,25 +85,9 @@ select = ["E", "F", "I", "UP"]
 # backend/main.py is a legacy/alternate app definition, not the shipped
 # entrypoint (Docker/production run `app.main:app`) — see Dockerfile.
 "main.py" = ["E402", "E501"]
-# Legacy/experimental AI-agent prototypes and one-off, non-shipped
-# maintenance/debug scripts (not part of the FastAPI app package under
-# app/, not imported by it, and not covered by tests/). Kept lightly linted
-# (still checked for real bugs via F-rules) but exempted from the stricter
-# style-only rules that would otherwise require a large, unrelated rewrite.
-"agents/*" = ["E501", "E402", "F401", "UP006", "UP035", "UP045"]
+# One-off maintenance scripts and the UI-test seed; lightly linted.
 "tools/*" = ["E501", "E402", "UP006", "UP035", "UP045"]
 "migrations/*" = ["E501", "E402", "UP006", "UP035", "UP045"]
-"create_simple_agents.py" = ["E501", "UP006", "UP035", "UP045"]
-"backup_manager.py" = ["E501"]
-"migrate_projects.py" = ["E501"]
-"migrate_subscription_plans.py" = ["E501"]
-"_check_db.py" = ["E501"]
-"_get_token.py" = ["E501"]
-"inspect_db.py" = ["E501"]
-"assign_communities.py" = ["E501"]
-"create_org_users.py" = ["E501"]
-"create_role_test_users.py" = ["E501"]
-"messaging_routes.py" = ["E501"]
 # Generated report page with minified CSS/JS (one statement per line by design).
 "api/allure_report_template.py" = ["E501"]
 

@@ -53,37 +53,19 @@ def verify_token(token: str) -> Optional[dict]:
         return None
 
 
-def authenticate_user(db: Session, username: str, password: str, organization_slug: Optional[str] = None):
-    """Authenticate user with optional organization context"""
-    from .database import Organization, User
-    
-    # Build query
-    query = db.query(User).filter(
-        (User.username == username) | (User.email == username)
-    )
-    
-    # Filter by organization if specified
-    if organization_slug:
-        org = db.query(Organization).filter(Organization.slug == organization_slug).first()
-        if not org:
-            return None
-        query = query.filter(User.organization_id == org.id)
-    
-    user = query.first()
-    
+def authenticate_user(db: Session, username: str, password: str):
+    """Authenticate a user by username or email and password"""
+    from .database import User
+
+    user = db.query(User).filter((User.username == username) | (User.email == username)).first()
+
     if not user or not user.verify_password(password):
         return None
-    
+
     if not user.is_active:
         return None
-    
+
     return user
-
-
-def get_organization_from_subdomain(slug: str, db: Session):
-    """Get organization by slug/subdomain"""
-    from .database import Organization
-    return db.query(Organization).filter(Organization.slug == slug).first()
 
 
 def get_current_user(
@@ -141,18 +123,6 @@ def get_org_admin_user(current_user = Depends(get_current_user)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions"
-        )
-    return current_user
-
-
-def get_community_lead_user(current_user = Depends(get_current_user)):
-    """Require COMMUNITY_LEAD, ORG_ADMIN, or SUPER_ADMIN role"""
-    from .database import UserRole
-    
-    if current_user.role not in [UserRole.COMMUNITY_LEAD, UserRole.ORG_ADMIN, UserRole.SUPER_ADMIN]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Community lead access required"
         )
     return current_user
 

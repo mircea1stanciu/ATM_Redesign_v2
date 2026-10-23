@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from api.sync_auth import get_current_user
-from core.database import ChatSession, User, get_db, pwd_context
+from core.database import User, get_db, pwd_context
 
 router = APIRouter(tags=["Profile"])
 
@@ -173,8 +173,6 @@ async def delete_account(
 
     _verify_2fa(current_user, request.two_fa_code)
 
-    user_id = current_user.id
-    db.query(ChatSession).filter(ChatSession.user_id == user_id).delete()
     db.delete(current_user)
     db.commit()
 

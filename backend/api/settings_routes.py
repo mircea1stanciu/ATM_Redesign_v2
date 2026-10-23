@@ -3,7 +3,6 @@ Settings API endpoints for user preferences, security, and account management
 """
 
 import hashlib
-import json
 import secrets
 from datetime import datetime
 from typing import Optional
@@ -18,7 +17,6 @@ from core.database import (
     APIToken,
     LoginHistory,
     NotificationPreference,
-    PrivacySettings,
     User,
     UserSession,
     get_db,
@@ -438,103 +436,6 @@ async def update_notification_preferences(
         "quiet_hours_start": prefs.quiet_hours_start,
         "quiet_hours_end": prefs.quiet_hours_end,
     }
-
-
-# ── Privacy Settings ─────────────────────────────────────────────────────────
-
-@router.get("/settings/privacy", tags=["Privacy"])
-async def get_privacy_settings(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Get privacy settings"""
-    privacy = db.query(PrivacySettings).filter(
-        PrivacySettings.user_id == current_user.id
-    ).first()
-    
-    if not privacy:
-        # Create default privacy settings
-        privacy = PrivacySettings(user_id=current_user.id)
-        db.add(privacy)
-        db.commit()
-        db.refresh(privacy)
-    
-    return {
-        "profile_public": privacy.profile_public,
-        "show_activity": privacy.show_activity,
-        "show_email": privacy.show_email,
-        "allow_messages": privacy.allow_messages,
-        "allow_mentions": privacy.allow_mentions,
-        "allow_analytics": privacy.allow_analytics,
-        "allow_marketing": privacy.allow_marketing,
-    }
-
-
-@router.put("/settings/privacy", tags=["Privacy"])
-async def update_privacy_settings(
-    settings: dict,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Update privacy settings"""
-    privacy = db.query(PrivacySettings).filter(
-        PrivacySettings.user_id == current_user.id
-    ).first()
-    
-    if not privacy:
-        privacy = PrivacySettings(user_id=current_user.id)
-        db.add(privacy)
-    
-    # Update allowed fields
-    for key, value in settings.items():
-        if hasattr(privacy, key) and value is not None:
-            setattr(privacy, key, value)
-    
-    db.add(privacy)
-    db.commit()
-    db.refresh(privacy)
-    
-    return {
-        "profile_public": privacy.profile_public,
-        "show_activity": privacy.show_activity,
-        "show_email": privacy.show_email,
-        "allow_messages": privacy.allow_messages,
-        "allow_mentions": privacy.allow_mentions,
-        "allow_analytics": privacy.allow_analytics,
-        "allow_marketing": privacy.allow_marketing,
-    }
-
-
-# ── Community Preferences ────────────────────────────────────────────────────
-
-@router.get("/settings/community-preferences", tags=["Community"])
-async def get_community_preferences(
-    current_user: User = Depends(get_current_user)
-):
-    """Get community preferences"""
-    communities = []
-    if current_user.preferred_communities:
-        try:
-            communities = json.loads(current_user.preferred_communities)
-        except json.JSONDecodeError:
-            communities = []
-    
-    return {"preferred_communities": communities}
-
-
-@router.put("/settings/community-preferences", tags=["Community"])
-async def update_community_preferences(
-    preferred_communities: list[str],
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Update community preferences"""
-    current_user.preferred_communities = json.dumps(preferred_communities)
-    db.add(current_user)
-    db.commit()
-    db.refresh(current_user)
-    
-    return {"preferred_communities": preferred_communities}
 
 
 @router.get("/settings/requirements-filters", response_model=RequirementsFiltersResponse)
