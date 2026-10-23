@@ -1,0 +1,66 @@
+# === Python ===
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+*.egg
+.eggs/
+
+# === Secrets — NICIODATĂ în git ===
+.env
+*.env
+!.env.example
+
+# === Backend ===
+backend/.venv/
+backend/venv/
+backend/.pytest_cache/
+backend/htmlcov/
+backend/.mypy_cache/
+backend/.ruff_cache/
+backend/alembic/versions/  # versionat separat sau include dacă vrei
+
+# === Node / Frontend ===
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.vite/
+*.local
+
+# === Logs & artefacte ===
+*.log
+*.sqlite
+/tmp/
+artifacts/
+
+# === Local databases (may contain live tokens/credentials — never commit) ===
+*.db
+backend/unifiedwork.db
+unifiedwork.db
+
+# === Local repo working copies (server-side managed git checkouts) ===
+backend/local_repos/
+
+# === Editor ===
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# === Docker ===
+*.override.yml
+
+# Generated Allure reports uploaded/imported at runtime
+backend/uploads/allure-reports/
+
+# Community media uploaded at runtime
+backend/uploads/community/

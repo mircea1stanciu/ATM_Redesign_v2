@@ -1,0 +1,12 @@
+{
+  "name": "__PROJECT_SLUG__",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "install:browsers": "playwright install chromium",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1"
+  }
+}

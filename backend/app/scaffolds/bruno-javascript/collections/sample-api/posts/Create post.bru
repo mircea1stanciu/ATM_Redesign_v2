@@ -1,0 +1,33 @@
+meta {
+  name: Create post
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/posts
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "title": "Hello from ATM",
+    "body": "Created by the starter project",
+    "userId": 1
+  }
+}
+
+tests {
+  test("returns 201", function () {
+    expect(res.getStatus()).to.equal(201);
+  });
+
+  test("echoes the title", function () {
+    expect(res.getBody().title).to.equal("Hello from ATM");
+  });
+}

@@ -1,0 +1,56 @@
+{
+  "info": {
+    "name": "__PROJECT_NAME__ API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Get post",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('returns 200', () => pm.response.to.have.status(200));",
+              "pm.test('returns the requested post', () => pm.expect(pm.response.json().id).to.eql(Number(pm.environment.get('postId'))));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/posts/{{postId}}"
+      }
+    },
+    {
+      "name": "Create post",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('returns 201', () => pm.response.to.have.status(201));",
+              "pm.test('echoes the title', () => pm.expect(pm.response.json().title).to.eql('Hello from ATM'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": \"Hello from ATM\",\n  \"body\": \"Created by the starter project\",\n  \"userId\": 1\n}"
+        },
+        "url": "{{baseUrl}}/posts"
+      }
+    }
+  ]
+}

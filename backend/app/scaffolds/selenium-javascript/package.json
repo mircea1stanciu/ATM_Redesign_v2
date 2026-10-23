@@ -1,0 +1,11 @@
+{
+  "name": "__PROJECT_SLUG__",
+  "private": true,
+  "scripts": {
+    "test": "mocha"
+  },
+  "devDependencies": {
+    "mocha": "^12.0.3",
+    "selenium-webdriver": "^4.51.0"
+  }
+}

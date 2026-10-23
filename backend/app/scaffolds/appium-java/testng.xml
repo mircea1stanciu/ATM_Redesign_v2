@@ -1,0 +1,8 @@
+<!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd">
+<suite name="__PROJECT_NAME__">
+    <test name="Android smoke">
+        <classes>
+            <class name="com.atm.tests.SettingsSmokeTest"/>
+        </classes>
+    </test>
+</suite>

@@ -1,0 +1,31 @@
+# Test artifacts
+test-results/
+playwright-report/
+playwright/.cache/
+
+# Dependencies
+node_modules/
+package-lock.json
+
+# Environment
+.env.local
+.env.production
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Screenshots and videos
+screenshots/
+videos/
+traces/

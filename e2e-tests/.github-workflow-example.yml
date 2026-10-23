@@ -1,0 +1,112 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run tests daily at 2 AM
+    - cron: '0 2 * * *'
+
+jobs:
+  test:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        browser: [chromium, firefox, webkit]
+      fail-fast: false
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Install Playwright Browsers
+      run: npx playwright install --with-deps ${{ matrix.browser }}
+    
+    - name: Start Application Servers
+      run: |
+        # Start backend server
+        npm run start:backend &
+        
+        # Start frontend server  
+        npm run start:frontend &
+        
+        # Wait for servers to be ready
+        npx wait-on http://localhost:8002/health http://localhost:3003 --timeout 120000
+    
+    - name: Run Playwright tests
+      run: npx playwright test --project=${{ matrix.browser }}
+      env:
+        BASE_URL: http://localhost:3003
+        API_BASE_URL: http://localhost:8002/api
+        TEST_SUPER_ADMIN_USERNAME: ${{ secrets.TEST_SUPER_ADMIN_USERNAME }}
+        TEST_SUPER_ADMIN_PASSWORD: ${{ secrets.TEST_SUPER_ADMIN_PASSWORD }}
+        TEST_ORG_ADMIN_USERNAME: ${{ secrets.TEST_ORG_ADMIN_USERNAME }}
+        TEST_ORG_ADMIN_PASSWORD: ${{ secrets.TEST_ORG_ADMIN_PASSWORD }}
+        TEST_USER_USERNAME: ${{ secrets.TEST_USER_USERNAME }}
+        TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+        TEST_ORG_SLUG: ${{ secrets.TEST_ORG_SLUG }}
+    
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: playwright-report-${{ matrix.browser }}
+        path: playwright-report/
+        retention-days: 30
+    
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results-${{ matrix.browser }}
+        path: test-results/
+        retention-days: 30
+
+  # Combine reports from all browsers
+  report:
+    if: always()
+    needs: test
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Download all reports
+      uses: actions/download-artifact@v4
+      with:
+        pattern: playwright-report-*
+        path: all-reports/
+    
+    - name: Merge HTML reports
+      run: |
+        npx playwright merge-reports all-reports/playwright-report-* --reporter=html --output-dir=merged-report
+    
+    - name: Upload merged report
+      uses: actions/upload-artifact@v4
+      with:
+        name: merged-playwright-report
+        path: merged-report/
+        retention-days: 30
+    
+    - name: Deploy to GitHub Pages
+      if: github.ref == 'refs/heads/main'
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: merged-report

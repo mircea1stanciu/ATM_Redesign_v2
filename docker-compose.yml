@@ -1,0 +1,121 @@
+x-backend-env: &backend-env
+  DATABASE_URL: postgresql+asyncpg://testmanager:${POSTGRES_PASSWORD:-testmanager}@postgres:5432/testmanager
+  REDIS_URL: redis://redis:6379/0
+  CELERY_BROKER_URL: redis://redis:6379/0
+  CELERY_RESULT_BACKEND: redis://redis:6379/1
+  SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+  APP_ENV: production
+  CORS_ORIGINS: '["http://localhost", "http://frontend"]'
+  ARTIFACTS_DIR: /app/artifacts
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_USERNAME: ${SMTP_USERNAME:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  SMTP_USE_STARTTLS: ${SMTP_USE_STARTTLS:-true}
+  NOTIFICATION_EMAIL_SENDER: ${NOTIFICATION_EMAIL_SENDER:-}
+  SLACK_DEFAULT_WEBHOOK: ${SLACK_DEFAULT_WEBHOOK:-}
+
+services:
+  # ── Baze de date ────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: testmanager_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: testmanager
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-testmanager}
+      POSTGRES_DB: testmanager
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U testmanager"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: testmanager_redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Backend API ──────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: testmanager_backend
+    restart: unless-stopped
+    environment:
+      <<: *backend-env
+    volumes:
+      - artifacts_data:/app/artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Celery Worker ────────────────────────────────────────────────────────────
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: testmanager_worker
+    restart: unless-stopped
+    command: ["celery", "-A", "app.workers.celery_app", "worker", "--loglevel=info", "--concurrency=4"]
+    environment:
+      <<: *backend-env
+    volumes:
+      - artifacts_data:/app/artifacts
+      - /var/run/docker.sock:/var/run/docker.sock  # pentru Docker runner
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ── Celery Beat (scheduler) ───────────────────────────────────────────────────
+  beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: testmanager_beat
+    restart: unless-stopped
+    command: ["celery", "-A", "app.workers.celery_app", "beat", "--loglevel=info"]
+    environment:
+      <<: *backend-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ── Frontend (nginx + SPA) ────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: testmanager_frontend
+    restart: unless-stopped
+    ports:
+      - "${PORT:-80}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+  artifacts_data:

@@ -1,0 +1,152 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "testmanager-backend"
+version = "0.1.0"
+description = "TestManager API — backend FastAPI"
+requires-python = ">=3.9"
+
+dependencies = [
+    # Web framework
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.30.0",
+
+    # SQLAlchemy async runtime dependency
+    "greenlet>=3.0.0",
+
+    # Database
+    "sqlalchemy>=2.0.0",
+    "alembic>=1.13.0",
+    "asyncpg>=0.29.0",
+    "psycopg2-binary>=2.9.9",
+
+    # Validation
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.3.0",
+    "email-validator>=2.1.0",
+
+    # Auth
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    "bcrypt>=3.2.0,<4.0",
+    "python-multipart>=0.0.9",
+
+    # Task queue
+    "celery[redis]>=5.4.0",
+    "redis>=5.0.4",
+
+    # Docker SDK (pentru runner)
+    "docker>=7.1.0",
+
+    # HTTP client (pentru MCP / GitHub API)
+    "httpx>=0.27.0",
+
+    # WebSocket
+    "websockets>=12.0",
+
+    # Utilities
+    "python-dotenv>=1.0.1",
+    "structlog>=24.2.0",
+
+    # Imported by the app at startup (main.py): rate limiting, 2FA, QR codes, AI agents
+    "slowapi>=0.1.9",
+    "pyotp>=2.9.0",
+    "qrcode[pil]>=7.4.2",
+    "langchain-core>=1.0.0",
+    "langchain-openai>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=5.0.0",
+    "aiosqlite>=0.20.0",  # async SQLite engine used by the test fixtures
+    "httpx>=0.27.0",
+    "ruff>=0.4.0",
+    "mypy>=1.10.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# Standard alembic/dotenv-config idiom: sys.path/config must run before the
+# subsequent imports, so they can't be moved to the top of the file.
+"alembic/env.py" = ["E402"]
+"app/main.py" = ["E402"]
+# backend/main.py is a legacy/alternate app definition, not the shipped
+# entrypoint (Docker/production run `app.main:app`) — see Dockerfile.
+"main.py" = ["E402", "E501"]
+# Legacy/experimental AI-agent prototypes and one-off, non-shipped
+# maintenance/debug scripts (not part of the FastAPI app package under
+# app/, not imported by it, and not covered by tests/). Kept lightly linted
+# (still checked for real bugs via F-rules) but exempted from the stricter
+# style-only rules that would otherwise require a large, unrelated rewrite.
+"agents/*" = ["E501", "E402", "F401", "UP006", "UP035", "UP045"]
+"tools/*" = ["E501", "E402", "UP006", "UP035", "UP045"]
+"migrations/*" = ["E501", "E402", "UP006", "UP035", "UP045"]
+"create_simple_agents.py" = ["E501", "UP006", "UP035", "UP045"]
+"backup_manager.py" = ["E501"]
+"migrate_projects.py" = ["E501"]
+"migrate_subscription_plans.py" = ["E501"]
+"_check_db.py" = ["E501"]
+"_get_token.py" = ["E501"]
+"inspect_db.py" = ["E501"]
+"assign_communities.py" = ["E501"]
+"create_org_users.py" = ["E501"]
+"create_role_test_users.py" = ["E501"]
+"messaging_routes.py" = ["E501"]
+# Generated report page with minified CSS/JS (one statement per line by design).
+"api/allure_report_template.py" = ["E501"]
+
+[tool.mypy]
+# Starter-project templates copied into users' folders, not part of the application.
+exclude = ["^app/scaffolds/"]
+# app/ is a namespace package (no __init__.py): map files to modules from the backend folder.
+explicit_package_bases = true
+
+[[tool.mypy.overrides]]
+# Type-checking baseline: modules written before mypy ran in CI (mostly untyped SQLAlchemy
+# `Column(...)` models, so attributes are typed Column[str] instead of str). New and fixed modules
+# are fully checked; remove a module from this list once it is clean.
+module = [
+    "app.api.v1.endpoints.auth",
+    "app.api.v1.endpoints.community",
+    "app.api.v1.endpoints.integrations",
+    "app.api.v1.endpoints.projects",
+    "app.api.v1.endpoints.runs",
+    "app.api.v1.endpoints.webhooks",
+    "app.db.session",
+    "app.models.models",
+    "app.services",
+    "app.services.appium_project_service",
+    "app.services.confluence_release_analyzer",
+    "app.services.device_service",
+    "app.services.github_workflow_service",
+    "app.services.junit_parser",
+    "app.services.local_library_service",
+    "app.services.local_repo_service",
+    "app.services.notification_service",
+    "app.services.project_service",
+    "app.services.properties_service",
+    "app.services.task_service",
+    "app.services.test_run_service",
+    "app.services.test_suite_service",
+    "app.services.websocket_manager",
+    "app.services.zephyr_service",
+]
+ignore_errors = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

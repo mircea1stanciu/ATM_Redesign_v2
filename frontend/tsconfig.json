@@ -1,0 +1,47 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  },
+  "include": ["src"],
+  // Not imported anywhere in the app (leftover Next.js pages under src/app and unused prototypes).
+  // They are not bundled; remove an entry when the file is used again.
+  "exclude": [
+    "src/app",
+    "src/components/AdminDashboard.tsx",
+    "src/components/ChatAwareLayout.tsx",
+    "src/components/ChatInterface.tsx",
+    "src/components/EnhancedChatInterface.tsx",
+    "src/components/FloorPlanEditor.tsx",
+    "src/components/Footer.tsx",
+    "src/components/Header.tsx",
+    "src/components/LoginForm.tsx",
+    "src/components/MessengerViewTemp.tsx",
+    "src/components/ModelSelector.tsx",
+    "src/components/OfficeManagement.tsx",
+    "src/components/PersistentChatSidebar.tsx",
+    "src/components/RegisterForm.tsx",
+    "src/components/ResizableChatPanel.tsx",
+    "src/components/SideChatPanel.tsx",
+    "src/components/projects/IssueDetail.tsx",
+    "src/components/projects/ProjectsPage.tsx"
+  ],
+  "references": [{ "path": "./tsconfig.node.json" }]
+}

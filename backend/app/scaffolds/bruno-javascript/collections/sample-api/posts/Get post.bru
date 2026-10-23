@@ -1,0 +1,21 @@
+meta {
+  name: Get post
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/posts/{{postId}}
+  body: none
+  auth: none
+}
+
+tests {
+  test("returns 200", function () {
+    expect(res.getStatus()).to.equal(200);
+  });
+
+  test("returns the requested post", function () {
+    expect(res.getBody().id).to.equal(Number(bru.getEnvVar("postId")));
+  });
+}
