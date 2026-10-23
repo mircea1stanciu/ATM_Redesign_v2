@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.config import BACKEND_DIR, settings
+from app.modules.settings.connections import store_settings
 
 NO_CHECKOUT_DETAIL = "No local checkout exists yet. Link or import a repository first."
 
@@ -42,8 +43,8 @@ def save_linked_path(db: Session, user, project_id, path: str, managed: bool = F
         managed_map.pop(str(project_id), None)
     data["project_local_repo_paths"] = paths
     data["project_local_repo_managed"] = managed_map
-    # Reassign the column: SQLAlchemy only flushes JSON changes when the attribute is set again.
-    user.settings_json = data
+    # Assign a new dict: SQLAlchemy only flushes JSON changes when the attribute is set again.
+    store_settings(user, data)
     db.commit()
     db.refresh(user)
 

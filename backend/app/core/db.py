@@ -26,4 +26,5 @@ def import_all_models() -> None:
     from app.modules.identity import models as _identity  # noqa: F401
     from app.modules.learning import models as _learning  # noqa: F401
     from app.modules.projects import models as _projects  # noqa: F401
+    from app.modules.settings import models as _settings  # noqa: F401
     from app.modules.work import models as _work  # noqa: F401

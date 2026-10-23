@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.deps import get_current_user
+from app.modules.settings.connections import store_settings
 from app.modules.work.schemas import (
     TaskCreate,
     TaskResponse,
@@ -38,7 +39,7 @@ async def set_team_settings(
     data = _user_settings(current_user)
     team_name = (payload.team_name or "").strip()
     data["task_team_name"] = team_name or None
-    current_user.settings_json = data
+    store_settings(current_user, data)
     db.commit()
     db.refresh(current_user)
     return TeamSettingsResponse(team_name=data.get("task_team_name"))

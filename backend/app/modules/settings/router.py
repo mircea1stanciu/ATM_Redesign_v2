@@ -12,6 +12,7 @@ from app.core.config import BACKEND_DIR, settings
 from app.core.db import get_db
 from app.core.deps import get_current_user, require_admin, require_lead_or_above
 from app.modules.identity.models import User
+from app.modules.settings.connections import set_secret, settings_with_secrets, store_settings
 from app.services.confluence_release_analyzer import (
     analyze_release_page_html,
     extract_jira_macro_jql_queries,
@@ -306,12 +307,13 @@ class RequirementsFiltersResponse(BaseModel):
 
 
 def _user_settings(user) -> dict:
-    return dict(getattr(user, "settings_json", {}) or {})
+    """The user's settings with decrypted tokens filled in (tokens are stored in user_connections)."""
+    return settings_with_secrets(user)
 
 
 def _set_user_settings(user, data: dict) -> None:
-    if hasattr(user, 'settings_json'):
-        user.settings_json = data
+    """Save the non-secret settings; tokens change only through set_secret."""
+    store_settings(user, data)
 
 
 def _read_setting(user_data: dict, key: str, fallback: str = "") -> str:
@@ -418,6 +420,7 @@ async def update_github_settings(
 
     if payload.github_token is not None:
         data["github_token"] = payload.github_token
+        set_secret(current_user, "github", payload.github_token)
 
     if payload.github_mcp_base_url is not None:
         data["github_mcp_base_url"] = payload.github_mcp_base_url
@@ -494,17 +497,17 @@ async def get_jira_settings(_user=Depends(get_current_user), db: Session = Depen
     import logging
     _log = logging.getLogger("settings.jira")
     assigned_lead_id = getattr(_user, 'assigned_lead_id', None)
-    _log.warning(f"GET /jira: user={_user.email}, role={_user.role}, assigned_lead_id={assigned_lead_id}")
+    _log.debug(f"GET /jira: user={_user.email}, role={_user.role}, assigned_lead_id={assigned_lead_id}")
     config_source_user = _user
     if _role(_user) in _USER_OR_VIEWER and assigned_lead_id:
         stmt = select(User).where(User.id == assigned_lead_id)
         result = db.execute(stmt)
         lead = result.scalar_one_or_none()
-        _log.warning(f"GET /jira: lead found={lead is not None}, lead_email={lead.email if lead else 'N/A'}")
+        _log.debug(f"GET /jira: lead found={lead is not None}, lead_email={lead.email if lead else 'N/A'}")
         if lead:
             config_source_user = lead
             lead_settings = _user_settings(lead)
-            _log.warning(
+            _log.debug(
                 "GET /jira: lead settings_json keys=%s, jira_mcp_base_url=%s",
                 list(lead_settings.keys()) if lead_settings else 'NONE',
                 lead_settings.get('jira_mcp_base_url', 'NOT_SET'),
@@ -515,7 +518,7 @@ async def get_jira_settings(_user=Depends(get_current_user), db: Session = Depen
     project_key = _read_setting(config_data, "jira_project_key", "")
     project_name = _read_setting(config_data, "jira_project_name", "")
     base_url = _read_setting(config_data, "jira_mcp_base_url", "")
-    _log.warning(f"GET /jira: returning base_url={base_url!r}, project_key={project_key!r}")
+    _log.debug(f"GET /jira: returning base_url={base_url!r}, project_key={project_key!r}")
     
     # Get token from current user only
     user_data = _user_settings(_user)
@@ -555,6 +558,7 @@ async def update_jira_settings(
 
     if payload.jira_token is not None:
         data["jira_token"] = payload.jira_token
+        set_secret(current_user, "jira", payload.jira_token)
 
     if payload.jira_mcp_base_url is not None:
         data["jira_mcp_base_url"] = payload.jira_mcp_base_url

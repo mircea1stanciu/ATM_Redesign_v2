@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     APP_ENV: str = "development"
     # Signs access tokens. Set a long random value in backend/.env; the default only suits a single dev station.
     SECRET_KEY: str = "unifiedwork-secret-key-change-in-production"
+    # Encrypts personal tokens at rest (user_connections). Changing it makes stored tokens unreadable.
+    # Without it the key is derived from SECRET_KEY.
+    ATM_SECRET_KEY: str = ""
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
     # Database. ATM_DATABASE_URL wins; otherwise the SQLite file ATM_DATABASE_PATH (default backend/unifiedwork.db).

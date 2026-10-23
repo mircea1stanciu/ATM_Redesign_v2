@@ -130,6 +130,8 @@ class User(Base):
     sessions = relationship("UserSession", back_populates="user")
     api_tokens = relationship("APIToken", back_populates="user")
     notification_preferences = relationship("NotificationPreference", back_populates="user", uselist=False)
+    # Encrypted personal tokens (app.modules.settings.connections)
+    connections = relationship("UserConnection", back_populates="user", cascade="all, delete-orphan")
 
     def verify_password(self, password: str) -> bool:
         """Verify password against hash"""
@@ -268,3 +270,7 @@ class NotificationPreference(Base):
     
     # Relationships
     user = relationship("User", back_populates="notification_preferences")
+
+
+# Register the target of User.connections whenever users are loaded.
+from app.modules.settings import models as _connection_models  # noqa: E402,F401

@@ -16,7 +16,8 @@ from app.core.db import get_db
 from app.core.deps import get_current_user
 from app.modules.projects.checkouts import require_checkout
 from app.modules.projects.models import AnalyticsRun, AnalyticsSuite
-from app.modules.projects.service import check_organization_member, get_project_or_404, require_editor, user_settings
+from app.modules.projects.service import check_organization_member, get_project_or_404, require_editor
+from app.modules.settings.connections import get_json, set_json
 from app.services import ai_project_service as project_ai
 from app.services import ai_provider_service as providers
 from app.services import rbi_gateway_service as rbi_gateway
@@ -62,18 +63,13 @@ _pending_rbi_logins: dict[int, rbi_gateway.PendingLogin] = {}
 
 
 def _stored_settings(user) -> dict:
-    data = user_settings(user).get("ai_assistant")
-    return data if isinstance(data, dict) else {}
+    """The saved provider settings, including API keys and OAuth tokens (decrypted from user_connections)."""
+    return get_json(user, "ai_assistant")
 
 
 def _save_settings(db: Session, user, settings: dict | None) -> None:
     _models_cache.pop(user.id, None)
-    data = user_settings(user)
-    if settings is None:
-        data.pop("ai_assistant", None)
-    else:
-        data["ai_assistant"] = settings
-    user.settings_json = data
+    set_json(user, "ai_assistant", settings)
     db.commit()
     db.refresh(user)
 

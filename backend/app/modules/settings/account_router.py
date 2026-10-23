@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.core.deps import get_current_user
 from app.modules.identity.models import APIToken, LoginHistory, NotificationPreference, User, UserSession
+from app.modules.settings.connections import set_secret, settings_with_secrets, store_settings
 
 router = APIRouter(tags=["Settings"])
 
@@ -85,7 +86,8 @@ class RequirementsFiltersResponse(BaseModel):
 
 
 def _user_settings(user) -> dict:
-    return dict(getattr(user, "settings_json", None) or {})
+    """The user's settings with decrypted tokens filled in (tokens are stored in user_connections)."""
+    return settings_with_secrets(user)
 
 
 def _read_setting(data: dict, key: str, default: str = "") -> str:
@@ -94,7 +96,8 @@ def _read_setting(data: dict, key: str, default: str = "") -> str:
 
 
 def _set_user_settings(user, data: dict) -> None:
-    user.settings_json = data
+    """Save the non-secret settings; tokens change only through set_secret."""
+    store_settings(user, data)
 
 
 # ── Security Settings ────────────────────────────────────────────────────────
@@ -469,7 +472,7 @@ async def save_requirements_filters(
         raw["automation_status_management"] = payload.automation_status_management.model_dump()
 
     data["requirements_filters"] = raw
-    current_user.settings_json = data
+    _set_user_settings(current_user, data)
     db.add(current_user)
     db.commit()
     db.refresh(current_user)
@@ -524,6 +527,7 @@ async def update_confluence_settings(
     data = _user_settings(current_user)
     if payload.confluence_token is not None:
         data["confluence_token"] = payload.confluence_token
+        set_secret(current_user, "confluence", payload.confluence_token)
     if payload.confluence_mcp_base_url is not None:
         data["confluence_mcp_base_url"] = payload.confluence_mcp_base_url
     if payload.confluence_space_key is not None:

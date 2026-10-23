@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.db import get_db
 from app.core.deps import get_current_user, require_lead_or_above
 from app.modules.identity.models import User, UserRole
+from app.modules.settings.connections import get_secret
 from app.services.automation_tracker import VALID_STATUSES, AutomationTracker
 from app.services.test_manager_service import TestManagerService
 
@@ -43,10 +44,9 @@ async def _resolve_jira_auth(current_user, db: Session) -> tuple[str, str]:
             config_source_user = lead
 
     config_data = config_source_user.settings_json or {}
-    user_data = current_user.settings_json or {}
 
     base_url = config_data.get("jira_mcp_base_url") or settings.JIRA_MCP_BASE_URL
-    token = user_data.get("jira_token") or settings.JIRA_TOKEN
+    token = get_secret(current_user, "jira") or settings.JIRA_TOKEN
     return base_url, token
 
 

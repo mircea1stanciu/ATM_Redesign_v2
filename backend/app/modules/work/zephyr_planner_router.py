@@ -25,6 +25,7 @@ from app.core.deps import get_current_user
 from app.modules.identity.models import UserRole
 from app.modules.projects.checkouts import checkout_path, managed_checkouts_dir
 from app.modules.projects.models import Project
+from app.modules.settings.connections import get_secret, set_secret
 from app.modules.work.test_manager_router import _enforce_jira_project_scope, _resolve_jira_auth
 from app.services.automation_generator_service import (
     GenerationRequest,
@@ -147,8 +148,7 @@ def _read_zephyr_session_cookie(current_user) -> str:
     """The Jira web-session cookie the user pasted from their browser, used to
     talk to legacy Zephyr Squad plugins that reject PAT/Bearer auth. Stored
     per-user (it's tied to that person's authenticated session)."""
-    data = current_user.settings_json or {}
-    return str(data.get("zephyr_session_cookie") or "").strip()
+    return get_secret(current_user, "zephyr_session").strip()
 
 
 def _role(user) -> str:
@@ -620,13 +620,7 @@ async def set_session_cookie(
     (which has passed SSO/2FA) and is the only auth the legacy Zephyr plugin
     accepts. It is kept per-user and can be cleared by sending an empty value.
     """
-    data = dict(current_user.settings_json or {})
-    cookie = (payload.session_cookie or "").strip()
-    if cookie:
-        data["zephyr_session_cookie"] = cookie
-    else:
-        data.pop("zephyr_session_cookie", None)
-    current_user.settings_json = data
+    set_secret(current_user, "zephyr_session", (payload.session_cookie or "").strip())
     db.commit()
     db.refresh(current_user)
 

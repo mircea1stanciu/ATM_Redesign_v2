@@ -33,6 +33,7 @@ from app.modules.projects.service import (
     token_preview,
     user_settings,
 )
+from app.modules.settings.connections import store_settings
 
 router = APIRouter(prefix="/api/projects", tags=["Projects"])
 
@@ -723,7 +724,7 @@ def _set_project_scaffold_info(db: Session, user, project_id: int, info: Optiona
     else:
         scaffolds.pop(str(project_id), None)
     data["project_scaffolds"] = scaffolds
-    user.settings_json = data
+    store_settings(user, data)
     db.commit()
     db.refresh(user)
 

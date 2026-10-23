@@ -1,4 +1,5 @@
 import sqlalchemy as sa
+from alembic.script import ScriptDirectory
 
 from alembic import command
 from app.core.migrations import _alembic_config
@@ -17,9 +18,8 @@ def test_fresh_database_gets_every_table(tmp_path):
     tables = set(sa.inspect(engine).get_table_names())
     assert {"users", "organizations", "projects", "analytics_runs", "tasks", "forum_posts"} <= tables
     with engine.connect() as connection:
-        assert connection.execute(sa.text("select version_num from alembic_version")).scalar() == (
-            "0002_drop_removed_features"
-        )
+        head = ScriptDirectory.from_config(_alembic_config()).get_current_head()
+        assert connection.execute(sa.text("select version_num from alembic_version")).scalar() == head
 
 
 def test_existing_database_is_adopted_without_losing_rows(tmp_path):

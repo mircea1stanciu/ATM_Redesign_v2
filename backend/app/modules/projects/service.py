@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.identity.models import UserRole
 from app.modules.projects.models import Project
+from app.modules.settings.connections import get_secret, set_secret, store_settings
 
 
 # Helper functions for access control
@@ -55,28 +56,16 @@ def check_organization_member(current_user):
 
 
 def user_settings(user) -> dict:
+    """The user's non-secret settings (tokens are in user_connections, see app.modules.settings.connections)."""
     return dict(getattr(user, "settings_json", None) or {})
 
 
 def project_github_token(user, project_id) -> str:
-    data = user_settings(user)
-    token_map = data.get("project_github_tokens")
-    if not isinstance(token_map, dict):
-        return ""
-    return str(token_map.get(str(project_id)) or "")
+    return get_secret(user, "github_project", str(project_id))
 
 
 def set_project_github_token(db: Session, user, project_id, token: str) -> None:
-    data = user_settings(user)
-    # Copy the nested dict rather than mutating in place; SQLAlchemy only
-    # detects a change (and flushes JSON) when the column is reassigned.
-    token_map = dict(data.get("project_github_tokens") or {})
-    if token:
-        token_map[str(project_id)] = token
-    else:
-        token_map.pop(str(project_id), None)
-    data["project_github_tokens"] = token_map
-    user.settings_json = data
+    set_secret(user, "github_project", token, str(project_id))
     db.commit()
     db.refresh(user)
 
@@ -252,6 +241,6 @@ def save_script_config(db: Session, user, project_id, script_id: str, values: di
     configs[script_id] = values
     by_project[str(project_id)] = configs
     data["project_script_configs"] = by_project
-    user.settings_json = data
+    store_settings(user, data)
     db.commit()
     db.refresh(user)
