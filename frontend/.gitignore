@@ -1,1 +1,6 @@
 node_modules
+
+# UI tests (Playwright)
+e2e/.auth/
+playwright-report/
+test-results/
