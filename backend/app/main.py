@@ -11,14 +11,25 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import inspect, text
 
-from api import ai_routes, project_routes, settings_routes
 from app.core.config import BACKEND_DIR, settings
 from app.core.db import Base, SessionLocal, engine, import_all_models
 from app.core.rate_limit import limiter
 from app.modules.identity.router import router as identity_router
 from app.modules.identity.service import get_default_organization, seed_dev_admin
+from app.modules.learning.community_router import router as community_router
+from app.modules.projects.router import router as projects_router
+from app.modules.reporting.router import router as reporting_router
+from app.modules.settings.account_router import router as account_settings_router
 from app.modules.settings.router import router as connections_router
 from app.modules.testing.devices_router import router as devices_router
+from app.modules.testing.router import router as testing_router
+from app.modules.testing.router import runs_router
+from app.modules.testing.runs import resume_orphaned_manual_runs
+from app.modules.work.tasks_router import router as tasks_router
+from app.modules.work.test_manager_router import router as test_manager_router
+from app.modules.work.zephyr_planner_router import router as zephyr_planner_router
+from app.modules.workspace.assistant_router import router as assistant_router
+from app.modules.workspace.router import router as workspace_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -59,13 +70,20 @@ async def add_security_headers(request: Request, call_next):
 
 
 app.include_router(identity_router, tags=["Identity"])
-app.include_router(project_routes.router)
-app.include_router(project_routes.analytics_router)
-app.include_router(ai_routes.router)
+app.include_router(projects_router)
+app.include_router(workspace_router)
+app.include_router(testing_router)
+app.include_router(reporting_router)
+app.include_router(runs_router)
+app.include_router(assistant_router)
 # Account settings (security, preferences, filters, Confluence) are matched before the connection settings.
-app.include_router(settings_routes.router, prefix="/api")
+app.include_router(account_settings_router, prefix="/api")
 app.include_router(connections_router, prefix="/api/settings", tags=["Settings"])
 app.include_router(devices_router, prefix="/api/devices", tags=["Devices"])
+app.include_router(test_manager_router, prefix="/api/test-manager", tags=["Work"])
+app.include_router(tasks_router, prefix="/api/tasks", tags=["Work"])
+app.include_router(zephyr_planner_router, prefix="/api/zephyr-planner", tags=["Work"])
+app.include_router(community_router, prefix="/api/community", tags=["Learning"])
 
 
 @app.get("/api/health", tags=["Health"])
@@ -104,7 +122,7 @@ async def startup_event():
     """Prepare the database and re-attach long-running executions started before a restart."""
     _init_db()
     try:
-        await project_routes.resume_orphaned_manual_runs()
+        await resume_orphaned_manual_runs()
     except Exception as exc:
         print(f"❌ Failed to resume running executions: {exc}")
 

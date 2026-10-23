@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
-from app.api.v1.endpoints.auth import get_current_user
-from app.db.session import get_db
-from app.schemas.tasks import (
+from app.core.db import get_db
+from app.core.deps import get_current_user
+from app.modules.work.schemas import (
     TaskCreate,
     TaskResponse,
     TaskStatusUpdate,
     TeamSettingsResponse,
     TeamSettingsUpdate,
 )
-from app.services.task_service import VALID_STATUSES, TaskService
+from app.modules.work.tasks_service import VALID_STATUSES, TaskService
 
 router = APIRouter()
 
@@ -32,15 +32,15 @@ async def get_team_settings(current_user=Depends(get_current_user)):
 async def set_team_settings(
     payload: TeamSettingsUpdate,
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Save the team the current user belongs to."""
     data = _user_settings(current_user)
     team_name = (payload.team_name or "").strip()
     data["task_team_name"] = team_name or None
     current_user.settings_json = data
-    await db.commit()
-    await db.refresh(current_user)
+    db.commit()
+    db.refresh(current_user)
     return TeamSettingsResponse(team_name=data.get("task_team_name"))
 
 
@@ -59,7 +59,7 @@ def _current_team(current_user) -> str:
 async def list_tasks(
     team_name: str | None = None,
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """List tasks for a team (defaults to the current user's configured team)."""
     team = (team_name or "").strip() or _current_team(current_user)
@@ -70,7 +70,7 @@ async def list_tasks(
 async def create_task(
     payload: TaskCreate,
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Create a new task in the selected (or current user's) team."""
     team = (payload.team_name or "").strip() or _current_team(current_user)
@@ -81,7 +81,7 @@ async def create_task(
     )
 
 
-async def _get_task_or_404(db: AsyncSession, task_id: int):
+async def _get_task_or_404(db: Session, task_id: int):
     task = await TaskService.get_task(db, task_id)
     if not task:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
@@ -92,7 +92,7 @@ async def _get_task_or_404(db: AsyncSession, task_id: int):
 async def assign_task_to_me(
     task_id: int,
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Assign a task to the current user."""
     task = await _get_task_or_404(db, task_id)
@@ -103,7 +103,7 @@ async def assign_task_to_me(
 async def unassign_task(
     task_id: int,
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Remove the current assignee from a task."""
     task = await _get_task_or_404(db, task_id)
@@ -115,7 +115,7 @@ async def update_task_status(
     task_id: int,
     payload: TaskStatusUpdate,
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Update a task's progress status (todo / in_progress / done)."""
     if payload.status not in VALID_STATUSES:

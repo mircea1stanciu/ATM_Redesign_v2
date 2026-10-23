@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "testmanager-backend"
 version = "0.1.0"
-description = "TestManager API — backend FastAPI"
+description = "ATM (AutomationTestManager) backend"
 requires-python = ">=3.9"
 
 dependencies = [
@@ -13,14 +13,10 @@ dependencies = [
     "fastapi>=0.111.0",
     "uvicorn[standard]>=0.30.0",
 
-    # SQLAlchemy async runtime dependency
-    "greenlet>=3.0.0",
-
     # Database
     "sqlalchemy>=2.0.0",
     "alembic>=1.13.0",
-    "asyncpg>=0.29.0",
-    "psycopg2-binary>=2.9.9",
+    "psycopg2-binary>=2.9.9",  # Postgres via ATM_DATABASE_URL
 
     # Validation
     "pydantic>=2.7.0",
@@ -33,22 +29,11 @@ dependencies = [
     "bcrypt>=3.2.0,<4.0",
     "python-multipart>=0.0.9",
 
-    # Task queue
-    "celery[redis]>=5.4.0",
-    "redis>=5.0.4",
-
-    # Docker SDK (test runner)
-    "docker>=7.1.0",
-
     # HTTP client (MCP / GitHub API)
     "httpx>=0.27.0",
 
-    # WebSocket
-    "websockets>=12.0",
-
     # Utilities
     "python-dotenv>=1.0.1",
-    "structlog>=24.2.0",
 
     # Imported by the app at startup (main.py): rate limiting, 2FA, QR codes
     "slowapi>=0.1.9",
@@ -61,7 +46,6 @@ dev = [
     "pytest>=8.2.0",
     "pytest-asyncio>=0.23.0",
     "pytest-cov>=5.0.0",
-    "aiosqlite>=0.20.0",  # async SQLite engine used by the test fixtures
     "httpx>=0.27.0",
     "ruff>=0.4.0",
     "mypy>=1.10.0",
@@ -82,14 +66,11 @@ select = ["E", "F", "I", "UP"]
 # subsequent imports, so they can't be moved to the top of the file.
 "alembic/env.py" = ["E402"]
 "app/main.py" = ["E402"]
-# backend/main.py is a legacy/alternate app definition, not the shipped
-# entrypoint (Docker/production run `app.main:app`) — see Dockerfile.
-"main.py" = ["E402", "E501"]
 # One-off maintenance scripts and the UI-test seed; lightly linted.
 "tools/*" = ["E501", "E402", "UP006", "UP035", "UP045"]
 "migrations/*" = ["E501", "E402", "UP006", "UP035", "UP045"]
 # Generated report page with minified CSS/JS (one statement per line by design).
-"api/allure_report_template.py" = ["E501"]
+"app/modules/reporting/report_template.py" = ["E501"]
 
 [tool.mypy]
 # Starter-project templates copied into users' folders, not part of the application.
@@ -102,16 +83,19 @@ explicit_package_bases = true
 # `Column(...)` models, so attributes are typed Column[str] instead of str). New and fixed modules
 # are fully checked; remove a module from this list once it is clean.
 module = [
-    "app.api.v1.endpoints.auth",
-    "app.api.v1.endpoints.community",
-    "app.api.v1.endpoints.integrations",
-    "app.api.v1.endpoints.projects",
-    "app.api.v1.endpoints.runs",
-    "app.api.v1.endpoints.webhooks",
     "app.modules.identity.models",
     "app.modules.identity.router",
+    "app.modules.learning.community_router",
     "app.modules.projects.models",
-    "app.services",
+    "app.modules.projects.router",
+    "app.modules.reporting.router",
+    "app.modules.reporting.service",
+    "app.modules.settings.account_router",
+    "app.modules.testing.router",
+    "app.modules.testing.runs",
+    "app.modules.work.models",
+    "app.modules.work.tasks_service",
+    "app.modules.workspace.assistant_router",
     "app.services.appium_project_service",
     "app.services.confluence_release_analyzer",
     "app.services.device_service",
@@ -119,13 +103,7 @@ module = [
     "app.services.junit_parser",
     "app.services.local_library_service",
     "app.services.local_repo_service",
-    "app.services.notification_service",
-    "app.services.project_service",
     "app.services.properties_service",
-    "app.services.task_service",
-    "app.services.test_run_service",
-    "app.services.test_suite_service",
-    "app.services.websocket_manager",
     "app.services.zephyr_service",
 ]
 ignore_errors = true

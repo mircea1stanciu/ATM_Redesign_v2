@@ -18,21 +18,20 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
-from app.api.v1.endpoints.auth import get_current_user
-from app.api.v1.endpoints.projects import _enforce_view_project
-from app.api.v1.endpoints.test_manager import _enforce_jira_project_scope, _resolve_jira_auth
-from app.core.config import settings
-from app.db.session import get_db
+from app.core.db import get_db
+from app.core.deps import get_current_user
+from app.modules.identity.models import UserRole
+from app.modules.projects.checkouts import checkout_path, managed_checkouts_dir
+from app.modules.projects.models import Project
+from app.modules.work.test_manager_router import _enforce_jira_project_scope, _resolve_jira_auth
 from app.services.automation_generator_service import (
     GenerationRequest,
     detect_framework,
     generate_automation,
     list_bruno_reference_folders,
 )
-from app.services.local_repo_service import LocalRepoService
-from app.services.project_service import ProjectService
 from app.services.zephyr_service import (
     ZephyrAuthError,
     ZephyrPermissionError,
@@ -157,11 +156,20 @@ def _role(user) -> str:
     return r.value if hasattr(r, 'value') else str(r)
 
 
-def _local_repos_base_dir() -> Path:
-    if settings.LOCAL_REPOS_DIR:
-        return Path(settings.LOCAL_REPOS_DIR).expanduser().resolve()
-    # <backend>/local_repos — this file is backend/app/api/v1/endpoints/...
-    return (Path(__file__).resolve().parents[4] / "local_repos").resolve()
+def _get_project(db: Session, project_id: str | int) -> Project:
+    try:
+        pid = int(project_id)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    project = db.query(Project).filter(Project.id == pid).first()
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    return project
+
+
+def _enforce_view_project(project: Project, user) -> None:
+    if user.role != UserRole.SUPER_ADMIN and user.organization_id != project.organization_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You cannot view this project.")
 
 
 def _http_502_from_zephyr(exc: Exception) -> HTTPException:
@@ -184,7 +192,7 @@ async def _resolve_target_dir(
     project_id: str | None,
     target_path: str | None,
     current_user,
-    db: AsyncSession,
+    db: Session,
 ) -> Path:
     """Shared project_id/target_path -> local directory resolution used by both
     ``/generate`` and ``/reference-folders`` so a custom absolute path or an
@@ -204,7 +212,7 @@ async def _resolve_target_dir(
             )
         target_dir = target_dir.resolve()
 
-        allowed_base = _local_repos_base_dir()
+        allowed_base = managed_checkouts_dir()
         try:
             target_dir.relative_to(allowed_base)
         except ValueError:
@@ -219,11 +227,9 @@ async def _resolve_target_dir(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Provide either project_id or target_path.",
         )
-    project = await ProjectService.get_project(db, project_id)
-    if not project:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    project = _get_project(db, project_id)
     _enforce_view_project(project, current_user)
-    return LocalRepoService.get_local_path(project)
+    return checkout_path(current_user, project.id)
 
 
 # ── Endpoints ───────────────────────────────────────────────────────────────
@@ -235,7 +241,7 @@ async def list_folders(
     case_status: str | None = None,
     case_team: str | None = None,
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Return Zephyr folders (or, when folders aren't configured, cycles).
 
@@ -274,7 +280,7 @@ async def list_cases(
     case_status: str | None = None,
     case_team: str | None = None,
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Return manual test cases with their steps for the given project/folder."""
     base_url, token = await _resolve_jira_auth(current_user, db)
@@ -326,7 +332,7 @@ class UpdateCaseStatusResponse(BaseModel):
 async def list_case_statuses(
     project_key: str,
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Return the project's configured Zephyr test-case statuses (for the
     status dropdown in the Manual Test Cases panel)."""
@@ -362,7 +368,7 @@ class ZephyrTeamsResponse(BaseModel):
 async def list_teams(
     project_key: str,
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Return the project's team names (its Jira components) for the Team
     filter dropdown, independent of the currently selected folder."""
@@ -394,7 +400,7 @@ async def update_case_status(
     case_key: str,
     body: UpdateCaseStatusBody,
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Update a single test case's status directly in Zephyr (TM4J)."""
     base_url, token = await _resolve_jira_auth(current_user, db)
@@ -421,14 +427,18 @@ async def update_case_status(
 @router.get("/targets", response_model=TargetsResponse)
 async def list_targets(
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Return every project the user can view that has a resolvable local repo.
 
     The list is intentionally dynamic — the UI populates a dropdown from here so
     the user isn't tied to a single hard-coded local collection.
     """
-    projects = await ProjectService.list_projects(db, skip=0, limit=500)
+    projects = (
+        db.query(Project)
+        .filter(Project.organization_id == current_user.organization_id, Project.is_archived.is_(False))
+        .all()
+    )
 
     out: list[TargetProject] = []
     for project in projects:
@@ -437,7 +447,7 @@ async def list_targets(
         except HTTPException:
             continue
 
-        local_path = LocalRepoService.get_local_path(project)
+        local_path = checkout_path(current_user, project.id)
         if not local_path.exists():
             # Still surface the intended path so the user can decide to import
             # or fall back to a manual absolute-path override.
@@ -479,7 +489,7 @@ async def list_reference_folders(
     project_id: str | None = None,
     target_path: str | None = None,
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """List local folders containing existing ``.bru`` requests ("collections")
     under the chosen target, so the user can pick one to reuse as a reference
@@ -501,7 +511,7 @@ async def list_reference_folders(
 async def generate(
     body: GenerateRequestBody,
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Generate automation script files for the selected test cases.
 
@@ -531,11 +541,9 @@ async def generate(
             )
     else:
         assert body.project_id  # for type checker
-        project = await ProjectService.get_project(db, body.project_id)
-        if not project:
-            raise HTTPException(status_code=404, detail="Project not found")
+        project = _get_project(db, body.project_id)
         _enforce_view_project(project, current_user)
-        target_dir = LocalRepoService.get_local_path(project)
+        target_dir = checkout_path(current_user, project.id)
 
     cases_payload: list[dict[str, Any]] = [c.dict() for c in body.cases]
     for case in cases_payload:
@@ -604,7 +612,7 @@ async def get_session_cookie(current_user=Depends(get_current_user)):
 async def set_session_cookie(
     payload: SessionCookieUpdate,
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Store (or clear) the Jira web-session cookie used for Zephyr Squad calls.
 
@@ -619,8 +627,8 @@ async def set_session_cookie(
     else:
         data.pop("zephyr_session_cookie", None)
     current_user.settings_json = data
-    await db.commit()
-    await db.refresh(current_user)
+    db.commit()
+    db.refresh(current_user)
 
     stored = _read_zephyr_session_cookie(current_user)
     preview = ""

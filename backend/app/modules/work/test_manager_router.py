@@ -7,18 +7,18 @@ which fully supports PAT Bearer authentication on Jira Server/DC.
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
-from app.api.v1.endpoints.auth import get_current_user, require_lead_or_above
 from app.core.config import settings
-from app.db.session import get_db
-from app.models.models import User, UserRole
+from app.core.db import get_db
+from app.core.deps import get_current_user, require_lead_or_above
+from app.modules.identity.models import User, UserRole
 from app.services.automation_tracker import VALID_STATUSES, AutomationTracker
 from app.services.test_manager_service import TestManagerService
 
 router = APIRouter()
 
-_USER_OR_VIEWER = {UserRole.automation_user, UserRole.viewer}
+_USER_OR_VIEWER = {UserRole.AUTOMATION_USER, UserRole.VIEWER}
 
 
 def _read_user_setting(user, key: str):
@@ -26,7 +26,7 @@ def _read_user_setting(user, key: str):
     return user_settings.get(key)
 
 
-async def _resolve_jira_auth(current_user, db: AsyncSession) -> tuple[str, str]:
+async def _resolve_jira_auth(current_user, db: Session) -> tuple[str, str]:
     """Resolve (base_url, token) the same way the Settings → Jira endpoints do:
     base_url comes from the assigned Lead's config for Automation
     Users/Viewers (or the user's own config for Leads/Admins), and the token
@@ -37,7 +37,7 @@ async def _resolve_jira_auth(current_user, db: AsyncSession) -> tuple[str, str]:
     assigned_lead_id = getattr(current_user, 'assigned_lead_id', None)
     if current_user.role in _USER_OR_VIEWER and assigned_lead_id:
         stmt = select(User).where(User.id == assigned_lead_id)
-        result = await db.execute(stmt)
+        result = db.execute(stmt)
         lead = result.scalar_one_or_none()
         if lead:
             config_source_user = lead
@@ -51,7 +51,7 @@ async def _resolve_jira_auth(current_user, db: AsyncSession) -> tuple[str, str]:
 
 
 def _enforce_jira_project_scope(user, project_key: str) -> None:
-    if user.role in {UserRole.admin, UserRole.automation_lead}:
+    if user.role in {UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.AUTOMATION_LEAD}:
         return
 
     allowed_project_key = _read_user_setting(user, "jira_project_key")
@@ -113,7 +113,7 @@ async def get_test_sprints(
     project_key: str,
     state: str = "active",
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """
     List sprints for a Jira project with Testing/Dev-Testing issue statistics.
@@ -155,7 +155,7 @@ async def get_sprint_test_issues(
     sprint_id: int,
     project_key: str,
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """List Testing/Dev-Testing issues for a specific sprint."""
     base_url, token = await _resolve_jira_auth(current_user, db)
@@ -255,7 +255,7 @@ class EpicStoriesResponse(BaseModel):
 async def get_test_case_stats(
     project_key: str,
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Return automation coverage statistics for all test cases in a project."""
     base_url, token = await _resolve_jira_auth(current_user, db)
@@ -299,7 +299,7 @@ async def get_test_cases(
     automation_status: str = "all",
     search: str = "",
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """
     List test cases for a project with their automation status overlay.
@@ -385,7 +385,7 @@ async def get_epics_with_stories(
     search: str = "",
     refresh: bool = False,
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Return Epics (created DESC) and their child stories for a project.
     

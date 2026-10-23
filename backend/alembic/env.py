@@ -21,17 +21,14 @@ if config.config_file_name is not None:
 # add your model's MetaData object here
 # for 'autogenerate' support
 from app.core.config import settings
-from app.db.session import Base
+from app.core.db import Base, import_all_models
 
+import_all_models()
 target_metadata = Base.metadata
 
-# Get database URL from settings
+
 def get_sqlalchemy_url():
-    # Convert async URL to sync URL for migrations
-    database_url = settings.DATABASE_URL
-    if database_url.startswith("postgresql+asyncpg://"):
-        database_url = database_url.replace("postgresql+asyncpg://", "postgresql://")
-    return database_url
+    return settings.database_url
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:

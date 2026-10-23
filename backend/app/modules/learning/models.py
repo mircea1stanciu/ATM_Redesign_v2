@@ -2,7 +2,7 @@
 
 These models power the per-community discussion forum (posts, threaded
 comments, attachments and reactions). They are attached to the same
-declarative ``Base`` as :class:`core.database.User` so relationships to users
+declarative ``Base`` as :class:`app.modules.identity.models.User` so relationships to users
 resolve correctly, and they live in the same SQLite database (``unifiedwork.db``).
 """
 from datetime import datetime
@@ -20,7 +20,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 
-from core.database import Base
+from app.core.db import Base
 
 
 class ForumPost(Base):

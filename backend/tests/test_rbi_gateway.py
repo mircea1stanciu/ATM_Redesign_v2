@@ -11,7 +11,7 @@ import httpx
 import pytest
 from fastapi import HTTPException
 
-from api import ai_routes
+from app.modules.workspace import assistant_router as ai_routes
 from app.services import ai_provider_service as ai
 from app.services import rbi_gateway_service as gw
 

@@ -1,8 +1,9 @@
 """Community Forum API.
 
 Per-community discussion forum: posts, threaded comments, file attachments and
-reactions. Scoped by ``community_id`` (e.g. ``qa``, ``backend``). Uses the async
-SQLite session and the ``core.database.User`` returned by ``get_current_user``.
+reactions. Scoped by ``community_id`` (e.g. ``qa``, ``backend``).
+
+The Community screen is hidden until phase 13 decides whether Q&A stays inside Learning.
 """
 import os
 import uuid
@@ -11,18 +12,18 @@ from typing import Optional
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy import func, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import Session, selectinload
 
-from app.api.v1.endpoints.auth import get_current_user
-from app.db.session import get_db
-from app.models.community_forum import (
+from app.core.config import BACKEND_DIR
+from app.core.db import get_db
+from app.core.deps import get_current_user
+from app.modules.learning.models import (
     ForumAttachment,
     ForumComment,
     ForumPost,
     ForumReaction,
 )
-from app.schemas.community import (
+from app.modules.learning.schemas import (
     AttachmentOut,
     CommentCreate,
     CommentOut,
@@ -38,8 +39,7 @@ from app.schemas.community import (
 router = APIRouter()
 
 # ── Upload configuration ─────────────────────────────────────────────────────
-UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))), "uploads", "community")
+UPLOAD_DIR = str(BACKEND_DIR / "uploads" / "community")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
@@ -138,7 +138,7 @@ def _author_dict(user) -> Optional[dict]:
 
 
 async def _link_attachments(
-    db: AsyncSession,
+    db: Session,
     attachment_ids: list[int],
     uploader_id: int,
     *,
@@ -148,7 +148,7 @@ async def _link_attachments(
     """Attach previously-uploaded, still-unlinked files to a post or comment."""
     if not attachment_ids:
         return
-    result = await db.execute(
+    result = db.execute(
         select(ForumAttachment).where(
             ForumAttachment.id.in_(attachment_ids),
             ForumAttachment.uploader_id == uploader_id,
@@ -166,7 +166,7 @@ async def _link_attachments(
 async def upload_attachment(
     file: UploadFile = File(...),
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Upload a single file. Returns an attachment id to link to a post/comment."""
     if not file.filename or "." not in file.filename:
@@ -199,8 +199,8 @@ async def upload_attachment(
         kind=_detect_kind(ext),
     )
     db.add(att)
-    await db.commit()
-    await db.refresh(att)
+    db.commit()
+    db.refresh(att)
     return _attachment_out(att)
 
 
@@ -220,7 +220,7 @@ async def download_attachment(
 
 # ── Post serialization ───────────────────────────────────────────────────────
 async def _serialize_posts(
-    db: AsyncSession, posts: list[ForumPost], current_user
+    db: Session, posts: list[ForumPost], current_user
 ) -> list[PostOut]:
     if not posts:
         return []
@@ -229,7 +229,7 @@ async def _serialize_posts(
     # comment counts
     comment_counts = dict(
         (
-            await db.execute(
+            db.execute(
                 select(ForumComment.post_id, func.count(ForumComment.id))
                 .where(ForumComment.post_id.in_(post_ids), ForumComment.is_deleted.is_(False))
                 .group_by(ForumComment.post_id)
@@ -239,7 +239,7 @@ async def _serialize_posts(
     # like counts
     like_counts = dict(
         (
-            await db.execute(
+            db.execute(
                 select(ForumReaction.post_id, func.count(ForumReaction.id))
                 .where(ForumReaction.post_id.in_(post_ids))
                 .group_by(ForumReaction.post_id)
@@ -249,7 +249,7 @@ async def _serialize_posts(
     # liked by me
     liked_by_me = set(
         (
-            await db.execute(
+            db.execute(
                 select(ForumReaction.post_id).where(
                     ForumReaction.post_id.in_(post_ids),
                     ForumReaction.user_id == current_user.id,
@@ -295,7 +295,7 @@ async def list_posts(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=50),
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     _ensure_can_access(current_user, community_id)
 
@@ -305,7 +305,7 @@ async def list_posts(
         filters.append(or_(ForumPost.title.ilike(like), ForumPost.body.ilike(like)))
 
     total = (
-        await db.execute(select(func.count(ForumPost.id)).where(*filters))
+        db.execute(select(func.count(ForumPost.id)).where(*filters))
     ).scalar_one()
 
     base = (
@@ -327,7 +327,7 @@ async def list_posts(
         base = base.order_by(ForumPost.is_pinned.desc(), ForumPost.created_at.desc())
 
     base = base.offset((page - 1) * page_size).limit(page_size)
-    posts = list((await db.execute(base)).scalars().unique().all())
+    posts = list((db.execute(base)).scalars().unique().all())
 
     items = await _serialize_posts(db, posts, current_user)
 
@@ -343,13 +343,13 @@ async def list_posts(
 async def get_available_tags(
     community_id: str = Query(...),
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Get all unique tags used in posts for a community, with their usage counts."""
     _ensure_can_access(current_user, community_id)
     
     posts = (
-        await db.execute(
+        db.execute(
             select(ForumPost.tags).where(
                 ForumPost.community_id == community_id, ForumPost.is_deleted.is_(False)
             )
@@ -376,7 +376,7 @@ async def get_available_tags(
 async def create_post(
     payload: PostCreate,
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     _ensure_can_access(current_user, payload.community_id)
 
@@ -389,12 +389,12 @@ async def create_post(
         tags=[t.strip() for t in payload.tags if t.strip()][:10],
     )
     db.add(post)
-    await db.flush()
+    db.flush()
     await _link_attachments(db, payload.attachment_ids, current_user.id, post_id=post.id)
-    await db.commit()
+    db.commit()
 
     post = (
-        await db.execute(
+        db.execute(
             select(ForumPost)
             .where(ForumPost.id == post.id)
             .options(selectinload(ForumPost.author), selectinload(ForumPost.attachments))
@@ -407,10 +407,10 @@ async def create_post(
 async def get_post(
     post_id: int,
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     post = (
-        await db.execute(
+        db.execute(
             select(ForumPost)
             .where(ForumPost.id == post_id, ForumPost.is_deleted.is_(False))
             .options(selectinload(ForumPost.author), selectinload(ForumPost.attachments))
@@ -421,14 +421,14 @@ async def get_post(
     _ensure_can_access(current_user, post.community_id)
 
     post.view_count = (post.view_count or 0) + 1
-    await db.commit()
-    await db.refresh(post)
+    db.commit()
+    db.refresh(post)
     return (await _serialize_posts(db, [post], current_user))[0]
 
 
-async def _get_owned_post(db: AsyncSession, post_id: int, current_user, *, moderate: bool = False) -> ForumPost:
+async def _get_owned_post(db: Session, post_id: int, current_user, *, moderate: bool = False) -> ForumPost:
     post = (
-        await db.execute(
+        db.execute(
             select(ForumPost)
             .where(ForumPost.id == post_id, ForumPost.is_deleted.is_(False))
             .options(selectinload(ForumPost.author), selectinload(ForumPost.attachments))
@@ -449,7 +449,7 @@ async def update_post(
     post_id: int,
     payload: PostUpdate,
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     post = await _get_owned_post(db, post_id, current_user)
     if post.is_locked and not _can_moderate(current_user, post.community_id):
@@ -460,8 +460,8 @@ async def update_post(
         post.body = payload.body
     if payload.tags is not None:
         post.tags = [t.strip() for t in payload.tags if t.strip()][:10]
-    await db.commit()
-    await db.refresh(post)
+    db.commit()
+    db.refresh(post)
     return (await _serialize_posts(db, [post], current_user))[0]
 
 
@@ -470,15 +470,15 @@ async def moderate_post(
     post_id: int,
     payload: PostModeration,
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     post = await _get_owned_post(db, post_id, current_user, moderate=True)
     if payload.is_pinned is not None:
         post.is_pinned = payload.is_pinned
     if payload.is_locked is not None:
         post.is_locked = payload.is_locked
-    await db.commit()
-    await db.refresh(post)
+    db.commit()
+    db.refresh(post)
     return (await _serialize_posts(db, [post], current_user))[0]
 
 
@@ -486,23 +486,23 @@ async def moderate_post(
 async def delete_post(
     post_id: int,
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     post = await _get_owned_post(db, post_id, current_user)
     post.is_deleted = True
-    await db.commit()
+    db.commit()
 
 
 # ── Comment serialization ────────────────────────────────────────────────────
 async def _serialize_comments(
-    db: AsyncSession, comments: list[ForumComment], current_user
+    db: Session, comments: list[ForumComment], current_user
 ) -> list[CommentOut]:
     if not comments:
         return []
     ids = [c.id for c in comments]
     like_counts = dict(
         (
-            await db.execute(
+            db.execute(
                 select(ForumReaction.comment_id, func.count(ForumReaction.id))
                 .where(ForumReaction.comment_id.in_(ids))
                 .group_by(ForumReaction.comment_id)
@@ -511,7 +511,7 @@ async def _serialize_comments(
     )
     liked_by_me = set(
         (
-            await db.execute(
+            db.execute(
                 select(ForumReaction.comment_id).where(
                     ForumReaction.comment_id.in_(ids),
                     ForumReaction.user_id == current_user.id,
@@ -546,10 +546,10 @@ async def _serialize_comments(
 async def list_comments(
     post_id: int,
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     post = (
-        await db.execute(select(ForumPost).where(ForumPost.id == post_id, ForumPost.is_deleted.is_(False)))
+        db.execute(select(ForumPost).where(ForumPost.id == post_id, ForumPost.is_deleted.is_(False)))
     ).scalar_one_or_none()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found.")
@@ -557,7 +557,7 @@ async def list_comments(
 
     comments = list(
         (
-            await db.execute(
+            db.execute(
                 select(ForumComment)
                 .where(ForumComment.post_id == post_id, ForumComment.is_deleted.is_(False))
                 .options(selectinload(ForumComment.author), selectinload(ForumComment.attachments))
@@ -573,10 +573,10 @@ async def create_comment(
     post_id: int,
     payload: CommentCreate,
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     post = (
-        await db.execute(select(ForumPost).where(ForumPost.id == post_id, ForumPost.is_deleted.is_(False)))
+        db.execute(select(ForumPost).where(ForumPost.id == post_id, ForumPost.is_deleted.is_(False)))
     ).scalar_one_or_none()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found.")
@@ -586,7 +586,7 @@ async def create_comment(
 
     if payload.parent_comment_id is not None:
         parent = (
-            await db.execute(
+            db.execute(
                 select(ForumComment).where(
                     ForumComment.id == payload.parent_comment_id,
                     ForumComment.post_id == post_id,
@@ -604,12 +604,12 @@ async def create_comment(
         body=payload.body,
     )
     db.add(comment)
-    await db.flush()
+    db.flush()
     await _link_attachments(db, payload.attachment_ids, current_user.id, comment_id=comment.id)
-    await db.commit()
+    db.commit()
 
     comment = (
-        await db.execute(
+        db.execute(
             select(ForumComment)
             .where(ForumComment.id == comment.id)
             .options(selectinload(ForumComment.author), selectinload(ForumComment.attachments))
@@ -618,9 +618,9 @@ async def create_comment(
     return (await _serialize_comments(db, [comment], current_user))[0]
 
 
-async def _get_owned_comment(db: AsyncSession, comment_id: int, current_user) -> ForumComment:
+async def _get_owned_comment(db: Session, comment_id: int, current_user) -> ForumComment:
     comment = (
-        await db.execute(
+        db.execute(
             select(ForumComment)
             .where(ForumComment.id == comment_id, ForumComment.is_deleted.is_(False))
             .options(selectinload(ForumComment.author), selectinload(ForumComment.attachments))
@@ -638,12 +638,12 @@ async def update_comment(
     comment_id: int,
     payload: CommentUpdate,
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     comment = await _get_owned_comment(db, comment_id, current_user)
     comment.body = payload.body
-    await db.commit()
-    await db.refresh(comment)
+    db.commit()
+    db.refresh(comment)
     return (await _serialize_comments(db, [comment], current_user))[0]
 
 
@@ -651,19 +651,19 @@ async def update_comment(
 async def delete_comment(
     comment_id: int,
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     comment = await _get_owned_comment(db, comment_id, current_user)
     comment.is_deleted = True
-    await db.commit()
+    db.commit()
 
 
 # ── Reactions ────────────────────────────────────────────────────────────────
 async def _toggle_reaction(
-    db: AsyncSession, current_user, *, post_id: Optional[int] = None, comment_id: Optional[int] = None
+    db: Session, current_user, *, post_id: Optional[int] = None, comment_id: Optional[int] = None
 ) -> ReactionResponse:
     existing = (
-        await db.execute(
+        db.execute(
             select(ForumReaction).where(
                 ForumReaction.user_id == current_user.id,
                 ForumReaction.post_id.is_(post_id) if post_id is None else ForumReaction.post_id == post_id,
@@ -676,17 +676,17 @@ async def _toggle_reaction(
     ).scalar_one_or_none()
 
     if existing:
-        await db.delete(existing)
+        db.delete(existing)
         liked = False
     else:
         db.add(
             ForumReaction(post_id=post_id, comment_id=comment_id, user_id=current_user.id, reaction="like")
         )
         liked = True
-    await db.commit()
+    db.commit()
 
     count_filter = ForumReaction.post_id == post_id if post_id else ForumReaction.comment_id == comment_id
-    count = (await db.execute(select(func.count(ForumReaction.id)).where(count_filter))).scalar_one()
+    count = (db.execute(select(func.count(ForumReaction.id)).where(count_filter))).scalar_one()
     return ReactionResponse(liked=liked, like_count=count)
 
 
@@ -694,10 +694,10 @@ async def _toggle_reaction(
 async def toggle_post_like(
     post_id: int,
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     post = (
-        await db.execute(select(ForumPost).where(ForumPost.id == post_id, ForumPost.is_deleted.is_(False)))
+        db.execute(select(ForumPost).where(ForumPost.id == post_id, ForumPost.is_deleted.is_(False)))
     ).scalar_one_or_none()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found.")
@@ -709,10 +709,10 @@ async def toggle_post_like(
 async def toggle_comment_like(
     comment_id: int,
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     comment = (
-        await db.execute(
+        db.execute(
             select(ForumComment).where(ForumComment.id == comment_id, ForumComment.is_deleted.is_(False))
         )
     ).scalar_one_or_none()

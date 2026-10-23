@@ -438,7 +438,7 @@ def test_saved_azure_key_is_only_reused_for_the_same_endpoint():
 
     from fastapi import HTTPException
 
-    from api import ai_routes
+    from app.modules.workspace import assistant_router as ai_routes
 
     user = SimpleNamespace(settings_json={"ai_assistant": {
         "provider": "azure_openai", "api_key": "saved-key", "model": "gpt-5-mini", "endpoint": AZURE}})
@@ -460,7 +460,7 @@ def test_azure_deployment_must_be_in_the_allowed_list():
 
     from fastapi import HTTPException
 
-    from api import ai_routes
+    from app.modules.workspace import assistant_router as ai_routes
 
     assert ai.PROVIDERS["azure_openai"]["models"] == [
         "gpt-4.1", "gpt-4o-mini", "gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-5.4", "gpt-5.6-terra", "o4-mini"]
@@ -480,7 +480,7 @@ def test_change_review_apply_partial_and_reject(tmp_path, monkeypatch):
 
     from fastapi import HTTPException
 
-    from api import ai_routes
+    from app.modules.workspace import assistant_router as ai_routes
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -493,7 +493,7 @@ def test_change_review_apply_partial_and_reject(tmp_path, monkeypatch):
     conversation["messages"].append(message)
     store.save(conversation)
     monkeypatch.setattr(ai_routes, "check_organization_member", lambda user: None)
-    monkeypatch.setattr(ai_routes, "_legacy_project_or_404", lambda db, pid: None)
+    monkeypatch.setattr(ai_routes, "get_project_or_404", lambda db, pid: None)
     monkeypatch.setattr(ai_routes, "require_checkout", lambda user, pid: repo)
     monkeypatch.setattr(ai_routes, "_repo_or_none", lambda user, pid: repo)
     monkeypatch.setattr(ai_routes, "_store", lambda user, pid: store)

@@ -12,16 +12,11 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from api.project_routes import (
-    _legacy_project_or_404,
-    _require_editor,
-    _user_settings,
-    check_organization_member,
-)
 from app.core.db import get_db
 from app.core.deps import get_current_user
 from app.modules.projects.checkouts import require_checkout
 from app.modules.projects.models import AnalyticsRun, AnalyticsSuite
+from app.modules.projects.service import check_organization_member, get_project_or_404, require_editor, user_settings
 from app.services import ai_project_service as project_ai
 from app.services import ai_provider_service as providers
 from app.services import rbi_gateway_service as rbi_gateway
@@ -67,13 +62,13 @@ _pending_rbi_logins: dict[int, rbi_gateway.PendingLogin] = {}
 
 
 def _stored_settings(user) -> dict:
-    data = _user_settings(user).get("ai_assistant")
+    data = user_settings(user).get("ai_assistant")
     return data if isinstance(data, dict) else {}
 
 
 def _save_settings(db: Session, user, settings: dict | None) -> None:
     _models_cache.pop(user.id, None)
-    data = _user_settings(user)
+    data = user_settings(user)
     if settings is None:
         data.pop("ai_assistant", None)
     else:
@@ -400,7 +395,7 @@ async def _analysis(repo: Path, refresh: bool = False) -> dict:
 async def get_project_ai_analysis(project_id: int, refresh: bool = False, current_user=Depends(get_current_user),
                                   db: Session = Depends(get_db)):
     check_organization_member(current_user)
-    _legacy_project_or_404(db, project_id)
+    get_project_or_404(db, project_id)
     return await _analysis(require_checkout(current_user, project_id), refresh)
 
 
@@ -455,7 +450,7 @@ class ConversationCreate(BaseModel):
 async def list_ai_conversations(project_id: int, current_user=Depends(get_current_user),
                                 db: Session = Depends(get_db)):
     check_organization_member(current_user)
-    _legacy_project_or_404(db, project_id)
+    get_project_or_404(db, project_id)
     return {"conversations": _store(current_user, project_id).list()}
 
 
@@ -463,7 +458,7 @@ async def list_ai_conversations(project_id: int, current_user=Depends(get_curren
 async def create_ai_conversation(project_id: int, payload: ConversationCreate = ConversationCreate(),
                                  current_user=Depends(get_current_user), db: Session = Depends(get_db)):
     check_organization_member(current_user)
-    _legacy_project_or_404(db, project_id)
+    get_project_or_404(db, project_id)
     return _store(current_user, project_id).create(payload.title)
 
 
@@ -471,7 +466,7 @@ async def create_ai_conversation(project_id: int, payload: ConversationCreate = 
 async def get_ai_conversation(project_id: int, conversation_id: str, current_user=Depends(get_current_user),
                               db: Session = Depends(get_db)):
     check_organization_member(current_user)
-    _legacy_project_or_404(db, project_id)
+    get_project_or_404(db, project_id)
     data = _call(_store(current_user, project_id).load, conversation_id)
     repo = _repo_or_none(current_user, project_id)
     return await asyncio.to_thread(_public_conversation, data, repo)
@@ -481,7 +476,7 @@ async def get_ai_conversation(project_id: int, conversation_id: str, current_use
 async def delete_ai_conversation(project_id: int, conversation_id: str, current_user=Depends(get_current_user),
                                  db: Session = Depends(get_db)):
     check_organization_member(current_user)
-    _legacy_project_or_404(db, project_id)
+    get_project_or_404(db, project_id)
     _call(_store(current_user, project_id).delete, conversation_id)
     return {"deleted": True}
 
@@ -527,7 +522,7 @@ async def send_ai_message(project_id: int, conversation_id: str, payload: ChatMe
                           current_user=Depends(get_current_user), db: Session = Depends(get_db)):
     """Store the user's message and stream the assistant's answer as NDJSON events."""
     check_organization_member(current_user)
-    _legacy_project_or_404(db, project_id)
+    get_project_or_404(db, project_id)
     if not payload.content.strip() and not payload.run_id:
         raise HTTPException(status_code=400, detail="Write a message first.")
     if not _settings_response(current_user)["configured"]:
@@ -626,8 +621,8 @@ def _find_change(conversation: dict, message_id: str, path: str) -> dict:
 async def apply_ai_change(project_id: int, conversation_id: str, payload: ChangeRequest,
                           current_user=Depends(get_current_user), db: Session = Depends(get_db)):
     check_organization_member(current_user)
-    _require_editor(current_user)
-    _legacy_project_or_404(db, project_id)
+    require_editor(current_user)
+    get_project_or_404(db, project_id)
     repo = require_checkout(current_user, project_id)
     store = _store(current_user, project_id)
     conversation = _call(store.load, conversation_id)
@@ -648,8 +643,8 @@ async def apply_ai_change(project_id: int, conversation_id: str, payload: Change
 async def undo_ai_change(project_id: int, conversation_id: str, payload: ChangeRequest,
                          current_user=Depends(get_current_user), db: Session = Depends(get_db)):
     check_organization_member(current_user)
-    _require_editor(current_user)
-    _legacy_project_or_404(db, project_id)
+    require_editor(current_user)
+    get_project_or_404(db, project_id)
     repo = require_checkout(current_user, project_id)
     store = _store(current_user, project_id)
     conversation = _call(store.load, conversation_id)
@@ -669,7 +664,7 @@ async def get_ai_change_content(project_id: int, conversation_id: str, message_i
                                 current_user=Depends(get_current_user), db: Session = Depends(get_db)):
     """Current file content and the assistant's proposal, for the side-by-side review."""
     check_organization_member(current_user)
-    _legacy_project_or_404(db, project_id)
+    get_project_or_404(db, project_id)
     repo = require_checkout(current_user, project_id)
     change = _find_change(_call(_store(current_user, project_id).load, conversation_id), message_id, path)
     if change.get("state") == "invalid":
@@ -691,8 +686,8 @@ async def reject_ai_change(project_id: int, conversation_id: str, payload: Chang
                            current_user=Depends(get_current_user), db: Session = Depends(get_db)):
     """Discard a proposed change (the file is not touched)."""
     check_organization_member(current_user)
-    _require_editor(current_user)
-    _legacy_project_or_404(db, project_id)
+    require_editor(current_user)
+    get_project_or_404(db, project_id)
     store = _store(current_user, project_id)
     conversation = _call(store.load, conversation_id)
     change = _find_change(conversation, payload.message_id, payload.path)
@@ -727,7 +722,7 @@ async def open_project_in_ide(project_id: int, payload: OpenInIdeRequest, curren
     from app.services import ide_service
 
     check_organization_member(current_user)
-    _legacy_project_or_404(db, project_id)
+    get_project_or_404(db, project_id)
     repo = require_checkout(current_user, project_id)
     if payload.path.strip() in ("", "."):
         target, rel = repo, "."
