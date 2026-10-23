@@ -438,10 +438,12 @@ def test_saved_azure_key_is_only_reused_for_the_same_endpoint():
 
     from fastapi import HTTPException
 
-    from api import ai_routes
+    from app.modules.settings.connections import set_json
+    from app.modules.workspace import assistant_router as ai_routes
 
-    user = SimpleNamespace(settings_json={"ai_assistant": {
-        "provider": "azure_openai", "api_key": "saved-key", "model": "gpt-5-mini", "endpoint": AZURE}})
+    user = SimpleNamespace(settings_json={}, connections=[])
+    set_json(user, "ai_assistant", {"provider": "azure_openai", "api_key": "saved-key", "model": "gpt-5-mini",
+                                    "endpoint": AZURE})
     same = ai_routes.AISettingsRequest(provider="azure_openai", endpoint=AZURE + "/", model="gpt-5-mini")
     config = asyncio.run(ai_routes._active_config(user, None, same))
     assert (config.api_key, config.endpoint, config.model) == ("saved-key", AZURE, "gpt-5-mini")
@@ -460,12 +462,12 @@ def test_azure_deployment_must_be_in_the_allowed_list():
 
     from fastapi import HTTPException
 
-    from api import ai_routes
+    from app.modules.workspace import assistant_router as ai_routes
 
     assert ai.PROVIDERS["azure_openai"]["models"] == [
         "gpt-4.1", "gpt-4o-mini", "gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-5.4", "gpt-5.6-terra", "o4-mini"]
     assert ai.PROVIDERS["azure_openai"]["default_model"] in ai.PROVIDERS["azure_openai"]["models"]
-    user = SimpleNamespace(settings_json={})
+    user = SimpleNamespace(settings_json={}, connections=[])
     for model in ai.PROVIDERS["azure_openai"]["models"]:
         request = ai_routes.AISettingsRequest(provider="azure_openai", endpoint=AZURE, model=model, api_key="k")
         assert asyncio.run(ai_routes._active_config(user, None, request)).model == model
@@ -480,7 +482,7 @@ def test_change_review_apply_partial_and_reject(tmp_path, monkeypatch):
 
     from fastapi import HTTPException
 
-    from api import ai_routes
+    from app.modules.workspace import assistant_router as ai_routes
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -493,8 +495,8 @@ def test_change_review_apply_partial_and_reject(tmp_path, monkeypatch):
     conversation["messages"].append(message)
     store.save(conversation)
     monkeypatch.setattr(ai_routes, "check_organization_member", lambda user: None)
-    monkeypatch.setattr(ai_routes, "_legacy_project_or_404", lambda db, pid: None)
-    monkeypatch.setattr(ai_routes, "_linked_checkout", lambda user, pid: repo)
+    monkeypatch.setattr(ai_routes, "get_project_or_404", lambda db, pid: None)
+    monkeypatch.setattr(ai_routes, "require_checkout", lambda user, pid: repo)
     monkeypatch.setattr(ai_routes, "_repo_or_none", lambda user, pid: repo)
     monkeypatch.setattr(ai_routes, "_store", lambda user, pid: store)
     user = SimpleNamespace(id=1, role="editor")

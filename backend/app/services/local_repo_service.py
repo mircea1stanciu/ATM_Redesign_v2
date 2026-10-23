@@ -15,18 +15,15 @@ import shutil
 from pathlib import Path
 from urllib.parse import quote, urlparse, urlunparse
 
-from app.core.config import settings
-
 
 class LocalRepoError(Exception):
     """Raised when a local git operation fails."""
 
 
 def _default_base_dir() -> Path:
-    if settings.LOCAL_REPOS_DIR:
-        return Path(settings.LOCAL_REPOS_DIR).expanduser().resolve()
-    # <backend>/local_repos — this file is backend/app/services/local_repo_service.py
-    return (Path(__file__).resolve().parents[2] / "local_repos").resolve()
+    from app.modules.projects.checkouts import managed_checkouts_dir
+
+    return managed_checkouts_dir()
 
 
 class LocalRepoService:

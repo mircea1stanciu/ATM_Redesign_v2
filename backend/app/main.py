@@ -1,73 +1,51 @@
-from contextlib import asynccontextmanager
+"""The ATM backend: one FastAPI application that mounts every module's router."""
+import logging
+from datetime import datetime
 from pathlib import Path
 
-# Use the OS-native certificate trust store (macOS Keychain / Windows Cert
-# Store / Linux openssl) for all outbound TLS connections (httpx, etc.)
-# instead of the bundled `certifi` CA list. This is required on corporate
-# networks that intercept public HTTPS traffic (e.g. github.com) with a
-# TLS-inspecting proxy (Zscaler, etc.) whose root CA is trusted by the OS
-# but not by certifi, which otherwise causes CERTIFICATE_VERIFY_FAILED
-# errors when calling out to GitHub/Jira from Settings > Test Connection.
-# import truststore
-# truststore.inject_into_ssl()
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
-from app.core.config import settings
+from app.core.config import BACKEND_DIR, settings
+from app.core.db import SessionLocal
+from app.core.migrations import upgrade_database
+from app.core.rate_limit import limiter
+from app.modules.identity.router import router as identity_router
+from app.modules.identity.service import get_default_organization, seed_dev_admin
+from app.modules.learning.community_router import router as community_router
+from app.modules.projects.router import router as projects_router
+from app.modules.reporting.router import router as reporting_router
+from app.modules.settings.account_router import router as account_settings_router
+from app.modules.settings.router import router as connections_router
+from app.modules.testing.devices_router import router as devices_router
+from app.modules.testing.router import router as testing_router
+from app.modules.testing.router import runs_router
+from app.modules.testing.runs import resume_orphaned_manual_runs
+from app.modules.work.tasks_router import router as tasks_router
+from app.modules.work.test_manager_router import router as test_manager_router
+from app.modules.work.zephyr_planner_router import router as zephyr_planner_router
+from app.modules.workspace.assistant_router import router as assistant_router
+from app.modules.workspace.router import router as workspace_router
 
-FRONTEND_DIST = Path(__file__).parent.parent.parent / "frontend" / "dist"
-# Phase 4-5 profile/settings/billing endpoints ported from the legacy backend.
-# These use the synchronous ``core.database`` session and coexist with the async
-# ``app`` routers (FastAPI runs sync dependencies in a threadpool). The native
-# app integrations router is intentionally NOT used: it targets app.models
-# tables (plural names) that don't exist in the live DB; the ported router
-# targets the core.database tables (singular names) that do.
-from api import auth_profile_routes, settings_routes
-from app.api.v1.endpoints import auth, badges, projects, reports, runs, suites, webhooks
-from app.api.v1.endpoints import community as community_router
-from app.api.v1.endpoints import devices as devices_router
-from app.api.v1.endpoints import settings as settings_router
-from app.api.v1.endpoints import tasks as tasks_router
-from app.api.v1.endpoints import test_manager as test_manager_router
-from app.api.v1.endpoints import zephyr_planner as zephyr_planner_router
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    yield
-    # shutdown
-
-
-app = FastAPI(
-    title="AutomationTestManager (ATM) API",
-    version="1.0.0",
-    description=(
-        "REST API pentru **AutomationTestManager** — platformă de management şi execuţie "
-        "a testelor automate.\n\n"
-        "## Autentificare\n"
-        "Foloseşte **Bearer JWT** obţinut de la `/api/v1/auth/login`.\n\n"
-        "## Webhook-uri\n"
-        "Endpoint-urile `/api/v1/webhooks/github/{project_id}` şi "
-        "`/api/v1/webhooks/gitlab/{project_id}` permit declanşarea automată "
-        "a rulărilor la push/PR — nu necesită autentificare, dar verifică semnătura HMAC.\n\n"
-        "## Badge-uri\n"
-        "Endpoint-ul `/api/v1/badge/project/{project_id}` returnează un SVG "
-        "cu statusul ultimului run — poate fi inclus direct în README."
-    ),
-    openapi_tags=[
-        {"name": "auth",      "description": "Autentificare şi managementul utilizatorilor"},
-        {"name": "projects",  "description": "Proiecte şi configuraţii"},
-        {"name": "suites",    "description": "Suite de teste şi scheduler"},
-        {"name": "runs",      "description": "Rulări de teste şi rezultate"},
-        {"name": "reports",   "description": "Rapoarte şi statistici"},
-        {"name": "webhooks",  "description": "Webhook-uri GitHub / GitLab (public, verificat HMAC)"},
-        {"name": "badges",    "description": "Badge-uri SVG pentru status run (public)"},
-    ],
-    lifespan=lifespan,
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.FileHandler(BACKEND_DIR / "auth_audit.log"), logging.StreamHandler()],
 )
 
+FRONTEND_DIST = BACKEND_DIR.parent / "frontend" / "dist"
+
+app = FastAPI(
+    title="ATM API",
+    description="AutomationTestManager: run, review and report automated tests.",
+    version="3.0.0",
+)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -76,44 +54,73 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth.router,      prefix="/api/v1/auth",      tags=["auth"])
-app.include_router(projects.router,  prefix="/api/v1/projects",  tags=["projects"])
-# Legacy compatibility aliases used by the frontend when it talks to the v1
-# backend while still expecting the older /api/* route contract.
-app.include_router(projects.router,  prefix="/api/projects",    tags=["projects-compat"])
-app.include_router(suites.router,    prefix="/api/v1/suites",    tags=["suites"])
-app.include_router(runs.router,      prefix="/api/v1/runs",      tags=["runs"])
-app.include_router(reports.router,   prefix="/api/v1/reports",   tags=["reports"])
-app.include_router(webhooks.router,  prefix="/api/v1/webhooks",  tags=["webhooks"])
-app.include_router(badges.router,          prefix="/api/v1/badge",     tags=["badges"])
-app.include_router(settings_router.router,     prefix="/api/v1/settings",      tags=["settings"])
-app.include_router(settings_router.router,     prefix="/api/settings",         tags=["settings-compat"])
-app.include_router(test_manager_router.router, prefix="/api/v1/test-manager", tags=["test-manager"])
-app.include_router(tasks_router.router,        prefix="/api/v1/tasks",        tags=["tasks"])
-app.include_router(zephyr_planner_router.router, prefix="/api/v1/zephyr-planner", tags=["zephyr-planner"])
-app.include_router(community_router.router,    prefix="/api/v1/community",    tags=["community"])
-app.include_router(devices_router.router,      prefix="/api/v1/devices",      tags=["devices"])
-app.include_router(devices_router.router,      prefix="/api/devices",         tags=["devices-compat"])
 
-# Phase 4-5 ported routers (sync core.database). Mounted under /api/v1 to match
-# the frontend contract: profile management, security/preferences/privacy
-# settings, and data/integrations/subscription/billing.
-app.include_router(auth_profile_routes.router, prefix="/api/v1/auth", tags=["profile"])
-app.include_router(settings_routes.router,     prefix="/api/v1")
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline';"
+    )
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    return response
 
 
-@app.get("/health")
+app.include_router(identity_router, tags=["Identity"])
+app.include_router(projects_router)
+app.include_router(workspace_router)
+app.include_router(testing_router)
+app.include_router(reporting_router)
+app.include_router(runs_router)
+app.include_router(assistant_router)
+# Account settings (security, preferences, filters, Confluence) are matched before the connection settings.
+app.include_router(account_settings_router, prefix="/api")
+app.include_router(connections_router, prefix="/api/settings", tags=["Settings"])
+app.include_router(devices_router, prefix="/api/devices", tags=["Devices"])
+app.include_router(test_manager_router, prefix="/api/test-manager", tags=["Work"])
+app.include_router(tasks_router, prefix="/api/tasks", tags=["Work"])
+app.include_router(zephyr_planner_router, prefix="/api/zephyr-planner", tags=["Work"])
+app.include_router(community_router, prefix="/api/community", tags=["Learning"])
+
+
+@app.get("/api/health", tags=["Health"])
 async def health_check():
-    return {"status": "ok", "version": "0.1.0"}
+    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
 
-# ── Serve React SPA ──────────────────────────────────────────────────────────
+def prepare_database() -> None:
+    """Apply pending migrations, then make sure the default organization (and dev admin) exist."""
+    upgrade_database()
+    db = SessionLocal()
+    try:
+        get_default_organization(db)
+        seed_dev_admin(db)
+    finally:
+        db.close()
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Prepare the database and re-attach long-running executions started before a restart."""
+    prepare_database()
+    try:
+        await resume_orphaned_manual_runs()
+    except Exception as exc:
+        print(f"❌ Failed to resume running executions: {exc}")
+
+
+# Serve the built React app (Docker image). Registered last so it never shadows an API route.
 if FRONTEND_DIST.exists():
     app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_spa(full_path: str):
-        file = FRONTEND_DIST / full_path
-        if file.is_file():
+        if full_path == "api" or full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not Found")
+        file = (FRONTEND_DIST / full_path).resolve()
+        if file.is_file() and Path(FRONTEND_DIST.resolve()) in file.parents:
             return FileResponse(file)
         return FileResponse(FRONTEND_DIST / "index.html")

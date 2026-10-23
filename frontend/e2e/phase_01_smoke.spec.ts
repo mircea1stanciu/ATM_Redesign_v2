@@ -80,8 +80,9 @@ test.describe('main screens', () => {
     await page.goto('/projects/ai')
     await page.getByRole('button', { name: 'AI Assistant' }).click()
     await expect(page).toHaveURL(/\/projects\/ai\?tab=assistant$/)
-    // The sample project has no local copy yet, so the assistant explains how to link one.
-    await expect(page.getByText("The assistant works on the project's local copy")).toBeVisible()
+    // The sample project's checkout is linked (seed), so the workspace opens; no AI provider is connected.
+    await expect(page.getByText('README.md', { exact: true })).toBeVisible()
+    await expect(page.getByText('Connect an AI provider first')).toBeVisible()
   })
 
   test('Settings shows the profile and the connections', async ({ page }) => {

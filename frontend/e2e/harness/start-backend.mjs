@@ -1,7 +1,8 @@
-// Starts the real backend for the UI tests: a fresh SQLite database, one seeded user per role, a free port.
+// Starts the real backend for the UI tests: a fresh SQLite database, one seeded user per role, a sample project
+// whose repository lives in the fake GitHub (fake-services.mjs), and a free port.
 // Playwright runs this as a webServer (see playwright.config.ts) and stops it when the run ends.
 import { execFileSync, spawn } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -10,8 +11,10 @@ const here = dirname(fileURLToPath(import.meta.url))
 const backendDir = resolve(here, '../../../backend')
 const sessionsFile = process.env.E2E_SESSIONS_FILE
 const port = process.env.E2E_BACKEND_PORT
-if (!sessionsFile || !port) {
-  console.error('E2E_SESSIONS_FILE and E2E_BACKEND_PORT are set by playwright.config.ts')
+const fakeRoot = process.env.E2E_FAKE_ROOT
+const fakePort = process.env.E2E_FAKE_PORT
+if (!sessionsFile || !port || !fakeRoot || !fakePort) {
+  console.error('E2E_SESSIONS_FILE, E2E_BACKEND_PORT, E2E_FAKE_ROOT and E2E_FAKE_PORT are set by playwright.config.ts')
   process.exit(1)
 }
 
@@ -19,6 +22,29 @@ const venvPython = join(backendDir, '.venv', 'bin', 'python')
 const python = process.env.ATM_PYTHON || (existsSync(venvPython) ? venvPython : 'python3')
 
 const workDir = mkdtempSync(join(tmpdir(), 'atm-e2e-'))
+
+// Sample repository: a bare "GitHub" repository served by the fake services, and the user's checkout of it.
+const git = (args, cwd) => execFileSync('git', ['-c', 'user.name=ATM E2E', '-c', 'user.email=e2e@atm.test', ...args],
+  { cwd, stdio: 'pipe' })
+const repoUrl = `http://127.0.0.1:${fakePort}/e2e/sample.git`
+const bareRepo = join(fakeRoot, 'e2e', 'sample.git')
+rmSync(fakeRoot, { recursive: true, force: true })
+mkdirSync(bareRepo, { recursive: true })
+git(['init', '--bare', '--initial-branch=main', bareRepo])
+git(['config', 'http.receivepack', 'true'], bareRepo)
+const seedTree = join(workDir, 'seed-tree')
+mkdirSync(join(seedTree, 'scripts'), { recursive: true })
+writeFileSync(join(seedTree, 'README.md'), '# E2E sample\n')
+writeFileSync(join(seedTree, 'scripts', 'hello.sh'), '#!/usr/bin/env bash\necho "hello from ATM e2e"\n')
+chmodSync(join(seedTree, 'scripts', 'hello.sh'), 0o755)
+git(['init', '--initial-branch=main'], seedTree)
+git(['add', '.'], seedTree)
+git(['commit', '-m', 'Initial sample'], seedTree)
+git(['push', bareRepo, 'main'], seedTree)
+const checkout = join(workDir, 'checkout')
+git(['clone', bareRepo, checkout])
+git(['remote', 'set-url', 'origin', repoUrl], checkout)
+
 const env = {
   ...process.env,
   ATM_DATABASE_PATH: join(workDir, 'e2e.db'),
@@ -26,6 +52,8 @@ const env = {
   HOST: '127.0.0.1',
   PORT: port,
   PYTHONUNBUFFERED: '1',
+  E2E_REPO_URL: repoUrl,
+  E2E_CHECKOUT_DIR: checkout,
 }
 
 mkdirSync(dirname(sessionsFile), { recursive: true })
@@ -40,5 +68,6 @@ process.on('SIGINT', stop)
 process.on('SIGTERM', stop)
 server.on('exit', code => {
   rmSync(workDir, { recursive: true, force: true })
+  rmSync(fakeRoot, { recursive: true, force: true })
   process.exit(code ?? 0)
 })

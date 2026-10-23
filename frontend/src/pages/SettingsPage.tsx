@@ -535,11 +535,12 @@ function JiraMcpPanel({ canEditConnection, canEditBaseUrl, canManageProject }: {
             )}
 
             <div>
-              <label className="mb-1.5 block text-xs font-semibold text-gray-700 dark:text-gray-300">
+              <label htmlFor="jira-token" className="mb-1.5 block text-xs font-semibold text-gray-700 dark:text-gray-300">
                 Jira Token
                 <span className="ml-1 font-normal text-gray-400">(leave blank to keep existing)</span>
               </label>
               <input
+                id="jira-token"
                 type="password"
                 value={pendingToken}
                 onChange={e => setPendingToken(e.target.value)}
@@ -550,10 +551,11 @@ function JiraMcpPanel({ canEditConnection, canEditBaseUrl, canManageProject }: {
             </div>
 
             <div>
-              <label className="mb-1.5 block text-xs font-semibold text-gray-700 dark:text-gray-300">
+              <label htmlFor="jira-base-url" className="mb-1.5 block text-xs font-semibold text-gray-700 dark:text-gray-300">
                 Jira Base URL
               </label>
               <input
+                id="jira-base-url"
                 type="text"
                 value={pendingBaseUrl}
                 onChange={e => setPendingBaseUrl(e.target.value)}
@@ -912,11 +914,12 @@ function ConfluenceMcpPanel({ canEditConnection, canEditBaseUrl, canManageSpace 
             )}
 
             <div>
-              <label className="mb-1.5 block text-xs font-semibold text-gray-700 dark:text-gray-300">
+              <label htmlFor="confluence-token" className="mb-1.5 block text-xs font-semibold text-gray-700 dark:text-gray-300">
                 Confluence Token
                 <span className="ml-1 font-normal text-gray-400">(leave blank to keep existing)</span>
               </label>
               <input
+                id="confluence-token"
                 type="password"
                 value={pendingToken}
                 onChange={e => setPendingToken(e.target.value)}
@@ -927,10 +930,11 @@ function ConfluenceMcpPanel({ canEditConnection, canEditBaseUrl, canManageSpace 
             </div>
 
             <div>
-              <label className="mb-1.5 block text-xs font-semibold text-gray-700 dark:text-gray-300">
+              <label htmlFor="confluence-base-url" className="mb-1.5 block text-xs font-semibold text-gray-700 dark:text-gray-300">
                 Confluence Base URL
               </label>
               <input
+                id="confluence-base-url"
                 type="text"
                 value={pendingBaseUrl}
                 onChange={e => setPendingBaseUrl(e.target.value)}

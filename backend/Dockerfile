@@ -3,7 +3,7 @@ FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
-# Dependenţe OS minimale
+# Minimal OS packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential libpq-dev \
     && rm -rf /var/lib/apt/lists/*
@@ -24,7 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /install /usr/local
 COPY . .
 
-# Utilizator non-root
+# Non-root user
 RUN addgroup --system app && adduser --system --ingroup app app
 USER app
 

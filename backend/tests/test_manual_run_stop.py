@@ -12,7 +12,7 @@ SLEEPER = "import time; print('started', flush=True); time.sleep(60)"
 
 @pytest.fixture
 def routes(monkeypatch, tmp_path):
-    import api.project_routes as module
+    import app.modules.testing.runs as module
 
     recorded = {"statuses": [], "logs": []}
 

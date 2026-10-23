@@ -11,7 +11,8 @@ import httpx
 import pytest
 from fastapi import HTTPException
 
-from api import ai_routes
+from app.modules.settings.connections import get_json, set_json
+from app.modules.workspace import assistant_router as ai_routes
 from app.services import ai_provider_service as ai
 from app.services import rbi_gateway_service as gw
 
@@ -162,8 +163,14 @@ _DB = SimpleNamespace(commit=lambda: None, refresh=lambda _user: None)
 
 
 def _user(**stored):
-    return SimpleNamespace(id=7, settings_json={"ai_assistant": {"provider": "rbi_genai", "environment": "uat",
-                                                                 "model": "claude-opus-4-8", **stored}})
+    user = SimpleNamespace(id=7, settings_json={}, connections=[])
+    stored = {"provider": "rbi_genai", "environment": "uat", "model": "claude-opus-4-8", **stored}
+    set_json(user, "ai_assistant", stored)
+    return user
+
+
+def _ai(user) -> dict:
+    return get_json(user, "ai_assistant")
 
 
 def test_active_config_uses_the_environment_and_refreshes_expired_tokens(monkeypatch):
@@ -182,7 +189,7 @@ def test_active_config_uses_the_environment_and_refreshes_expired_tokens(monkeyp
     user = _user(access_token="OLD", refresh_token="RT1", expires_at=time.time() - 10)
     config = asyncio.run(ai_routes._active_config(user, _DB))
     assert config.api_key == "NEW" and calls == [("uat", "RT1")]
-    assert user.settings_json["ai_assistant"]["refresh_token"] == "RT2"
+    assert _ai(user)["refresh_token"] == "RT2"
 
 
 def test_expired_refresh_token_asks_to_sign_in_again(monkeypatch):
@@ -201,7 +208,7 @@ def test_saving_only_changes_the_model_and_keeps_the_sign_in():
     request = ai_routes.AISettingsRequest(provider="rbi_genai", model="claude-sonnet-4-6")
     response = asyncio.run(ai_routes.save_ai_settings(request, user, _DB))
     assert response["configured"] and response["model"] == "claude-sonnet-4-6" and response["environment"] == "uat"
-    assert user.settings_json["ai_assistant"]["access_token"] == "TOKEN"
+    assert _ai(user)["access_token"] == "TOKEN"
     assert "TOKEN" not in json.dumps(response)  # tokens are never sent back to the browser
 
 
@@ -224,7 +231,7 @@ def test_models_endpoint_detects_and_caches_the_connection_models(monkeypatch):
 
 
 def test_models_endpoint_without_a_connection():
-    user = SimpleNamespace(id=8, settings_json={})
+    user = SimpleNamespace(id=8, settings_json={}, connections=[])
     response = asyncio.run(ai_routes.list_ai_models(False, user, _DB))
     assert response == {"ok": False, "message": "Connect an AI provider in Settings › AI Assistant first.",
                         "models": []}
@@ -240,8 +247,8 @@ def test_switching_model_checks_it_against_the_detected_models(monkeypatch):
     request = ai_routes.ModelSwitchRequest(model="claude-sonnet-4-6")
     response = asyncio.run(ai_routes.switch_ai_model(request, user, _DB))
     assert response["model"] == "claude-sonnet-4-6" and response["configured"]
-    assert user.settings_json["ai_assistant"]["access_token"] == "TOKEN"
+    assert _ai(user)["access_token"] == "TOKEN"
     assert user.id in ai_routes._models_cache  # the detected models stay cached for the same connection
     with pytest.raises(HTTPException) as exc:
         asyncio.run(ai_routes.switch_ai_model(ai_routes.ModelSwitchRequest(model="gpt-unknown"), user, _DB))
-    assert exc.value.status_code == 400 and user.settings_json["ai_assistant"]["model"] == "claude-sonnet-4-6"
+    assert exc.value.status_code == 400 and _ai(user)["model"] == "claude-sonnet-4-6"

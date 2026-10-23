@@ -184,6 +184,7 @@ export default function PublishPanel({ projectId }: PublishPanelProps) {
             value={newBranch}
             onChange={e => setNewBranch(e.target.value)}
             placeholder="feature/my-change"
+            aria-label="New branch name"
             className="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-700 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
           />
           <button
@@ -203,6 +204,7 @@ export default function PublishPanel({ projectId }: PublishPanelProps) {
             value={commitMsg}
             onChange={e => setCommitMsg(e.target.value)}
             placeholder="Describe your change"
+            aria-label="Commit message"
             className="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-700 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
           />
           <button
@@ -254,6 +256,7 @@ export default function PublishPanel({ projectId }: PublishPanelProps) {
             <select
               value={prBase}
               onChange={e => setPrBase(e.target.value)}
+              aria-label="Base branch"
               className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
             >
               {branches.map(b => (
@@ -266,12 +269,14 @@ export default function PublishPanel({ projectId }: PublishPanelProps) {
             value={prTitle}
             onChange={e => setPrTitle(e.target.value)}
             placeholder="Pull request title"
+            aria-label="Pull request title"
             className="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-700 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
           />
           <textarea
             value={prBody}
             onChange={e => setPrBody(e.target.value)}
             placeholder="Description (optional)"
+            aria-label="Pull request description"
             rows={3}
             className="w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-700 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
           />

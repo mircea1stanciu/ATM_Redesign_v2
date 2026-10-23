@@ -1,46 +1,41 @@
-import hashlib
-from datetime import datetime, timedelta, timezone
+"""Access tokens (JWT, HS256) and password hashing."""
+from datetime import datetime, timedelta
+from typing import Optional
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 from app.core.config import settings
 
-# bcrypt are o limită de 72 bytes; pre-hash-uim cu SHA-256 (hex = 64 chars)
-# pentru a evita trunchierile silențioase sau erorile explicite.
+ALGORITHM = "HS256"
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
-def _prehash(password: str) -> str:
-    """Returnează hex SHA-256 al parolei — mereu < 72 bytes pentru bcrypt."""
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
-
-ALGORITHM = "HS256"
-
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(_prehash(plain_password), hashed_password)
-
-
-def get_password_hash(password: str) -> str:
-    return pwd_context.hash(_prehash(password))
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+    """Create an access token. `data` carries user_id, username, role and organization_id."""
+    to_encode = data.copy()
+    if to_encode.get("user_id") is not None:
+        to_encode.setdefault("sub", str(to_encode["user_id"]))
+        to_encode.setdefault("type", "access")
+    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
 
 
-def create_access_token(subject: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    payload = {"sub": subject, "exp": expire, "type": "access"}
-    return jwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITHM)
-
-
-def create_refresh_token(subject: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
-    payload = {"sub": subject, "exp": expire, "type": "refresh"}
-    return jwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITHM)
-
-
-def decode_token(token: str) -> dict:
+def decode_token(token: str) -> Optional[dict]:
+    """Return the token's claims, or None when it is invalid or expired."""
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
-        return payload
+        return jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
     except JWTError:
-        return {}
+        return None
+
+
+def token_user_id(payload: dict) -> Optional[int]:
+    """User id of a token: the user_id claim, or sub for tokens issued by the removed second backend."""
+    raw = payload.get("user_id")
+    if raw is None and payload.get("type") == "access":
+        raw = payload.get("sub")
+    try:
+        return int(raw) if raw is not None else None
+    except (TypeError, ValueError):
+        return None

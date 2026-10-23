@@ -1,7 +1,14 @@
+import enum
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from app.models.models import TestStatus
+
+class TestStatus(str, enum.Enum):
+    passed = "passed"
+    failed = "failed"
+    skipped = "skipped"
+    error = "error"
+
 
 
 class JunitParser:

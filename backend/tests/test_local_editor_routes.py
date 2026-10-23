@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from api import project_routes as routes
+from app.modules.workspace import router as routes
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -30,9 +30,9 @@ def repo(tmp_path: Path) -> Path:
 
 def _patch(monkeypatch, repo: Path, role: str = "editor"):
     monkeypatch.setattr(routes, "check_organization_member", lambda user: None)
-    monkeypatch.setattr(routes, "_legacy_project_or_404",
+    monkeypatch.setattr(routes, "get_project_or_404",
                         lambda db, pid: SimpleNamespace(id=pid, github_repo_url=""))
-    monkeypatch.setattr(routes, "_linked_checkout", lambda user, pid: repo)
+    monkeypatch.setattr(routes, "require_checkout", lambda user, pid: repo)
     return SimpleNamespace(id=1, role=role, settings_json={})
 
 

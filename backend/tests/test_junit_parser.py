@@ -1,7 +1,6 @@
 import pytest
 
-from app.models.models import TestStatus
-from app.services.junit_parser import JunitParser, TestResultBuilder
+from app.services.junit_parser import JunitParser, TestResultBuilder, TestStatus
 
 
 class TestJunitParser:

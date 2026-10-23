@@ -143,58 +143,6 @@ function extractErrorMessage(error: unknown): string {
   return error.message || 'Request failed.'
 }
 
-function is404(error: unknown): boolean {
-  return axios.isAxiosError(error) && error.response?.status === 404
-}
-
-function shouldUseLegacyProjectCreate(error: unknown): boolean {
-  if (!axios.isAxiosError(error) || error.response?.status !== 422) return false
-  const detail = error.response?.data?.detail
-  if (!Array.isArray(detail)) return false
-  const missing = new Set(
-    detail
-      .filter((d: any) => d?.type === 'missing' && Array.isArray(d?.loc))
-      .map((d: any) => String(d.loc[d.loc.length - 1])),
-  )
-  return missing.has('key') && missing.has('community_id')
-}
-
-function buildLegacyProjectKey(name: string): string {
-  const cleaned = name
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-  return (cleaned || 'PROJECT').slice(0, 12)
-}
-
-let cachedProjectGithubApiSupport: boolean | null = null
-
-async function hasProjectGithubApi(): Promise<boolean> {
-  if (cachedProjectGithubApiSupport != null) return cachedProjectGithubApiSupport
-  try {
-    const response = await axios.get('/openapi.json', { timeout: 5000 })
-    const paths = response.data?.paths
-    if (!paths || typeof paths !== 'object') {
-      // Schema unreadable (e.g. dev server returned the SPA HTML instead of
-      // proxying /openapi.json) — assume supported; the 404 fallback decides.
-      return true
-    }
-    const hasLegacyPath = Boolean(paths['/api/projects/{project_id}/github'])
-    const hasV1Path = Boolean(paths['/api/v1/projects/{project_id}/github'])
-    cachedProjectGithubApiSupport = hasLegacyPath || hasV1Path
-    return cachedProjectGithubApiSupport
-  } catch {
-    // If detection fails, prefer the modern path and let the request-level
-    // fallback below decide based on 404.
-    cachedProjectGithubApiSupport = true
-    return cachedProjectGithubApiSupport
-  }
-}
-
-function projectGithubUnsupportedError(): Error {
-  return new Error('Per-project GitHub settings are not available on the local legacy backend. Start the v1 backend to use this feature.')
-}
-
 function normalizeUserResponse(user: any): UserResponse {
   return {
     ...user,
@@ -203,15 +151,15 @@ function normalizeUserResponse(user: any): UserResponse {
   }
 }
 
-// Cached across calls so repeated user-management actions don't refetch /auth/me each time.
-let cachedLegacyOrgId: number | null = null
+// The install's single organization; cached so user-management actions don't refetch /auth/me each time.
+let cachedOrganizationId: number | null = null
 
-async function resolveOrgIdForLegacyUserRoutes(): Promise<number> {
-  if (cachedLegacyOrgId != null) return cachedLegacyOrgId
+async function organizationId(): Promise<number> {
+  if (cachedOrganizationId != null) return cachedOrganizationId
   const me = await api.get<any>('/auth/me')
   const orgId = me.data?.organization?.id
-  cachedLegacyOrgId = typeof orgId === 'number' && Number.isFinite(orgId) ? orgId : 1
-  return cachedLegacyOrgId
+  cachedOrganizationId = typeof orgId === 'number' && Number.isFinite(orgId) ? orgId : 1
+  return cachedOrganizationId
 }
 
 export const apiService = {
@@ -243,71 +191,8 @@ export const apiService = {
     return response.data
   },
 
-  async createProject(payload: {
-    name: string
-    description?: string
-    git_repo_url?: string
-    default_branch?: string
-    framework?: string
-  }): Promise<Project> {
-    try {
-      const response = await api.post<Project>('/projects/', {
-        git_provider: 'github',
-        ...payload,
-      })
-      return response.data
-    } catch (error) {
-      if (!shouldUseLegacyProjectCreate(error)) throw error
-
-      const legacyPayload = {
-        key: buildLegacyProjectKey(payload.name),
-        name: payload.name,
-        description: payload.description,
-        community_id: 'general',
-        icon: '📋',
-        color: 'blue',
-      }
-      // The legacy backend needs a unique project key; derive it from the name and
-      // add a numeric suffix if another project already uses it.
-      let legacyResponse: any = null
-      for (let attempt = 1; attempt <= 9 && !legacyResponse; attempt += 1) {
-        const key = attempt === 1 ? legacyPayload.key : `${legacyPayload.key.slice(0, 10)}_${attempt}`
-        try {
-          legacyResponse = await api.post<any>('/projects/', { ...legacyPayload, key })
-        } catch (createError) {
-          const keyTaken = axios.isAxiosError(createError)
-            && createError.response?.status === 400
-            && String(createError.response?.data?.detail || '').includes('key already exists')
-          if (!keyTaken || attempt === 9) throw createError
-        }
-      }
-      const created = legacyResponse.data?.project ?? legacyResponse.data ?? {}
-
-      return {
-        id: String(created.id ?? ''),
-        name: created.name ?? payload.name,
-        description: created.description ?? payload.description ?? null,
-        git_repo_url: payload.git_repo_url ?? '',
-        git_provider: 'github',
-        default_branch: payload.default_branch || 'main',
-        framework: payload.framework || null,
-        config_json: null,
-        created_at: created.created_at || new Date().toISOString(),
-      }
-    }
-  },
-
-  async updateProject(
-    projectId: string,
-    payload: {
-      name?: string
-      description?: string
-      default_branch?: string
-      framework?: string
-      config_json?: Record<string, unknown>
-    },
-  ): Promise<Project> {
-    const response = await api.put<Project>(`/projects/${projectId}`, payload)
+  async createProject(payload: { name: string; description?: string; git_repo_url?: string }): Promise<Project> {
+    const response = await api.post<Project>('/projects/', payload)
     return response.data
   },
 
@@ -330,14 +215,6 @@ export const apiService = {
       active: true,
       ...payload,
     })
-    return response.data
-  },
-
-  async updateSuite(
-    suiteId: string,
-    payload: { name?: string; tags?: string[]; cron_expression?: string | null; active?: boolean },
-  ): Promise<TestSuite> {
-    const response = await api.put<TestSuite>(`/suites/${suiteId}`, payload)
     return response.data
   },
 
@@ -390,10 +267,6 @@ export const apiService = {
     await api.delete(`/runs/${runId}`)
   },
 
-  async deleteSuite(suiteId: string): Promise<void> {
-    await api.delete(`/suites/${suiteId}`)
-  },
-
   async getRunDetails(runId: string): Promise<TestRunDetails> {
     const response = await api.get<TestRunDetails>(`/runs/${runId}`)
     return response.data
@@ -414,64 +287,28 @@ export const apiService = {
     return response.data
   },
 
-  // Admin: user management.
-  // This repo ships two backends: the legacy sync API (backend/main.py, used by
-  // local dev via restart-dev.sh) which only exposes /organizations/{orgId}/users,
-  // and the async v1 API (backend/app/main.py, used in production/Docker) which
-  // exposes /auth/users directly. Try the legacy route first (the common local
-  // case) and fall back to /auth/users on 404 so both backends work without
-  // logging a spurious failed request in the common case.
+  // Admin: user management (organization-scoped routes until phase 04 rebuilds the Users screen).
   async listUsers(): Promise<UserResponse[]> {
-    try {
-      const orgId = await resolveOrgIdForLegacyUserRoutes()
-      const response = await api.get<any[]>(`/organizations/${orgId}/users`)
-      return response.data.map(normalizeUserResponse)
-    } catch (error) {
-      if (!(axios.isAxiosError(error) && error.response?.status === 404)) throw error
-      const response = await api.get<UserResponse[]>('/auth/users')
-      return response.data.map(normalizeUserResponse)
-    }
+    const orgId = await organizationId()
+    const response = await api.get<any[]>(`/organizations/${orgId}/users`)
+    return response.data.map(normalizeUserResponse)
   },
 
   async createUser(payload: { email: string; password: string; full_name: string; role: string }): Promise<UserResponse> {
-    try {
-      const orgId = await resolveOrgIdForLegacyUserRoutes()
-      const legacyPayload = {
-        username: payload.email,
-        email: payload.email,
-        password: payload.password,
-        full_name: payload.full_name,
-        role: payload.role,
-      }
-      const response = await api.post<{ user: any }>(`/organizations/${orgId}/users`, legacyPayload)
-      return normalizeUserResponse(response.data.user)
-    } catch (error) {
-      if (!(axios.isAxiosError(error) && error.response?.status === 404)) throw error
-      const response = await api.post<UserResponse>('/auth/users', payload)
-      return normalizeUserResponse(response.data)
-    }
+    const orgId = await organizationId()
+    const response = await api.post<{ user: any }>(`/organizations/${orgId}/users`, { username: payload.email, ...payload })
+    return normalizeUserResponse(response.data.user)
   },
 
   async updateUser(userId: string, data: { email?: string; full_name?: string; role?: string; assigned_lead_id?: string | null; is_active?: boolean; password?: string }): Promise<UserResponse> {
-    try {
-      const orgId = await resolveOrgIdForLegacyUserRoutes()
-      const response = await api.patch<{ user: any }>(`/organizations/${orgId}/users/${userId}`, data)
-      return normalizeUserResponse(response.data.user)
-    } catch (error) {
-      if (!(axios.isAxiosError(error) && error.response?.status === 404)) throw error
-      const response = await api.patch<UserResponse>(`/auth/users/${userId}`, data)
-      return normalizeUserResponse(response.data)
-    }
+    const orgId = await organizationId()
+    const response = await api.patch<{ user: any }>(`/organizations/${orgId}/users/${userId}`, data)
+    return normalizeUserResponse(response.data.user)
   },
 
   async deleteUser(userId: string): Promise<void> {
-    try {
-      const orgId = await resolveOrgIdForLegacyUserRoutes()
-      await api.delete(`/organizations/${orgId}/users/${userId}`)
-    } catch (error) {
-      if (!(axios.isAxiosError(error) && error.response?.status === 404)) throw error
-      await api.delete(`/auth/users/${userId}`)
-    }
+    const orgId = await organizationId()
+    await api.delete(`/organizations/${orgId}/users/${userId}`)
   },
 
   // Admin: settings
@@ -842,41 +679,13 @@ export const apiService = {
 
   // Per-project GitHub settings (Automation Lead or Admin)
   async getProjectGithub(projectId: string): Promise<{ github_token_set: boolean; github_token_preview: string; github_repo_url: string }> {
-    const supportsProjectGithubApi = await hasProjectGithubApi()
-    if (!supportsProjectGithubApi) {
-      return {
-        github_token_set: false,
-        github_token_preview: '',
-        github_repo_url: '',
-      }
-    }
-    try {
-      const response = await api.get(`/projects/${projectId}/github`)
-      return response.data
-    } catch (error) {
-      if (!is404(error)) throw error
-      cachedProjectGithubApiSupport = false
-      return {
-        github_token_set: false,
-        github_token_preview: '',
-        github_repo_url: '',
-      }
-    }
+    const response = await api.get(`/projects/${projectId}/github`)
+    return response.data
   },
 
   async saveProjectGithub(projectId: string, payload: { github_token?: string; github_repo_url?: string }): Promise<{ github_token_set: boolean; github_token_preview: string; github_repo_url: string }> {
-    const supportsProjectGithubApi = await hasProjectGithubApi()
-    if (!supportsProjectGithubApi) {
-      throw projectGithubUnsupportedError()
-    }
-    try {
-      const response = await api.patch(`/projects/${projectId}/github`, payload)
-      return response.data
-    } catch (error) {
-      if (!is404(error)) throw error
-      cachedProjectGithubApiSupport = false
-      throw projectGithubUnsupportedError()
-    }
+    const response = await api.patch(`/projects/${projectId}/github`, payload)
+    return response.data
   },
 
   async getProjectGithubOverview(projectId: string, refresh = false): Promise<ProjectGithubOverview> {
@@ -888,32 +697,12 @@ export const apiService = {
   },
 
   async testProjectGithub(projectId: string): Promise<{ ok: boolean; login?: string; name?: string; error?: string }> {
-    const supportsProjectGithubApi = await hasProjectGithubApi()
-    if (!supportsProjectGithubApi) {
-      return { ok: false, error: projectGithubUnsupportedError().message }
-    }
-    try {
-      const response = await api.post(`/projects/${projectId}/github/test`)
-      return response.data
-    } catch (error) {
-      if (!is404(error)) throw error
-      cachedProjectGithubApiSupport = false
-      return { ok: false, error: projectGithubUnsupportedError().message }
-    }
+    const response = await api.post(`/projects/${projectId}/github/test`)
+    return response.data
   },
 
   async disconnectProjectGithub(projectId: string): Promise<void> {
-    const supportsProjectGithubApi = await hasProjectGithubApi()
-    if (!supportsProjectGithubApi) {
-      throw projectGithubUnsupportedError()
-    }
-    try {
-      await api.delete(`/projects/${projectId}/github`)
-    } catch (error) {
-      if (!is404(error)) throw error
-      cachedProjectGithubApiSupport = false
-      throw projectGithubUnsupportedError()
-    }
+    await api.delete(`/projects/${projectId}/github`)
   },
 
   async analyzeProjectRepo(projectId: string): Promise<{ frameworks: string[]; projects: { path: string; environments: string[] }[]; files_count: number }> {
@@ -1483,7 +1272,7 @@ export const apiService = {
 
   /** Fetch an attachment through the authenticated client and return an object URL. */
   async fetchForumAttachmentUrl(url: string): Promise<string> {
-    const path = url.replace(/^\/api\/v1/, '')
+    const path = url.replace(/^\/api/, '')
     const response = await api.get(path, { responseType: 'blob' })
     return URL.createObjectURL(response.data as Blob)
   },

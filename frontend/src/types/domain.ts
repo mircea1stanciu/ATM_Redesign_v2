@@ -140,17 +140,7 @@ export interface ForumReactionResponse {
   like_count: number
 }
 
-export interface ProjectNotificationsConfig {
-  email_enabled?: boolean
-  email_recipients?: string[]
-  notify_on_failed?: boolean
-  notify_on_error?: boolean
-  slack_enabled?: boolean
-  slack_webhook_url?: string
-}
-
 export interface ProjectConfig {
-  notifications?: ProjectNotificationsConfig
   [key: string]: unknown
 }
 

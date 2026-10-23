@@ -3,6 +3,9 @@
 Creates one user per role and a sample project. Writes the users' names and access tokens to a JSON file, so the
 tests can open authenticated pages without going through the rate-limited login endpoint.
 
+When the harness passes E2E_REPO_URL and E2E_CHECKOUT_DIR, the sample project points at that repository (served by
+the fake GitHub) and the super admin and automation user have the checkout linked and a GitHub token for it.
+
 Usage (from backend/):
     ATM_DATABASE_PATH=/tmp/e2e.db E2E_PASSWORD=... python -m tools.e2e_seed <sessions.json>
 """
@@ -13,16 +16,23 @@ import sys
 if not os.getenv("ATM_DATABASE_PATH"):
     sys.exit("ATM_DATABASE_PATH must point to a throwaway database; refusing to seed the real one.")
 
-from core.auth import create_access_token  # noqa: E402
-from core.database import SessionLocal, User, UserRole, get_default_organization, init_db  # noqa: E402
-from models.project_models import Project  # noqa: E402
+from app.core.db import SessionLocal  # noqa: E402
+from app.core.security import create_access_token  # noqa: E402
+from app.main import prepare_database  # noqa: E402
+from app.modules.identity.models import User, UserRole  # noqa: E402
+from app.modules.identity.service import get_default_organization  # noqa: E402
+from app.modules.projects.checkouts import save_linked_path  # noqa: E402
+from app.modules.projects.models import Project  # noqa: E402
+from app.modules.projects.service import set_project_github_token  # noqa: E402
 
 SAMPLE_PROJECT_KEY = "E2E"
+SAMPLE_GITHUB_TOKEN = "e2e-github-token"
+PUBLISHING_ROLES = {UserRole.SUPER_ADMIN, UserRole.AUTOMATION_USER}
 
 
 def seed(sessions_path: str) -> None:
     password = os.environ["E2E_PASSWORD"]
-    init_db()
+    prepare_database()
     db = SessionLocal()
     try:
         org = get_default_organization(db)
@@ -53,17 +63,26 @@ def seed(sessions_path: str) -> None:
             )
             sessions[role.value] = {"username": username, "token": token}
 
-        if not db.query(Project).filter(Project.key == SAMPLE_PROJECT_KEY).first():
-            db.add(
-                Project(
-                    key=SAMPLE_PROJECT_KEY,
-                    name="E2E Sample Project",
-                    description="Seeded for the UI tests",
-                    community_id="qa",
-                    organization_id=org.id,
-                )
+        project = db.query(Project).filter(Project.key == SAMPLE_PROJECT_KEY).first()
+        if not project:
+            project = Project(
+                key=SAMPLE_PROJECT_KEY,
+                name="E2E Sample Project",
+                description="Seeded for the UI tests",
+                community_id="qa",
+                organization_id=org.id,
             )
+            db.add(project)
             db.commit()
+            db.refresh(project)
+
+        repo_url, checkout = os.getenv("E2E_REPO_URL"), os.getenv("E2E_CHECKOUT_DIR")
+        if repo_url and checkout:
+            project.github_repo_url = repo_url
+            db.commit()
+            for user in db.query(User).filter(User.role.in_(PUBLISHING_ROLES)).all():
+                save_linked_path(db, user, project.id, checkout)
+                set_project_github_token(db, user, project.id, SAMPLE_GITHUB_TOKEN)
     finally:
         db.close()
 

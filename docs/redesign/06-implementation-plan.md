@@ -79,6 +79,25 @@ They touch different modules, so their PRs do not conflict (see section 6.4).
   - The frontend `api.ts` loses its compatibility fallbacks.
 - **UI tests:** Publish (commit, push to a local bare repository, PR request), Scripts run, Jira/Confluence settings,
   and everything from phase 01.
+- **Decided while building phase 03:**
+  - The test manager (epics, stories, cases), the Zephyr planner, team tasks and the community forum also moved, so
+    they work again instead of being lost with the second backend. Community stays hidden until phase 13.
+  - The database is configured with `ATM_DATABASE_URL` (or `ATM_DATABASE_PATH`); the second backend's
+    `DATABASE_URL` is ignored so an old `.env` cannot silently switch databases. The app migrates at start and
+    copies an existing SQLite file first.
+  - Migration `0002` drops the tables of the features removed in phase 02 by explicit name only.
+  - Run logs use `/api/ws/runs/{id}` through the same proxy as REST; the old `/api/v1/runs/ws/{id}` path is kept
+    for one phase and removed in phase 04.
+  - Publish and the other new endpoints block viewers only (`require_editor`); phase 04 replaces this with
+    permissions.
+  - The Overview "Notifications" panel was removed: it saved through an endpoint only the second backend had.
+    Phase 11 builds notifications.
+  - The backend needs Python 3.10 or newer.
+- **Left for later phases:**
+  - The moved routers still hold their logic; it moves into `service.py` files as each module is reworked
+    (phases 05–14). Most moved modules are on the mypy baseline list in `pyproject.toml`.
+  - Non-secret personal settings stay in `users.settings_json`, saved as one record: two requests that change the
+    same user's settings at the same time can overwrite each other. Splitting them per feature fixes this.
 
 ### Phase 04: `feature/phase_04_roles_permissions`
 - **Goal:** the six roles and the two tags, enforced.
