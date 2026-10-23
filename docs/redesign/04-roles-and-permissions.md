@@ -39,6 +39,7 @@ mark, ✓ still applies only to projects the user can see.
 | **Projects** | | | | | | |
 | `project.view` | ✓ | ✓ | ✓ (own) | ✓ (own) | ✓ (own) | ✓ (own) |
 | `project.create` | ✓ | ✓ | | | | |
+| `project.delete` | ✓ | ✓ | | | | |
 | `project.configure` (GitHub, Jira, Confluence links) | ✓ | ✓ | ✓ (own) | | | |
 | `project.members.manage` | ✓ | ✓ | | | | |
 | **Work items (Jira and Confluence)** | | | | | | |
@@ -121,18 +122,27 @@ stateDiagram-v2
 - The migration is an Alembic revision. It writes a log table with the old and the new role of every user, so the
   Super Admin can review the result.
 - Existing lead assignments (`assigned_lead_id`) are kept.
+- So that nobody loses access (today everyone sees every project), every migrated `project_base` user and every
+  Viewer becomes a member of all existing projects. Leads narrow this down afterwards on the Users screen.
+- People who register themselves become Viewers with no projects, until a lead assigns them.
 
 ## 4.6 How it is enforced
 
 - **Backend.**
   - `app/core/permissions.py` holds the matrix above as data.
   - Endpoints use `Depends(require("pr.review", project_from="project_id"))`.
-  - Project scope is checked in the same dependency: tag, membership and lead relation.
+  - Project scope is checked in the same dependency: tag, membership and lead relation. Endpoints that take the
+    project in the body check it in the handler with `ensure(db, user, permission, project_id)`.
+  - A refusal answers `403` with `{"detail": "…", "code": "permission_denied"}`.
+  - Personal endpoints (own profile, password, 2FA, personal connection settings) need only a signed-in user.
+  - The run log WebSocket checks `run.view` and the project scope before it accepts. The browser sends the token as
+    the `atm-token` subprotocol, so it never appears in a URL or an access log.
   - The old helpers are deleted: `check_organization_member`, `_require_editor`, `check_product_manager_access`.
 - **Frontend.**
   - `/api/me` returns `role`, `scope_tag`, `permissions[]` and `project_ids[]`.
   - `usePermission()` and `<Can permission="…">` hide what the user may not do.
   - Hiding is for clarity only; the backend is the authority.
 - **Tests.**
-  - A backend test walks the whole matrix for each role.
+  - A backend test walks the whole matrix for each role, and fails when an endpoint declares no permission and is
+    not on the list of personal endpoints (`backend/tests/test_permissions.py`).
   - The UI tests log in as each role and check the navigation and the main buttons.
