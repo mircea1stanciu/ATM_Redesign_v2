@@ -494,7 +494,7 @@ def test_change_review_apply_partial_and_reject(tmp_path, monkeypatch):
     store.save(conversation)
     monkeypatch.setattr(ai_routes, "check_organization_member", lambda user: None)
     monkeypatch.setattr(ai_routes, "_legacy_project_or_404", lambda db, pid: None)
-    monkeypatch.setattr(ai_routes, "_linked_checkout", lambda user, pid: repo)
+    monkeypatch.setattr(ai_routes, "require_checkout", lambda user, pid: repo)
     monkeypatch.setattr(ai_routes, "_repo_or_none", lambda user, pid: repo)
     monkeypatch.setattr(ai_routes, "_store", lambda user, pid: store)
     user = SimpleNamespace(id=1, role="editor")

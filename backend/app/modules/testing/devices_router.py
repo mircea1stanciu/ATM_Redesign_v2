@@ -3,7 +3,7 @@ import enum
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.api.v1.endpoints.auth import get_current_user
+from app.core.deps import get_current_user
 from app.services import device_service
 from app.services.device_service import DeviceError
 

@@ -1,62 +1,53 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
 
-# These tests only check that the routes exist: without a migrated database the endpoints answer with an
-# error status, so return server errors as responses instead of raising them.
-client = TestClient(app, raise_server_exceptions=False)
+
+@pytest.fixture(scope="module")
+def client():
+    # The context manager runs the startup event, which prepares the (throwaway) database.
+    with TestClient(app) as test_client:
+        yield test_client
 
 
-def test_health_check():
-    """Test health check endpoint."""
-    response = client.get("/health")
+def test_health_check(client):
+    response = client.get("/api/health")
     assert response.status_code == 200
-    assert response.json()["status"] == "ok"
+    assert response.json()["status"] == "healthy"
 
 
-def test_register_endpoint_exists():
-    """Test that register endpoint exists."""
-    response = client.post(
-        "/api/v1/auth/register",
-        json={
-            "email": "test@example.com",
-            "password": "password123",
-            "full_name": "Test User"
-        }
+def test_register_then_sign_in(client):
+    registered = client.post(
+        "/api/auth/register",
+        json={"username": "tester", "email": "tester@example.com", "password": "pw-123456", "full_name": "T"},
     )
-    # Will fail with 500 due to no database, but endpoint should exist
-    assert response.status_code in [400, 422, 500, 503]
+    assert registered.status_code == 200
+    token = registered.json()["access_token"]
+
+    me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert me.status_code == 200
+    # Self-registered users join the install's default organization.
+    assert me.json()["organization"]["slug"] == "unifiedwork"
+
+    signed_in = client.post("/api/auth/login", json={"username": "tester", "password": "pw-123456"})
+    assert signed_in.status_code == 200
+    assert signed_in.json()["user"]["email"] == "tester@example.com"
 
 
-def test_login_endpoint_exists():
-    """Test that login endpoint exists."""
-    response = client.post(
-        "/api/v1/auth/login",
-        data={
-            "username": "test@example.com",
-            "password": "password123"
-        }
-    )
-    # Will fail with 500 due to no database, but endpoint should exist
-    assert response.status_code in [400, 401, 422, 500, 503]
+def test_wrong_password_is_rejected(client):
+    response = client.post("/api/auth/login", json={"username": "nobody", "password": "wrong"})
+    assert response.status_code == 401
 
 
-def test_projects_endpoint_exists():
-    """Test that projects endpoints exist."""
-    # GET without auth should fail
-    response = client.get("/api/v1/projects")
-    assert response.status_code in [401, 403, 500, 503]
+@pytest.mark.parametrize(
+    "path",
+    ["/api/projects/", "/api/runs/projects/1", "/api/settings/jira", "/api/settings/confluence", "/api/devices"],
+)
+def test_module_routes_require_sign_in(client, path):
+    client.cookies.clear()  # login sets an access_token cookie, which also authenticates
+    assert client.get(path).status_code == 401
 
 
-def test_suites_endpoint_exists():
-    """Test that test suites endpoints exist."""
-    # GET without auth should fail  
-    response = client.get("/api/v1/suites/test-id")
-    assert response.status_code in [401, 403, 404, 500, 503]
-
-
-def test_runs_endpoint_exists():
-    """Test that test runs endpoints exist."""
-    # GET without auth should fail
-    response = client.get("/api/v1/runs/test-id")
-    assert response.status_code in [401, 403, 404, 500, 503]
+def test_unknown_api_path_is_404(client):
+    assert client.get("/api/no-such-route").status_code == 404

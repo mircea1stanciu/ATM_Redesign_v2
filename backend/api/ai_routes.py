@@ -14,17 +14,17 @@ from sqlalchemy.orm import Session
 
 from api.project_routes import (
     _legacy_project_or_404,
-    _linked_checkout,
     _require_editor,
     _user_settings,
     check_organization_member,
 )
+from app.core.db import get_db
+from app.core.deps import get_current_user
+from app.modules.projects.checkouts import require_checkout
+from app.modules.projects.models import AnalyticsRun, AnalyticsSuite
 from app.services import ai_project_service as project_ai
 from app.services import ai_provider_service as providers
 from app.services import rbi_gateway_service as rbi_gateway
-from core.auth import get_current_user
-from core.database import get_db
-from models.project_models import AnalyticsRun, AnalyticsSuite
 
 router = APIRouter(prefix="/api", tags=["AI assistant"])
 
@@ -401,7 +401,7 @@ async def get_project_ai_analysis(project_id: int, refresh: bool = False, curren
                                   db: Session = Depends(get_db)):
     check_organization_member(current_user)
     _legacy_project_or_404(db, project_id)
-    return await _analysis(_linked_checkout(current_user, project_id), refresh)
+    return await _analysis(require_checkout(current_user, project_id), refresh)
 
 
 # ── Conversations ────────────────────────────────────────────────────────────
@@ -442,7 +442,7 @@ def _public_conversation(data: dict, repo: Path | None) -> dict:
 
 def _repo_or_none(current_user, project_id: int) -> Path | None:
     try:
-        return _linked_checkout(current_user, project_id)
+        return require_checkout(current_user, project_id)
     except HTTPException:
         return None
 
@@ -533,7 +533,7 @@ async def send_ai_message(project_id: int, conversation_id: str, payload: ChatMe
     if not _settings_response(current_user)["configured"]:
         raise HTTPException(status_code=400, detail="Connect an AI provider in Settings › AI Assistant first.")
     config = await _active_config(current_user, db)
-    repo = _linked_checkout(current_user, project_id)
+    repo = require_checkout(current_user, project_id)
     store = _store(current_user, project_id)
     conversation = _call(store.load, conversation_id)
 
@@ -628,7 +628,7 @@ async def apply_ai_change(project_id: int, conversation_id: str, payload: Change
     check_organization_member(current_user)
     _require_editor(current_user)
     _legacy_project_or_404(db, project_id)
-    repo = _linked_checkout(current_user, project_id)
+    repo = require_checkout(current_user, project_id)
     store = _store(current_user, project_id)
     conversation = _call(store.load, conversation_id)
     change = _find_change(conversation, payload.message_id, payload.path)
@@ -650,7 +650,7 @@ async def undo_ai_change(project_id: int, conversation_id: str, payload: ChangeR
     check_organization_member(current_user)
     _require_editor(current_user)
     _legacy_project_or_404(db, project_id)
-    repo = _linked_checkout(current_user, project_id)
+    repo = require_checkout(current_user, project_id)
     store = _store(current_user, project_id)
     conversation = _call(store.load, conversation_id)
     change = _find_change(conversation, payload.message_id, payload.path)
@@ -670,7 +670,7 @@ async def get_ai_change_content(project_id: int, conversation_id: str, message_i
     """Current file content and the assistant's proposal, for the side-by-side review."""
     check_organization_member(current_user)
     _legacy_project_or_404(db, project_id)
-    repo = _linked_checkout(current_user, project_id)
+    repo = require_checkout(current_user, project_id)
     change = _find_change(_call(_store(current_user, project_id).load, conversation_id), message_id, path)
     if change.get("state") == "invalid":
         raise HTTPException(status_code=400, detail=change.get("error") or "This change cannot be reviewed.")
@@ -728,7 +728,7 @@ async def open_project_in_ide(project_id: int, payload: OpenInIdeRequest, curren
 
     check_organization_member(current_user)
     _legacy_project_or_404(db, project_id)
-    repo = _linked_checkout(current_user, project_id)
+    repo = require_checkout(current_user, project_id)
     if payload.path.strip() in ("", "."):
         target, rel = repo, "."
     else:

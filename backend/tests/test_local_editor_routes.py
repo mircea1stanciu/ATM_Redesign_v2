@@ -32,7 +32,7 @@ def _patch(monkeypatch, repo: Path, role: str = "editor"):
     monkeypatch.setattr(routes, "check_organization_member", lambda user: None)
     monkeypatch.setattr(routes, "_legacy_project_or_404",
                         lambda db, pid: SimpleNamespace(id=pid, github_repo_url=""))
-    monkeypatch.setattr(routes, "_linked_checkout", lambda user, pid: repo)
+    monkeypatch.setattr(routes, "require_checkout", lambda user, pid: repo)
     return SimpleNamespace(id=1, role=role, settings_json={})
 
 

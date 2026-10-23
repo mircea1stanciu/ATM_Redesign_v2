@@ -1,44 +1,14 @@
-"""
-Core database models and configuration for UnifiedWork
-Multi-tenant architecture with organization isolation
-"""
+"""Users, the default organization and per-user security records."""
 import enum
-
-# Database setup
-import os
 import secrets
 from datetime import datetime
 
-from passlib.context import CryptContext
-from sqlalchemy import (
-    JSON,
-    Boolean,
-    Column,
-    DateTime,
-    Enum,
-    ForeignKey,
-    Integer,
-    String,
-    Text,
-    create_engine,
-    inspect,
-    text,
-)
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship, sessionmaker
+from sqlalchemy import JSON, Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy.orm import relationship
 
-_current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # Get parent directory (project root)
-# ATM_DATABASE_PATH lets the UI-test harness run the app on a throwaway database.
-_db_path = os.getenv("ATM_DATABASE_PATH") or os.path.join(_current_dir, "unifiedwork.db")
-SQLALCHEMY_DATABASE_URL = f"sqlite:///{_db_path}"
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
-)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
+from app.core.db import Base
+from app.core.security import pwd_context
 
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def simple_hash_password(password: str) -> str:
     """Simple password hashing as fallback"""
@@ -298,88 +268,3 @@ class NotificationPreference(Base):
     
     # Relationships
     user = relationship("User", back_populates="notification_preferences")
-
-
-def get_db():
-    """Get database session"""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-def init_db():
-    """Initialize database and create default data"""
-    Base.metadata.create_all(bind=engine)
-    inspector = inspect(engine)
-    if "analytics_runs" in inspector.get_table_names():
-        run_columns = {column["name"] for column in inspector.get_columns("analytics_runs")}
-        if "logs_json" not in run_columns:
-            with engine.begin() as connection:
-                connection.execute(text("ALTER TABLE analytics_runs ADD COLUMN logs_json JSON NOT NULL DEFAULT '[]'"))
-        with engine.begin() as connection:
-            if "collection_path" not in run_columns:
-                connection.execute(text("ALTER TABLE analytics_runs ADD COLUMN collection_path VARCHAR(512)"))
-            if "environment" not in run_columns:
-                connection.execute(text("ALTER TABLE analytics_runs ADD COLUMN environment VARCHAR(255)"))
-            if "results_json" not in run_columns:
-                connection.execute(
-                    text("ALTER TABLE analytics_runs ADD COLUMN results_json JSON NOT NULL DEFAULT '[]'")
-                )
-            if "name" not in run_columns:
-                connection.execute(text("ALTER TABLE analytics_runs ADD COLUMN name VARCHAR(255)"))
-            if "details_json" not in run_columns:
-                connection.execute(text("ALTER TABLE analytics_runs ADD COLUMN details_json JSON"))
-    
-    db = SessionLocal()
-    try:
-        get_default_organization(db)
-        _seed_dev_admin(db)
-    except Exception as e:
-        print(f"❌ Error initializing database: {e}")
-        db.rollback()
-    finally:
-        db.close()
-
-
-DEFAULT_ORGANIZATION_SLUG = "unifiedwork"
-
-
-def get_default_organization(db):
-    """Return the install's single organization, creating it on first start."""
-    org = db.query(Organization).filter(Organization.slug == DEFAULT_ORGANIZATION_SLUG).first()
-    if not org:
-        org = Organization(
-            name="ATM",
-            slug=DEFAULT_ORGANIZATION_SLUG,
-            subscription_plan=SubscriptionPlan.ENTERPRISE,
-            access_token=Organization.generate_access_token(),
-        )
-        db.add(org)
-        db.commit()
-        db.refresh(org)
-    return org
-
-
-def _seed_dev_admin(db):
-    """Create the first super admin from ATM_DEV_ADMIN_PASSWORD (development only; no fixed passwords)."""
-    if db.query(User).filter(User.role == UserRole.SUPER_ADMIN).first():
-        return
-    password = os.getenv("ATM_DEV_ADMIN_PASSWORD")
-    if not password:
-        print("ℹ️  No super admin yet. Set ATM_DEV_ADMIN_PASSWORD in backend/.env to create 'admin' on next start.")
-        return
-    db.add(
-        User(
-            username="admin",
-            email="admin@atm.local",
-            hashed_password=User.hash_password(password),
-            full_name="ATM Administrator",
-            role=UserRole.SUPER_ADMIN,
-            organization_id=get_default_organization(db).id,
-            is_active=True,
-        )
-    )
-    db.commit()
-    print("✅ Super admin 'admin' created from ATM_DEV_ADMIN_PASSWORD")

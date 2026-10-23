@@ -10,7 +10,6 @@ import subprocess
 import zipfile
 from datetime import datetime
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -21,21 +20,18 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from api.allure_report_template import render_report_html
-from core.auth import get_current_user
-from core.database import SessionLocal, UserRole, get_db
-from models.project_models import (
-    AllureReport,
-    AnalyticsRun,
-    AnalyticsSuite,
-    Issue,
-    IssueActivity,
-    IssueComment,
-    IssuePriority,
-    IssueStatus,
-    IssueType,
-    Project,
-    Sprint,
+from app.core.config import BACKEND_DIR
+from app.core.db import SessionLocal, get_db
+from app.core.deps import get_current_user
+from app.modules.identity.models import UserRole
+from app.modules.projects.checkouts import (
+    checkout_path,
+    read_linked_path,
+    require_checkout,
+    save_linked_path,
+    service_project,
 )
+from app.modules.projects.models import AllureReport, AnalyticsRun, AnalyticsSuite, Project
 
 router = APIRouter(prefix="/api/projects", tags=["Projects"])
 analytics_router = APIRouter(prefix="/api", tags=["Analytics"])
@@ -113,43 +109,6 @@ class ProjectUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 
-class IssueCreate(BaseModel):
-    title: str
-    description: Optional[str] = None
-    issue_type: IssueType = IssueType.TASK
-    priority: IssuePriority = IssuePriority.MEDIUM
-    assignee_id: Optional[int] = None
-    sprint_id: Optional[int] = None
-    parent_issue_id: Optional[int] = None
-    epic_id: Optional[int] = None
-    story_points: Optional[int] = None
-    due_date: Optional[datetime] = None
-
-
-class IssueUpdate(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    issue_type: Optional[IssueType] = None
-    priority: Optional[IssuePriority] = None
-    status: Optional[IssueStatus] = None
-    assignee_id: Optional[int] = None
-    sprint_id: Optional[int] = None
-    story_points: Optional[int] = None
-    due_date: Optional[datetime] = None
-    resolution: Optional[str] = None
-
-
-class CommentCreate(BaseModel):
-    content: str
-
-
-class SprintCreate(BaseModel):
-    name: str
-    goal: Optional[str] = None
-    start_date: Optional[datetime] = None
-    end_date: Optional[datetime] = None
-
-
 # Project Endpoints
 @router.get("/")
 async def list_projects(
@@ -213,62 +172,6 @@ async def create_project(
     db.refresh(project)
     
     return {"message": "Project created successfully", "project": project}
-
-
-@router.get("/organization")
-async def get_organization_projects(
-    current_user = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Get all projects for the user's organization - All organization members can view"""
-    # Check user belongs to organization
-    check_organization_member(current_user)
-    
-    projects = db.query(Project).filter(
-        Project.organization_id == current_user.organization_id,
-        Project.is_archived.is_(False)
-    ).all()
-    
-    # Get issue count for each project
-    project_list = []
-    for project in projects:
-        issue_count = db.query(Issue).filter(Issue.project_id == project.id).count()
-        project_dict = {
-            "id": project.id,
-            "key": project.key,
-            "name": project.name,
-            "description": project.description,
-            "icon": project.icon,
-            "color": project.color,
-            "is_active": project.is_active,
-            "issue_count": issue_count,
-            "lead": {
-                "id": project.lead.id,
-                "full_name": project.lead.full_name,
-                "username": project.lead.username
-            } if project.lead else None
-        }
-        project_list.append(project_dict)
-    
-    return {"projects": project_list}
-
-
-@router.get("/community/{community_id}")
-async def get_community_projects(
-    community_id: str,
-    current_user = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Get all projects for a specific community - All organization members can view"""
-    # Check user belongs to organization
-    check_organization_member(current_user)
-    projects = db.query(Project).filter(
-        Project.community_id == community_id,
-        Project.organization_id == current_user.organization_id,
-        Project.is_archived.is_(False)
-    ).all()
-    
-    return {"projects": projects}
 
 
 @router.get("/{project_id}")
@@ -438,33 +341,6 @@ def _set_user_project_github_token(db: Session, user, project_id, token: str) ->
     else:
         token_map.pop(str(project_id), None)
     data["project_github_tokens"] = token_map
-    user.settings_json = data
-    db.commit()
-    db.refresh(user)
-
-
-def _read_user_project_local_path(user, project_id: int) -> str:
-    paths = _user_settings(user).get("project_local_repo_paths")
-    if not isinstance(paths, dict):
-        return ""
-    return str(paths.get(str(project_id)) or "")
-
-
-def _set_user_project_local_path(db: Session, user, project_id: int, path: str, managed: bool = False) -> None:
-    """Remember the checkout folder; ``managed`` marks folders ATM cloned itself (safe to delete)."""
-    data = _user_settings(user)
-    paths = dict(data.get("project_local_repo_paths") or {})
-    managed_map = dict(data.get("project_local_repo_managed") or {})
-    if path:
-        paths[str(project_id)] = path
-    else:
-        paths.pop(str(project_id), None)
-    if managed and path:
-        managed_map[str(project_id)] = path
-    else:
-        managed_map.pop(str(project_id), None)
-    data["project_local_repo_paths"] = paths
-    data["project_local_repo_managed"] = managed_map
     user.settings_json = data
     db.commit()
     db.refresh(user)
@@ -1154,12 +1030,7 @@ async def get_manual_allure_report(
     suite = db.query(AnalyticsSuite).filter(AnalyticsSuite.id == run.suite_id).first()
     if not suite:
         raise HTTPException(status_code=404, detail="Suite not found")
-    saved_path = _read_user_project_local_path(current_user, suite.project_id)
-    repo_path = (
-        Path(saved_path).expanduser().resolve()
-        if saved_path
-        else Path(__file__).resolve().parent.parent / "local_repos" / str(suite.project_id)
-    )
+    repo_path = checkout_path(current_user, suite.project_id)
     artifact_dir = _manual_run_artifact_dir(repo_path, run_id)
     _write_manual_allure_report(artifact_dir, run_id, run.collection or run_id, list(run.results_json or []))
     report_path = artifact_dir / "allure-report" / "index.html"
@@ -1199,7 +1070,6 @@ async def _execute_manual_run_background(
     run_requests: Optional[list[str]] = None,
 ) -> None:
     """Run a Bruno collection in the linked checkout and stream output via WebSocket."""
-    from core.database import SessionLocal
     artifact_dir = _manual_run_artifact_dir(repo_path, run_id)
 
     async def log(text: str, level: str = "stdout") -> None:
@@ -1927,12 +1797,7 @@ async def execute_analytics_run(
         raise HTTPException(status_code=404, detail="Suite not found")
     _legacy_project_or_404(db, suite.project_id)
 
-    saved_path = _read_user_project_local_path(current_user, suite.project_id)
-    repo_path = (
-        Path(saved_path).expanduser().resolve()
-        if saved_path
-        else Path(__file__).resolve().parent.parent / "local_repos" / str(suite.project_id)
-    )
+    repo_path = checkout_path(current_user, suite.project_id)
     if not (repo_path / ".git").exists():
         raise HTTPException(
             status_code=400, detail="No local checkout linked. Go to Projects → Local & GIT → link a folder first."
@@ -2149,7 +2014,7 @@ async def get_imported_allure_report_html(
         raise HTTPException(status_code=404, detail="Allure report not found")
 
     artifact_dir = (
-        Path(__file__).resolve().parent.parent / "uploads" / "allure-reports" / str(project_id) / str(report_id)
+        BACKEND_DIR / "uploads" / "allure-reports" / str(project_id) / str(report_id)
     )
     results = [
         {
@@ -2175,14 +2040,7 @@ async def import_local_allure_reports(
     """Import standard allure-results bundles from the linked local checkout."""
     check_organization_member(current_user)
     _legacy_project_or_404(db, project_id)
-    saved_path = _read_user_project_local_path(current_user, project_id)
-    repo_path = (
-        Path(saved_path).expanduser().resolve()
-        if saved_path
-        else Path(__file__).resolve().parent.parent / "local_repos" / str(project_id)
-    )
-    if not (repo_path / ".git").exists():
-        raise HTTPException(status_code=400, detail="No local checkout exists yet. Link or import a repository first.")
+    repo_path = require_checkout(current_user, project_id)
 
     result_dirs = [
         path for path in repo_path.rglob("allure-results")
@@ -2839,12 +2697,7 @@ async def get_project_local_status(
     """Report whether the legacy managed local checkout exists for a project."""
     check_organization_member(current_user)
     _legacy_project_or_404(db, project_id)
-    saved_path = _read_user_project_local_path(current_user, project_id)
-    repo_path = (
-        Path(saved_path).expanduser().resolve()
-        if saved_path
-        else Path(__file__).resolve().parent.parent / "local_repos" / str(project_id)
-    )
+    repo_path = checkout_path(current_user, project_id)
     return await asyncio.to_thread(_local_status, repo_path)
 
 
@@ -2860,13 +2713,13 @@ async def list_project_local_branches(
 
     check_organization_member(current_user)
     project = _legacy_project_or_404(db, project_id)
-    repo_path = _linked_checkout(current_user, project_id)
+    repo_path = require_checkout(current_user, project_id)
     repo_url = project.github_repo_url or ""
     fetch_error = None
     if fetch and repo_url:
         token = _read_user_project_github_token(current_user, project_id)
         try:
-            await LocalRepoService.fetch_remote(_legacy_local_project_adapter(project, repo_path), repo_url,
+            await LocalRepoService.fetch_remote(service_project(project.id, repo_path), repo_url,
                                                 token or None)
         except LocalRepoError as exc:
             fetch_error = str(exc)
@@ -2895,7 +2748,7 @@ async def checkout_project_local_branch(
     check_organization_member(current_user)
     _legacy_project_or_404(db, project_id)
     _require_editor(current_user)
-    repo_path = _linked_checkout(current_user, project_id)
+    repo_path = require_checkout(current_user, project_id)
     branch = payload.branch.strip()
     try:
         _check_branch_name(branch)
@@ -2933,7 +2786,7 @@ async def get_project_local_changes(
 
     check_organization_member(current_user)
     project = _legacy_project_or_404(db, project_id)
-    repo_path = _linked_checkout(current_user, project_id)
+    repo_path = require_checkout(current_user, project_id)
     try:
         return await asyncio.to_thread(changed_tests_service.changed_files, repo_path, base or None,
                                        getattr(project, "default_branch", None) or "main", committed)
@@ -3007,7 +2860,7 @@ async def read_project_local_file(
 
     check_organization_member(current_user)
     _legacy_project_or_404(db, project_id)
-    repo_path = _linked_checkout(current_user, project_id)
+    repo_path = require_checkout(current_user, project_id)
     return await asyncio.to_thread(_read_editor_file, repo_path, path)
 
 
@@ -3024,17 +2877,8 @@ async def write_project_local_file(
     from app.services import ai_project_service  # noqa: F401 - imported in the event loop, not the worker thread
 
     _require_editor(current_user)
-    repo_path = _linked_checkout(current_user, project_id)
+    repo_path = require_checkout(current_user, project_id)
     return await asyncio.to_thread(_write_editor_file, repo_path, payload.path, payload.content)
-
-
-def _legacy_local_project_adapter(project: Project, repo_path: Path) -> SimpleNamespace:
-    return SimpleNamespace(
-        id=project.id,
-        config_json={"local_repo_path": str(repo_path)},
-        framework=None,
-        default_branch="main",
-    )
 
 
 @router.get("/{project_id}/local/libraries")
@@ -3046,16 +2890,11 @@ async def get_project_local_libraries(
     """Detect dependency manifests in the linked local checkout."""
     check_organization_member(current_user)
     project = _legacy_project_or_404(db, project_id)
-    saved_path = _read_user_project_local_path(current_user, project_id)
-    repo_path = (
-        Path(saved_path).expanduser().resolve()
-        if saved_path
-        else Path(__file__).resolve().parent.parent / "local_repos" / str(project_id)
-    )
+    repo_path = checkout_path(current_user, project_id)
     from app.services.local_library_service import LocalLibraryError, LocalLibraryService
 
     try:
-        return LocalLibraryService.detect(_legacy_local_project_adapter(project, repo_path))
+        return LocalLibraryService.detect(service_project(project.id, repo_path))
     except LocalLibraryError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -3069,16 +2908,11 @@ async def get_project_local_setup_plan(
     """Build the allowed dependency setup plan for the linked local checkout."""
     check_organization_member(current_user)
     project = _legacy_project_or_404(db, project_id)
-    saved_path = _read_user_project_local_path(current_user, project_id)
-    repo_path = (
-        Path(saved_path).expanduser().resolve()
-        if saved_path
-        else Path(__file__).resolve().parent.parent / "local_repos" / str(project_id)
-    )
+    repo_path = checkout_path(current_user, project_id)
     from app.services.workflow_recipe_service import WorkflowRecipeError, WorkflowRecipeService
 
     try:
-        return WorkflowRecipeService.build_plan(_legacy_local_project_adapter(project, repo_path))
+        return WorkflowRecipeService.build_plan(service_project(project.id, repo_path))
     except WorkflowRecipeError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -3093,14 +2927,7 @@ async def get_project_local_tree(
     """List an immediate directory in the user's linked local checkout."""
     check_organization_member(current_user)
     _legacy_project_or_404(db, project_id)
-    saved_path = _read_user_project_local_path(current_user, project_id)
-    repo_path = (
-        Path(saved_path).expanduser().resolve()
-        if saved_path
-        else Path(__file__).resolve().parent.parent / "local_repos" / str(project_id)
-    )
-    if not (repo_path / ".git").exists():
-        raise HTTPException(status_code=400, detail="No local checkout exists yet. Link or import a repository first.")
+    repo_path = require_checkout(current_user, project_id)
 
     target_path = (repo_path / path).resolve()
     if target_path != repo_path and repo_path not in target_path.parents:
@@ -3135,14 +2962,7 @@ async def get_project_local_bruno_collections(
     """Discover executable Bruno collections and environments in the linked checkout."""
     check_organization_member(current_user)
     _legacy_project_or_404(db, project_id)
-    saved_path = _read_user_project_local_path(current_user, project_id)
-    repo_path = (
-        Path(saved_path).expanduser().resolve()
-        if saved_path
-        else Path(__file__).resolve().parent.parent / "local_repos" / str(project_id)
-    )
-    if not (repo_path / ".git").exists():
-        raise HTTPException(status_code=400, detail="No local checkout exists yet. Link or import a repository first.")
+    repo_path = require_checkout(current_user, project_id)
 
     collections = []
     for manifest in repo_path.rglob("bruno.json"):
@@ -3185,7 +3005,7 @@ async def detect_project_local_frameworks(
 
     check_organization_member(current_user)
     _legacy_project_or_404(db, project_id)
-    repo_path = _linked_checkout(current_user, project_id)
+    repo_path = require_checkout(current_user, project_id)
     cached = _framework_detection_cache.get(str(repo_path))
     if cached and not refresh and time_module.time() - cached[0] < _FRAMEWORK_DETECTION_TTL_SECONDS:
         return cached[1]
@@ -3205,24 +3025,11 @@ async def analyze_project_local_appium(
     report which settings or station tools need changing before a run."""
     check_organization_member(current_user)
     _legacy_project_or_404(db, project_id)
-    saved_path = _read_user_project_local_path(current_user, project_id)
-    default_path = Path(__file__).resolve().parent.parent / "local_repos" / str(project_id)
-    repo_path = Path(saved_path).expanduser().resolve() if saved_path else default_path
-    if not (repo_path / ".git").exists():
-        raise HTTPException(status_code=400, detail="No local checkout exists yet. Link or import a repository first.")
+    repo_path = require_checkout(current_user, project_id)
 
     from app.services.appium_project_service import analyze_project
 
     return await analyze_project(repo_path, refresh=refresh)
-
-
-def _linked_checkout(current_user, project_id: int) -> Path:
-    saved_path = _read_user_project_local_path(current_user, project_id)
-    default_path = Path(__file__).resolve().parent.parent / "local_repos" / str(project_id)
-    repo_path = Path(saved_path).expanduser().resolve() if saved_path else default_path
-    if not (repo_path / ".git").exists():
-        raise HTTPException(status_code=400, detail="No local checkout exists yet. Link or import a repository first.")
-    return repo_path
 
 
 def _require_editor(current_user) -> None:
@@ -3262,7 +3069,7 @@ async def list_project_properties_files(
 
     check_organization_member(current_user)
     _legacy_project_or_404(db, project_id)
-    repo_path = _linked_checkout(current_user, project_id)
+    repo_path = require_checkout(current_user, project_id)
     return {"files": await asyncio.to_thread(properties_service.list_files, repo_path)}
 
 
@@ -3281,7 +3088,7 @@ async def read_project_properties_file(
     _legacy_project_or_404(db, project_id)
     if reveal:
         _require_editor(current_user)
-    repo_path = _linked_checkout(current_user, project_id)
+    repo_path = require_checkout(current_user, project_id)
     return await asyncio.to_thread(_properties_call, properties_service.read_file, repo_path, path, reveal)
 
 
@@ -3298,7 +3105,7 @@ async def update_project_properties_file(
     check_organization_member(current_user)
     _legacy_project_or_404(db, project_id)
     _require_editor(current_user)
-    repo_path = _linked_checkout(current_user, project_id)
+    repo_path = require_checkout(current_user, project_id)
     return await asyncio.to_thread(
         _properties_call, properties_service.update_file,
         repo_path, payload.path, payload.etag, payload.changes, payload.additions,
@@ -3318,7 +3125,7 @@ async def revert_project_properties_file(
     check_organization_member(current_user)
     _legacy_project_or_404(db, project_id)
     _require_editor(current_user)
-    repo_path = _linked_checkout(current_user, project_id)
+    repo_path = require_checkout(current_user, project_id)
     return await asyncio.to_thread(_properties_call, properties_service.revert_file, repo_path, payload.path)
 
 
@@ -3342,7 +3149,7 @@ async def list_project_bruno_env_files(
 
     check_organization_member(current_user)
     _legacy_project_or_404(db, project_id)
-    repo_path = _linked_checkout(current_user, project_id)
+    repo_path = require_checkout(current_user, project_id)
     return {"files": await asyncio.to_thread(_properties_call, bruno_env_service.list_files, repo_path, collection)}
 
 
@@ -3361,7 +3168,7 @@ async def read_project_bruno_env_file(
     _legacy_project_or_404(db, project_id)
     if reveal:
         _require_editor(current_user)
-    repo_path = _linked_checkout(current_user, project_id)
+    repo_path = require_checkout(current_user, project_id)
     return await asyncio.to_thread(_properties_call, bruno_env_service.read_file, repo_path, path, reveal)
 
 
@@ -3378,7 +3185,7 @@ async def update_project_bruno_env_file(
     check_organization_member(current_user)
     _legacy_project_or_404(db, project_id)
     _require_editor(current_user)
-    repo_path = _linked_checkout(current_user, project_id)
+    repo_path = require_checkout(current_user, project_id)
     return await asyncio.to_thread(
         _properties_call, bruno_env_service.update_file,
         repo_path, payload.path, payload.etag, payload.changes, payload.additions, payload.enabled,
@@ -3398,7 +3205,7 @@ async def revert_project_bruno_env_file(
     check_organization_member(current_user)
     _legacy_project_or_404(db, project_id)
     _require_editor(current_user)
-    repo_path = _linked_checkout(current_user, project_id)
+    repo_path = require_checkout(current_user, project_id)
     return await asyncio.to_thread(_properties_call, bruno_env_service.revert_file, repo_path, payload.path)
 
 
@@ -3414,22 +3221,11 @@ async def compare_project_local_repository(
     """Compare the linked local checkout with the project's GitHub refs."""
     check_organization_member(current_user)
     project = _legacy_project_or_404(db, project_id)
-    saved_path = _read_user_project_local_path(current_user, project_id)
-    repo_path = (
-        Path(saved_path).expanduser().resolve()
-        if saved_path
-        else Path(__file__).resolve().parent.parent / "local_repos" / str(project_id)
-    )
-    if not (repo_path / ".git").exists():
-        raise HTTPException(status_code=400, detail="No local checkout exists yet. Link or import a repository first.")
+    repo_path = require_checkout(current_user, project_id)
 
     from app.services.local_repo_service import LocalRepoError, LocalRepoService
 
-    legacy_project = SimpleNamespace(
-        id=project.id,
-        config_json={"local_repo_path": str(repo_path)},
-        default_branch="main",
-    )
+    legacy_project = service_project(project.id, repo_path)
     try:
         return await LocalRepoService.compare(
             legacy_project,
@@ -3452,18 +3248,11 @@ async def list_project_local_scripts(
     """Detect allow-listed runnable scripts in the user's linked checkout."""
     check_organization_member(current_user)
     project = _legacy_project_or_404(db, project_id)
-    saved_path = _read_user_project_local_path(current_user, project_id)
-    repo_path = (
-        Path(saved_path).expanduser().resolve()
-        if saved_path
-        else Path(__file__).resolve().parent.parent / "local_repos" / str(project_id)
-    )
-    if not (repo_path / ".git").exists():
-        raise HTTPException(status_code=400, detail="No local checkout exists yet. Link or import a repository first.")
+    repo_path = require_checkout(current_user, project_id)
 
     from app.services.local_script_service import LocalScriptError, LocalScriptService
 
-    legacy_project = SimpleNamespace(id=project.id, config_json={"local_repo_path": str(repo_path)})
+    legacy_project = service_project(project.id, repo_path)
     try:
         scripts = LocalScriptService.detect(legacy_project)
     except LocalScriptError as exc:
@@ -3514,7 +3303,7 @@ async def link_existing_local_repo(
         except LocalRepoError as exc:
             raise HTTPException(status_code=400, detail=f"Could not switch to '{branch}': {exc}") from exc
 
-    _set_user_project_local_path(db, current_user, project_id, str(repo_path))
+    save_linked_path(db, current_user, project_id, str(repo_path))
     return await get_project_local_status(project_id, current_user, db)
 
 
@@ -3571,7 +3360,7 @@ async def import_local_repo(
         raise HTTPException(status_code=400, detail=f"Could not use '{repo_path}': {exc.strerror or exc}") from exc
 
     previously_managed = (_user_settings(current_user).get("project_local_repo_managed") or {}).get(str(project_id))
-    _set_user_project_local_path(db, current_user, project_id, str(target),
+    save_linked_path(db, current_user, project_id, str(target),
                                  managed=cloned or previously_managed == str(target))
     return await get_project_local_status(project_id, current_user, db)
 
@@ -3586,7 +3375,7 @@ async def remove_local_repo(
     check_organization_member(current_user)
     check_product_manager_access(current_user)
     _legacy_project_or_404(db, project_id)
-    saved_path = _read_user_project_local_path(current_user, project_id)
+    saved_path = read_linked_path(current_user, project_id)
     managed_path = (_user_settings(current_user).get("project_local_repo_managed") or {}).get(str(project_id))
     deleted = False
     if saved_path and managed_path == saved_path:
@@ -3599,7 +3388,7 @@ async def remove_local_repo(
                                     detail="The local copy has uncommitted changes. Commit or discard them first.")
             shutil.rmtree(folder)
             deleted = True
-    _set_user_project_local_path(db, current_user, project_id, "")
+    save_linked_path(db, current_user, project_id, "")
     return {"removed": True, "deleted_from_disk": deleted}
 
 
@@ -3653,7 +3442,7 @@ async def get_project_scaffold(
     check_organization_member(current_user)
     _legacy_project_or_404(db, project_id)
     info = _project_scaffold_info(current_user, project_id)
-    if info and info.get("path") != _read_user_project_local_path(current_user, project_id):
+    if info and info.get("path") != read_linked_path(current_user, project_id):
         info = None  # The local copy was removed or replaced since the starter was created.
     job = scaffold_service.latest_job(project_id)
     if info:
@@ -3674,7 +3463,7 @@ async def delete_project_scaffold(
     check_product_manager_access(current_user)
     _legacy_project_or_404(db, project_id)
     info = _project_scaffold_info(current_user, project_id)
-    if not info or info.get("path") != _read_user_project_local_path(current_user, project_id):
+    if not info or info.get("path") != read_linked_path(current_user, project_id):
         raise HTTPException(status_code=404, detail="This project has no generated starter project.")
     try:
         await asyncio.to_thread(scaffold_service.delete_project, Path(info["path"]))
@@ -3682,7 +3471,7 @@ async def delete_project_scaffold(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except OSError as exc:
         raise HTTPException(status_code=500, detail=f"Could not delete '{info['path']}': {exc}") from exc
-    _set_user_project_local_path(db, current_user, project_id, "")
+    save_linked_path(db, current_user, project_id, "")
     _set_project_scaffold_info(db, current_user, project_id, None)
     return {"deleted": True, "path": info["path"]}
 
@@ -3715,7 +3504,7 @@ async def create_project_scaffold(
     except OSError as exc:
         raise HTTPException(status_code=400, detail=f"Could not write to '{path}': {exc.strerror or exc}") from exc
 
-    _set_user_project_local_path(db, current_user, project_id, str(target), managed=True)
+    save_linked_path(db, current_user, project_id, str(target), managed=True)
     info = {"framework": payload.framework, "language": payload.language, "path": str(target),
             "created_at": datetime.utcnow().isoformat()}
     _set_project_scaffold_info(db, current_user, project_id, info)
@@ -3895,332 +3684,3 @@ async def test_project_github(
         )
     except Exception as exc:
         return ProjectGitHubTestResponse(ok=False, error=str(exc))
-
-
-# Issue Endpoints
-@router.post("/{project_id}/issues")
-async def create_issue(
-    project_id: int,
-    issue_data: IssueCreate,
-    current_user = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Create a new issue - Only Product Managers"""
-    # Check access
-    check_product_manager_access(current_user)
-    
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    
-    # Generate issue key (e.g., QA-1, QA-2, etc.)
-    last_issue = db.query(Issue).filter(
-        Issue.project_id == project_id
-    ).order_by(Issue.id.desc()).first()
-    
-    issue_number = 1 if not last_issue else int(last_issue.key.split('-')[1]) + 1
-    issue_key = f"{project.key}-{issue_number}"
-    
-    issue = Issue(
-        key=issue_key,
-        project_id=project_id,
-        title=issue_data.title,
-        description=issue_data.description,
-        issue_type=issue_data.issue_type,
-        priority=issue_data.priority,
-        assignee_id=issue_data.assignee_id,
-        reporter_id=current_user.id,
-        sprint_id=issue_data.sprint_id,
-        parent_issue_id=issue_data.parent_issue_id,
-        epic_id=issue_data.epic_id,
-        story_points=issue_data.story_points,
-        due_date=issue_data.due_date
-    )
-    
-    db.add(issue)
-    db.commit()
-    db.refresh(issue)
-    
-    # Log activity
-    activity = IssueActivity(
-        issue_id=issue.id,
-        user_id=current_user.id,
-        action="created"
-    )
-    db.add(activity)
-    db.commit()
-    
-    return {"message": "Issue created successfully", "issue": issue}
-
-
-@router.get("/{project_id}/issues")
-async def get_project_issues(
-    project_id: int,
-    status: Optional[str] = None,
-    assignee_id: Optional[int] = None,
-    sprint_id: Optional[int] = None,
-    current_user = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Get all issues for a project - All organization members can view"""
-    # Check user belongs to organization
-    check_organization_member(current_user)
-    
-    query = db.query(Issue).filter(Issue.project_id == project_id)
-    
-    if status:
-        query = query.filter(Issue.status == status)
-    if assignee_id:
-        query = query.filter(Issue.assignee_id == assignee_id)
-    if sprint_id:
-        query = query.filter(Issue.sprint_id == sprint_id)
-    
-    issues = query.order_by(Issue.order_index, Issue.created_at.desc()).all()
-    
-    return {"issues": issues}
-
-
-@router.get("/{project_id}/issues/{issue_id}")
-async def get_issue(
-    project_id: int,
-    issue_id: int,
-    current_user = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Get issue details with comments and activities - All organization members can view"""
-    # Check user belongs to organization
-    check_organization_member(current_user)
-    
-    issue = db.query(Issue).filter(
-        Issue.id == issue_id,
-        Issue.project_id == project_id
-    ).first()
-    
-    if not issue:
-        raise HTTPException(status_code=404, detail="Issue not found")
-    
-    return {
-        "issue": issue,
-        "comments": issue.comments,
-        "activities": issue.activities,
-        "attachments": issue.attachments
-    }
-
-
-@router.patch("/{project_id}/issues/{issue_id}")
-async def update_issue(
-    project_id: int,
-    issue_id: int,
-    issue_data: IssueUpdate,
-    current_user = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Update an issue - Only Product Managers"""
-    # Check access
-    check_product_manager_access(current_user)
-    
-    issue = db.query(Issue).filter(
-        Issue.id == issue_id,
-        Issue.project_id == project_id
-    ).first()
-    
-    if not issue:
-        raise HTTPException(status_code=404, detail="Issue not found")
-    
-    # Log changes
-    for field, new_value in issue_data.dict(exclude_unset=True).items():
-        old_value = getattr(issue, field)
-        if old_value != new_value:
-            activity = IssueActivity(
-                issue_id=issue.id,
-                user_id=current_user.id,
-                action="updated",
-                field=field,
-                old_value=str(old_value) if old_value else None,
-                new_value=str(new_value) if new_value else None
-            )
-            db.add(activity)
-            setattr(issue, field, new_value)
-    
-    if issue_data.status == IssueStatus.DONE and not issue.resolved_at:
-        issue.resolved_at = datetime.utcnow()
-    
-    db.commit()
-    db.refresh(issue)
-    
-    return {"message": "Issue updated successfully", "issue": issue}
-
-
-@router.post("/{project_id}/issues/{issue_id}/move")
-async def move_issue_status(
-    project_id: int,
-    issue_id: int,
-    new_status: IssueStatus,
-    new_order: Optional[int] = None,
-    current_user = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Move issue to new status (for Kanban board) - Only Product Managers"""
-    # Check access
-    check_product_manager_access(current_user)
-    
-    issue = db.query(Issue).filter(
-        Issue.id == issue_id,
-        Issue.project_id == project_id
-    ).first()
-    
-    if not issue:
-        raise HTTPException(status_code=404, detail="Issue not found")
-    
-    old_status = issue.status
-    issue.status = new_status
-    
-    if new_order is not None:
-        issue.order_index = new_order
-    
-    # Log activity
-    activity = IssueActivity(
-        issue_id=issue.id,
-        user_id=current_user.id,
-        action="moved",
-        field="status",
-        old_value=old_status.value,
-        new_value=new_status.value
-    )
-    db.add(activity)
-    
-    db.commit()
-    db.refresh(issue)
-    
-    return {"message": "Issue moved successfully", "issue": issue}
-
-
-# Comment Endpoints
-@router.post("/{project_id}/issues/{issue_id}/comments")
-async def add_comment(
-    project_id: int,
-    issue_id: int,
-    comment_data: CommentCreate,
-    current_user = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Add comment to issue - Only Product Managers"""
-    # Check access
-    check_product_manager_access(current_user)
-    
-    issue = db.query(Issue).filter(
-        Issue.id == issue_id,
-        Issue.project_id == project_id
-    ).first()
-    
-    if not issue:
-        raise HTTPException(status_code=404, detail="Issue not found")
-    
-    comment = IssueComment(
-        issue_id=issue_id,
-        user_id=current_user.id,
-        content=comment_data.content
-    )
-    
-    db.add(comment)
-    
-    # Log activity
-    activity = IssueActivity(
-        issue_id=issue_id,
-        user_id=current_user.id,
-        action="commented"
-    )
-    db.add(activity)
-    
-    db.commit()
-    db.refresh(comment)
-    
-    return {"message": "Comment added successfully", "comment": comment}
-
-
-# Sprint Endpoints
-@router.post("/{project_id}/sprints")
-async def create_sprint(
-    project_id: int,
-    sprint_data: SprintCreate,
-    current_user = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Create a new sprint"""
-    sprint = Sprint(
-        project_id=project_id,
-        name=sprint_data.name,
-        goal=sprint_data.goal,
-        start_date=sprint_data.start_date,
-        end_date=sprint_data.end_date
-    )
-    
-    db.add(sprint)
-    db.commit()
-    db.refresh(sprint)
-    
-    return {"message": "Sprint created successfully", "sprint": sprint}
-
-
-@router.get("/{project_id}/sprints")
-async def get_sprints(
-    project_id: int,
-    current_user = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Get all sprints for a project"""
-    sprints = db.query(Sprint).filter(Sprint.project_id == project_id).all()
-    
-    return {"sprints": sprints}
-
-
-@router.post("/{project_id}/sprints/{sprint_id}/start")
-async def start_sprint(
-    project_id: int,
-    sprint_id: int,
-    current_user = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Start a sprint"""
-    sprint = db.query(Sprint).filter(
-        Sprint.id == sprint_id,
-        Sprint.project_id == project_id
-    ).first()
-    
-    if not sprint:
-        raise HTTPException(status_code=404, detail="Sprint not found")
-    
-    sprint.is_active = True
-    if not sprint.start_date:
-        sprint.start_date = datetime.utcnow()
-    
-    db.commit()
-    db.refresh(sprint)
-    
-    return {"message": "Sprint started successfully", "sprint": sprint}
-
-
-@router.post("/{project_id}/sprints/{sprint_id}/complete")
-async def complete_sprint(
-    project_id: int,
-    sprint_id: int,
-    current_user = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Complete a sprint"""
-    sprint = db.query(Sprint).filter(
-        Sprint.id == sprint_id,
-        Sprint.project_id == project_id
-    ).first()
-    
-    if not sprint:
-        raise HTTPException(status_code=404, detail="Sprint not found")
-    
-    sprint.is_active = False
-    sprint.is_completed = True
-    sprint.completed_at = datetime.utcnow()
-    
-    db.commit()
-    db.refresh(sprint)
-    
-    return {"message": "Sprint completed successfully", "sprint": sprint}

@@ -1,4 +1,3 @@
-import os
 import re
 from typing import Optional
 from urllib.parse import urlparse
@@ -7,12 +6,12 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
-from app.api.v1.endpoints.auth import get_current_user, require_admin, require_lead_or_above
-from app.core.config import settings
-from app.db.session import get_db
-from app.models.models import User
+from app.core.config import BACKEND_DIR, settings
+from app.core.db import get_db
+from app.core.deps import get_current_user, require_admin, require_lead_or_above
+from app.modules.identity.models import User
 from app.services.confluence_release_analyzer import (
     analyze_release_page_html,
     extract_jira_macro_jql_queries,
@@ -22,7 +21,7 @@ from app.services.zephyr_service import ZephyrAuthError, ZephyrPermissionError, 
 
 router = APIRouter()
 
-ENV_FILE = os.path.join(os.path.dirname(__file__), "../../../../.env")
+ENV_FILE = str(BACKEND_DIR / ".env")
 
 
 def _read_env() -> dict:
@@ -412,7 +411,7 @@ async def get_settings(_user=Depends(get_current_user)):
 async def update_github_settings(
     payload: GitHubMCPConfig,
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Save current user's GitHub token and/or base URL."""
     data = _user_settings(current_user)
@@ -424,8 +423,8 @@ async def update_github_settings(
         data["github_mcp_base_url"] = payload.github_mcp_base_url
 
     _set_user_settings(current_user, data)
-    await db.commit()
-    await db.refresh(current_user)
+    db.commit()
+    db.refresh(current_user)
 
     token = _read_setting(data, "github_token", "")
     base_url = _read_setting(data, "github_mcp_base_url", "")
@@ -484,68 +483,8 @@ async def test_github_connection(_user=Depends(get_current_user)):
         return GitHubTestResponse(ok=False, error=str(exc))
 
 
-@router.get("/requirements-filters", response_model=RequirementsFiltersResponse)
-async def get_requirements_filters(_user=Depends(get_current_user)):
-    """Return the current user's saved filters for the 'Epic Status View' and
-    'Automation Status Management' panels (Requirements tab)."""
-    data = _user_settings(_user)
-    raw = data.get("requirements_filters") or {}
-    epic = raw.get("epic_status_view") or {}
-    auto = raw.get("automation_status_management") or {}
-    return RequirementsFiltersResponse(
-        epic_status_view=EpicStatusFilter(
-            search=str(epic.get("search") or ""),
-            status=str(epic.get("status") or ""),
-            team=str(epic.get("team") or ""),
-        ),
-        automation_status_management=AutomationStatusFilter(
-            search=str(auto.get("search") or ""),
-            filter=str(auto.get("filter") or ""),
-            team=str(auto.get("team") or ""),
-        ),
-    )
-
-
-@router.put("/requirements-filters", response_model=RequirementsFiltersResponse)
-async def save_requirements_filters(
-    payload: RequirementsFiltersPayload,
-    current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Save (or reset, by sending blank values) the current user's filters for
-    the Requirements tab panels. Only the panel(s) included in the payload are
-    updated; the other panel's saved filter is left untouched."""
-    data = _user_settings(current_user)
-    raw = dict(data.get("requirements_filters") or {})
-
-    if payload.epic_status_view is not None:
-        raw["epic_status_view"] = payload.epic_status_view.dict()
-    if payload.automation_status_management is not None:
-        raw["automation_status_management"] = payload.automation_status_management.dict()
-
-    data["requirements_filters"] = raw
-    _set_user_settings(current_user, data)
-    await db.commit()
-    await db.refresh(current_user)
-
-    epic = raw.get("epic_status_view") or {}
-    auto = raw.get("automation_status_management") or {}
-    return RequirementsFiltersResponse(
-        epic_status_view=EpicStatusFilter(
-            search=str(epic.get("search") or ""),
-            status=str(epic.get("status") or ""),
-            team=str(epic.get("team") or ""),
-        ),
-        automation_status_management=AutomationStatusFilter(
-            search=str(auto.get("search") or ""),
-            filter=str(auto.get("filter") or ""),
-            team=str(auto.get("team") or ""),
-        ),
-    )
-
-
 @router.get("/jira", response_model=JiraSettingsResponse)
-async def get_jira_settings(_user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def get_jira_settings(_user=Depends(get_current_user), db: Session = Depends(get_db)):
     """Return current user's Jira integration settings.
     
     For Automation User/Viewer: Returns project and base_url configured by their Lead, with their own token.
@@ -559,7 +498,7 @@ async def get_jira_settings(_user=Depends(get_current_user), db: AsyncSession = 
     config_source_user = _user
     if _role(_user) in _USER_OR_VIEWER and assigned_lead_id:
         stmt = select(User).where(User.id == assigned_lead_id)
-        result = await db.execute(stmt)
+        result = db.execute(stmt)
         lead = result.scalar_one_or_none()
         _log.warning(f"GET /jira: lead found={lead is not None}, lead_email={lead.email if lead else 'N/A'}")
         if lead:
@@ -595,7 +534,7 @@ async def get_jira_settings(_user=Depends(get_current_user), db: AsyncSession = 
 async def update_jira_settings(
     payload: JiraMCPConfig,
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Save current user's Jira token; base URL is lead/admin and project selection is scoped."""
     data = _user_settings(current_user)
@@ -627,8 +566,8 @@ async def update_jira_settings(
         data["jira_project_name"] = payload.jira_project_name
 
     _set_user_settings(current_user, data)
-    await db.commit()
-    await db.refresh(current_user)
+    db.commit()
+    db.refresh(current_user)
 
     # The token/base URL/project just changed, so any previously cached
     # Epics/Test cases (Jira Management) fetched under the old configuration
@@ -643,7 +582,7 @@ async def update_jira_settings(
     assigned_lead_id = getattr(current_user, 'assigned_lead_id', None)
     if _role(current_user) in _USER_OR_VIEWER and assigned_lead_id:
         stmt = select(User).where(User.id == assigned_lead_id)
-        result = await db.execute(stmt)
+        result = db.execute(stmt)
         lead = result.scalar_one_or_none()
         if lead:
             config_source_user = lead
@@ -663,7 +602,7 @@ async def update_jira_settings(
 
 
 @router.post("/jira/test", response_model=JiraTestResponse)
-async def test_jira_connection(_user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def test_jira_connection(_user=Depends(get_current_user), db: Session = Depends(get_db)):
     """Verify Jira token by calling /myself.
     
     For Automation User/Viewer: Uses their own token and Lead's base_url.
@@ -674,7 +613,7 @@ async def test_jira_connection(_user=Depends(get_current_user), db: AsyncSession
     assigned_lead_id = getattr(_user, 'assigned_lead_id', None)
     if _role(_user) in _USER_OR_VIEWER and assigned_lead_id:
         stmt = select(User).where(User.id == assigned_lead_id)
-        result = await db.execute(stmt)
+        result = db.execute(stmt)
         lead = result.scalar_one_or_none()
         if lead:
             config_source_user = lead
@@ -721,7 +660,7 @@ async def test_jira_connection(_user=Depends(get_current_user), db: AsyncSession
 
 
 @router.get("/jira/projects", response_model=JiraProjectsResponse)
-async def list_jira_projects(_user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def list_jira_projects(_user=Depends(get_current_user), db: Session = Depends(get_db)):
     """List Jira projects via configured Jira MCP/base URL and token.
     
     For Automation User/Viewer: Show projects configured by their assigned Lead, but use their own token.
@@ -741,7 +680,7 @@ async def list_jira_projects(_user=Depends(get_current_user), db: AsyncSession =
     assigned_lead_id = getattr(_user, 'assigned_lead_id', None)
     if _role(_user) in _USER_OR_VIEWER and assigned_lead_id:
         stmt = select(User).where(User.id == assigned_lead_id)
-        result = await db.execute(stmt)
+        result = db.execute(stmt)
         lead = result.scalar_one_or_none()
         if lead:
             config_source_user = lead
@@ -823,11 +762,11 @@ def _resolve_jira_auth(user, db_lead: Optional[User]) -> tuple[str, str]:
     return base_url, token
 
 
-async def _get_config_source_lead(current_user, db: AsyncSession) -> Optional[User]:
+async def _get_config_source_lead(current_user, db: Session) -> Optional[User]:
     assigned_lead_id = getattr(current_user, 'assigned_lead_id', None)
     if _role(current_user) in _USER_OR_VIEWER and assigned_lead_id:
         stmt = select(User).where(User.id == assigned_lead_id)
-        result = await db.execute(stmt)
+        result = db.execute(stmt)
         return result.scalar_one_or_none()
     return None
 
@@ -867,7 +806,7 @@ async def _find_jira_custom_field(
 async def get_jira_create_meta(
     project_key: Optional[str] = Query(None),
     _user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """List the issue types available for creating a ticket in the configured
     (or given) Jira project, so the "Create Jira Ticket" popup can mirror
@@ -965,7 +904,7 @@ async def get_jira_create_meta(
 async def create_jira_issue(
     payload: JiraCreateIssueRequest,
     _user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Create a Jira ticket directly through the configured Jira REST
     connection (the app's Jira MCP integration) instead of opening the Jira
@@ -1098,318 +1037,8 @@ async def create_jira_issue(
 
 # ── Confluence MCP endpoints ──────────────────────────────────────────────────
 
-@router.get("/confluence", response_model=ConfluenceSettingsResponse)
-async def get_confluence_settings(_user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    """Return current user's Confluence integration settings.
-
-    For Automation User/Viewer: Returns space configured by their Lead, with their own token.
-    For Lead/Admin: Returns their own configuration.
-    """
-    assigned_lead_id = getattr(_user, 'assigned_lead_id', None)
-    config_source_user = _user
-    if _role(_user) in _USER_OR_VIEWER and assigned_lead_id:
-        stmt = select(User).where(User.id == assigned_lead_id)
-        result = await db.execute(stmt)
-        lead = result.scalar_one_or_none()
-        if lead:
-            config_source_user = lead
-
-    config_data = _user_settings(config_source_user)
-    space_key = _read_setting(config_data, "confluence_space_key", "")
-    space_name = _read_setting(config_data, "confluence_space_name", "")
-    container_id = _read_setting(config_data, "confluence_release_container_id", "")
-    container_title = _read_setting(config_data, "confluence_release_container_title", "")
-    container_url = _read_setting(config_data, "confluence_release_container_url", "")
-    selected_release_id = _read_setting(config_data, "confluence_selected_release_page_id", "")
-    selected_release_title = _read_setting(config_data, "confluence_selected_release_page_title", "")
-    selected_release_url = _read_setting(config_data, "confluence_selected_release_page_url", "")
-    base_url = _read_setting(config_data, "confluence_mcp_base_url", "")
-
-    user_data = _user_settings(_user)
-    token = _read_setting(user_data, "confluence_token", "")
-
-    return ConfluenceSettingsResponse(
-        confluence_token_set=bool(token),
-        confluence_token_preview=("•••• " + token[-4:]) if len(token) >= 4 else ("set" if token else ""),
-        confluence_mcp_base_url=base_url,
-        confluence_space_key=(space_key or None),
-        confluence_space_name=(space_name or None),
-        confluence_release_container_id=(container_id or None),
-        confluence_release_container_title=(container_title or None),
-        confluence_release_container_url=(container_url or None),
-        confluence_selected_release_page_id=(selected_release_id or None),
-        confluence_selected_release_page_title=(selected_release_title or None),
-        confluence_selected_release_page_url=(selected_release_url or None),
-    )
-
-
-@router.patch("/confluence", response_model=ConfluenceSettingsResponse)
-async def update_confluence_settings(
-    payload: ConfluenceMCPConfig,
-    current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Save current user's Confluence token; base URL is lead/admin and space selection is scoped."""
-    data = _user_settings(current_user)
-
-    tries_to_change_base_url = payload.confluence_mcp_base_url is not None
-    if tries_to_change_base_url and _role(current_user) not in _LEAD_OR_ABOVE:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only Admin and Automation Lead can change Confluence base URL",
-        )
-
-    tries_to_change_space = payload.confluence_space_key is not None or payload.confluence_space_name is not None
-    tries_to_change_release_config = (
-        payload.confluence_release_container_id is not None
-        or payload.confluence_release_container_title is not None
-        or payload.confluence_release_container_url is not None
-        or payload.confluence_selected_release_page_id is not None
-        or payload.confluence_selected_release_page_title is not None
-        or payload.confluence_selected_release_page_url is not None
-    )
-    if tries_to_change_space and not _can_manage_confluence_space_config(current_user):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only Automation Leads and assigned Automation Users/Visitors can change Confluence space selection",
-        )
-    if tries_to_change_release_config and not _can_manage_confluence_space_config(current_user):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=(
-                "Only Automation Leads and assigned Automation Users/Visitors can change "
-                "Confluence release page configuration"
-            ),
-        )
-
-    if payload.confluence_token is not None:
-        data["confluence_token"] = payload.confluence_token
-
-    if payload.confluence_mcp_base_url is not None:
-        data["confluence_mcp_base_url"] = payload.confluence_mcp_base_url
-
-    if payload.confluence_space_key is not None:
-        data["confluence_space_key"] = payload.confluence_space_key
-
-    if payload.confluence_space_name is not None:
-        data["confluence_space_name"] = payload.confluence_space_name
-
-    if payload.confluence_release_container_id is not None:
-        data["confluence_release_container_id"] = payload.confluence_release_container_id
-
-    if payload.confluence_release_container_title is not None:
-        data["confluence_release_container_title"] = payload.confluence_release_container_title
-
-    if payload.confluence_release_container_url is not None:
-        data["confluence_release_container_url"] = payload.confluence_release_container_url
-
-    if payload.confluence_selected_release_page_id is not None:
-        data["confluence_selected_release_page_id"] = payload.confluence_selected_release_page_id
-
-    if payload.confluence_selected_release_page_title is not None:
-        data["confluence_selected_release_page_title"] = payload.confluence_selected_release_page_title
-
-    if payload.confluence_selected_release_page_url is not None:
-        data["confluence_selected_release_page_url"] = payload.confluence_selected_release_page_url
-
-    _set_user_settings(current_user, data)
-    await db.commit()
-    await db.refresh(current_user)
-
-    config_source_user = current_user
-    assigned_lead_id = getattr(current_user, 'assigned_lead_id', None)
-    if _role(current_user) in _USER_OR_VIEWER and assigned_lead_id:
-        stmt = select(User).where(User.id == assigned_lead_id)
-        result = await db.execute(stmt)
-        lead = result.scalar_one_or_none()
-        if lead:
-            config_source_user = lead
-
-    config_data = _user_settings(config_source_user)
-    token = _read_setting(data, "confluence_token", "")
-    base_url = _read_setting(config_data, "confluence_mcp_base_url", "")
-    space_key = _read_setting(config_data, "confluence_space_key", "")
-    space_name = _read_setting(config_data, "confluence_space_name", "")
-    container_id = _read_setting(config_data, "confluence_release_container_id", "")
-    container_title = _read_setting(config_data, "confluence_release_container_title", "")
-    container_url = _read_setting(config_data, "confluence_release_container_url", "")
-    selected_release_id = _read_setting(config_data, "confluence_selected_release_page_id", "")
-    selected_release_title = _read_setting(config_data, "confluence_selected_release_page_title", "")
-    selected_release_url = _read_setting(config_data, "confluence_selected_release_page_url", "")
-    return ConfluenceSettingsResponse(
-        confluence_token_set=bool(token),
-        confluence_token_preview=("•••• " + token[-4:]) if len(token) >= 4 else ("set" if token else ""),
-        confluence_mcp_base_url=base_url,
-        confluence_space_key=(space_key or None),
-        confluence_space_name=(space_name or None),
-        confluence_release_container_id=(container_id or None),
-        confluence_release_container_title=(container_title or None),
-        confluence_release_container_url=(container_url or None),
-        confluence_selected_release_page_id=(selected_release_id or None),
-        confluence_selected_release_page_title=(selected_release_title or None),
-        confluence_selected_release_page_url=(selected_release_url or None),
-    )
-
-
-@router.post("/confluence/test", response_model=ConfluenceTestResponse)
-async def test_confluence_connection(_user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    """Verify Confluence token by calling /user/current.
-
-    For Automation User/Viewer: Uses their own token and Lead's base_url.
-    For Lead/Admin: Uses their own token and base_url.
-    """
-    config_source_user = _user
-    assigned_lead_id = getattr(_user, 'assigned_lead_id', None)
-    if _role(_user) in _USER_OR_VIEWER and assigned_lead_id:
-        stmt = select(User).where(User.id == assigned_lead_id)
-        result = await db.execute(stmt)
-        lead = result.scalar_one_or_none()
-        if lead:
-            config_source_user = lead
-
-    config_data = _user_settings(config_source_user)
-    base_url = _read_setting(config_data, "confluence_mcp_base_url", "")
-
-    user_data = _user_settings(_user)
-    token = _read_setting(user_data, "confluence_token", "")
-
-    if not token or not base_url:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Confluence token or Confluence base URL is not configured.",
-        )
-
-    candidates = _build_confluence_api_candidates(base_url)
-    last_error = ""
-
-    for api_base in candidates:
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get(
-                    f"{api_base}/user/current",
-                    headers={
-                        "Authorization": f"Bearer {token}",
-                        "Accept": "application/json",
-                    },
-                )
-
-            if resp.status_code == 200:
-                data = resp.json()
-                user = data.get("displayName") or data.get("username") or data.get("email")
-                return ConfluenceTestResponse(ok=True, user=user)
-            last_error = f"{resp.status_code}: {resp.text[:120]}"
-        except Exception as exc:
-            last_error = str(exc)
-
-    return ConfluenceTestResponse(ok=False, error=last_error or "Unable to connect to Confluence.")
-
-
-@router.get("/confluence/spaces", response_model=ConfluenceSpacesResponse)
-async def list_confluence_spaces(_user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    """List Confluence spaces via configured Confluence base URL and token.
-
-    For Automation User/Viewer: Show spaces configured by their assigned Lead, but use their own token.
-    For Lead/Admin: Show all available spaces with their own token.
-    """
-    if not _can_manage_confluence_space_config(_user):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=(
-                "Confluence space configuration is available only for Automation "
-                "Leads and assigned Automation Users/Visitors"
-            ),
-        )
-
-    config_source_user = _user
-    assigned_lead_id = getattr(_user, 'assigned_lead_id', None)
-    if _role(_user) in _USER_OR_VIEWER and assigned_lead_id:
-        stmt = select(User).where(User.id == assigned_lead_id)
-        result = await db.execute(stmt)
-        lead = result.scalar_one_or_none()
-        if lead:
-            config_source_user = lead
-
-    config_data = _user_settings(config_source_user)
-    base_url = _read_setting(config_data, "confluence_mcp_base_url", "")
-
-    user_data = _user_settings(_user)
-    token = _read_setting(user_data, "confluence_token", "")
-
-    if not token or not base_url:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Confluence token or Confluence base URL is not configured.",
-        )
-
-    candidates = _build_confluence_api_candidates(base_url)
-    last_error = ""
-
-    for api_base in candidates:
-        try:
-            all_items: list[dict] = []
-            start = 0
-            page_limit = 200
-            got_valid_response = False
-
-            # Confluence paginates /space results (default/max page sizes vary
-            # between Cloud and Server/DC); loop until there's no next page,
-            # otherwise only the first page's spaces would ever be returned.
-            while True:
-                async with httpx.AsyncClient(timeout=15) as client:
-                    resp = await client.get(
-                        f"{api_base}/space",
-                        params={"limit": page_limit, "start": start},
-                        headers={
-                            "Authorization": f"Bearer {token}",
-                            "Accept": "application/json",
-                        },
-                    )
-
-                if resp.status_code != 200:
-                    last_error = f"{resp.status_code}: {resp.text[:120]}"
-                    break
-
-                got_valid_response = True
-                payload = resp.json()
-                page_items = payload.get("results", []) if isinstance(payload, dict) else []
-                if not isinstance(page_items, list):
-                    page_items = []
-                all_items.extend(page_items)
-
-                returned = len(page_items)
-                links = (payload.get("_links", {}) or {}) if isinstance(payload, dict) else {}
-                has_next = bool(links.get("next"))
-                if not has_next or returned == 0:
-                    break
-                start += returned
-                if start > 10000:  # safety cap against pathological pagination
-                    break
-
-            if not got_valid_response:
-                continue
-
-            spaces = [
-                ConfluenceSpaceItem(
-                    id=str(item.get("id", "")),
-                    key=str(item.get("key", "")),
-                    name=str(item.get("name", "")),
-                )
-                for item in all_items
-                if item.get("key") and item.get("name")
-            ]
-            spaces.sort(key=lambda s: s.key)
-            return ConfluenceSpacesResponse(spaces=spaces)
-        except Exception as exc:
-            last_error = str(exc)
-
-    raise HTTPException(
-        status_code=status.HTTP_502_BAD_GATEWAY,
-        detail=f"Failed to list Confluence spaces. {last_error}",
-    )
-
-
 @router.get("/confluence/releases", response_model=ConfluenceReleasesResponse)
-async def list_confluence_releases(_user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def list_confluence_releases(_user=Depends(get_current_user), db: Session = Depends(get_db)):
     """List release-related pages from the configured Confluence space.
 
     Matches pages whose title contains "release" inside the configured space,
@@ -1419,7 +1048,7 @@ async def list_confluence_releases(_user=Depends(get_current_user), db: AsyncSes
     assigned_lead_id = getattr(_user, 'assigned_lead_id', None)
     if _role(_user) in _USER_OR_VIEWER and assigned_lead_id:
         stmt = select(User).where(User.id == assigned_lead_id)
-        result = await db.execute(stmt)
+        result = db.execute(stmt)
         lead = result.scalar_one_or_none()
         if lead:
             config_source_user = lead
@@ -1493,7 +1122,7 @@ async def list_confluence_releases(_user=Depends(get_current_user), db: AsyncSes
 async def search_confluence_release_containers(
     q: str = Query(default="", description="Page title search text"),
     _user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Search Confluence pages in configured space to link one as release container."""
     if not _can_manage_confluence_space_config(_user):
@@ -1509,7 +1138,7 @@ async def search_confluence_release_containers(
     assigned_lead_id = getattr(_user, 'assigned_lead_id', None)
     if _role(_user) in _USER_OR_VIEWER and assigned_lead_id:
         stmt = select(User).where(User.id == assigned_lead_id)
-        result = await db.execute(stmt)
+        result = db.execute(stmt)
         lead = result.scalar_one_or_none()
         if lead:
             config_source_user = lead
@@ -1587,14 +1216,14 @@ async def list_confluence_release_pages(
         default=None, description="Container page id; defaults to configured release container"
     ),
     _user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """List child pages under the configured release container page."""
     config_source_user = _user
     assigned_lead_id = getattr(_user, 'assigned_lead_id', None)
     if _role(_user) in _USER_OR_VIEWER and assigned_lead_id:
         stmt = select(User).where(User.id == assigned_lead_id)
-        result = await db.execute(stmt)
+        result = db.execute(stmt)
         lead = result.scalar_one_or_none()
         if lead:
             config_source_user = lead
@@ -1689,7 +1318,7 @@ async def list_confluence_release_pages(
 
 
 async def _resolve_additional_release_tickets(
-    html: str, current_user, db: AsyncSession,
+    html: str, current_user, db: Session,
 ) -> tuple[list["ReleaseAnalysisTicketItem"], Optional[str]]:
     """Extract embedded Jira macro JQL queries (e.g. a "Stories/ Technical
     stories/ Bugs/ Tasks" section) from a release page and run them against
@@ -1704,7 +1333,7 @@ async def _resolve_additional_release_tickets(
     assigned_lead_id = getattr(current_user, 'assigned_lead_id', None)
     if _role(current_user) in _USER_OR_VIEWER and assigned_lead_id:
         stmt = select(User).where(User.id == assigned_lead_id)
-        result = await db.execute(stmt)
+        result = db.execute(stmt)
         lead = result.scalar_one_or_none()
         if lead:
             config_source_user = lead
@@ -1755,7 +1384,7 @@ async def analyze_confluence_release_page(
         default=None, description="Release page id; defaults to configured selected release page"
     ),
     _user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Run the 3-step BE/FE version analyzer against a release page.
 
@@ -1766,7 +1395,7 @@ async def analyze_confluence_release_page(
     assigned_lead_id = getattr(_user, 'assigned_lead_id', None)
     if _role(_user) in _USER_OR_VIEWER and assigned_lead_id:
         stmt = select(User).where(User.id == assigned_lead_id)
-        result = await db.execute(stmt)
+        result = db.execute(stmt)
         lead = result.scalar_one_or_none()
         if lead:
             config_source_user = lead
@@ -1904,7 +1533,7 @@ async def update_zephyr_settings(
 async def get_zephyr_cycles(
     project_key: str,
     _user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """List Zephyr test cycles (folders) for a project.
     
@@ -1916,7 +1545,7 @@ async def get_zephyr_cycles(
     assigned_lead_id = getattr(_user, 'assigned_lead_id', None)
     if _role(_user) in _USER_OR_VIEWER and assigned_lead_id:
         stmt = select(User).where(User.id == assigned_lead_id)
-        result = await db.execute(stmt)
+        result = db.execute(stmt)
         lead = result.scalar_one_or_none()
         if lead:
             config_source_user = lead

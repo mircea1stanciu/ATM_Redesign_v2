@@ -12,15 +12,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from api.sync_auth import get_current_user
-from core.database import (
-    APIToken,
-    LoginHistory,
-    NotificationPreference,
-    User,
-    UserSession,
-    get_db,
-)
+from app.core.db import get_db
+from app.core.deps import get_current_user
+from app.modules.identity.models import APIToken, LoginHistory, NotificationPreference, User, UserSession
 
 router = APIRouter(tags=["Settings"])
 
