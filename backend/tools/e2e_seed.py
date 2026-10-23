@@ -3,6 +3,9 @@
 Creates one user per role and a sample project. Writes the users' names and access tokens to a JSON file, so the
 tests can open authenticated pages without going through the rate-limited login endpoint.
 
+The lead leads the sample project; the senior is shared; the user and the trainee are project based, members of the
+sample project and assigned to the lead; the viewer is a member of the sample project.
+
 When the harness passes E2E_REPO_URL and E2E_CHECKOUT_DIR, the sample project points at that repository (served by
 the fake GitHub) and the super admin and automation user have the checkout linked and a GitHub token for it.
 
@@ -22,12 +25,19 @@ from app.main import prepare_database  # noqa: E402
 from app.modules.identity.models import User, UserRole  # noqa: E402
 from app.modules.identity.service import get_default_organization  # noqa: E402
 from app.modules.projects.checkouts import save_linked_path  # noqa: E402
-from app.modules.projects.models import Project  # noqa: E402
+from app.modules.projects.models import Project, ProjectMember  # noqa: E402
 from app.modules.projects.service import set_project_github_token  # noqa: E402
 
 SAMPLE_PROJECT_KEY = "E2E"
 SAMPLE_GITHUB_TOKEN = "e2e-github-token"
 PUBLISHING_ROLES = {UserRole.SUPER_ADMIN, UserRole.AUTOMATION_USER}
+SCOPE_TAGS = {
+    UserRole.AUTOMATION_SENIOR: "shared",
+    UserRole.AUTOMATION_USER: "project_base",
+    UserRole.AUTOMATION_TRAINEE: "project_base",
+}
+MEMBER_ROLES = {UserRole.AUTOMATION_USER, UserRole.AUTOMATION_TRAINEE, UserRole.VIEWER}
+LEAD_ASSIGNED_ROLES = {UserRole.AUTOMATION_USER, UserRole.AUTOMATION_TRAINEE}
 
 
 def seed(sessions_path: str) -> None:
@@ -47,6 +57,7 @@ def seed(sessions_path: str) -> None:
                     hashed_password=User.hash_password(password),
                     full_name=f"E2E {role.value.replace('_', ' ').title()}",
                     role=role,
+                    scope_tag=SCOPE_TAGS.get(role),
                     organization_id=org.id,
                     is_active=True,
                 )
@@ -75,6 +86,17 @@ def seed(sessions_path: str) -> None:
             db.add(project)
             db.commit()
             db.refresh(project)
+
+        users = {user.role: user for user in db.query(User).filter(User.username.like("e2e_%")).all()}
+        lead = users[UserRole.AUTOMATION_LEAD]
+        project.lead_user_id = lead.id
+        for role in LEAD_ASSIGNED_ROLES:
+            users[role].assigned_lead_id = lead.id
+        for role in MEMBER_ROLES:
+            user_id = users[role].id
+            if not db.query(ProjectMember).filter_by(project_id=project.id, user_id=user_id).first():
+                db.add(ProjectMember(project_id=project.id, user_id=user_id))
+        db.commit()
 
         repo_url, checkout = os.getenv("E2E_REPO_URL"), os.getenv("E2E_CHECKOUT_DIR")
         if repo_url and checkout:

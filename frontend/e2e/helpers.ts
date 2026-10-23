@@ -1,15 +1,13 @@
 import { readFileSync } from 'node:fs'
 import type { Page } from '@playwright/test'
 
-// Roles of today's app (backend core/database.py UserRole). Phase 04 replaces them with the six target roles.
+// The six roles (docs/redesign/04-roles-and-permissions.md); backend/tools/e2e_seed.py seeds one user per role.
 export type Role =
   | 'super_admin'
-  | 'admin'
-  | 'org_admin'
-  | 'community_lead'
   | 'automation_lead'
+  | 'automation_senior'
   | 'automation_user'
-  | 'user'
+  | 'automation_trainee'
   | 'viewer'
 
 type Sessions = Record<Role, { username: string; token: string }>
