@@ -57,6 +57,13 @@ They touch different modules, so their PRs do not conflict (see section 6.4).
   - Fixed: the Romanian error text and `lang="ro"`; the Tailwind content paths; the fixed seed passwords, which now
     come from environment variables in development only.
 - **UI tests:** the remaining screens still load. Removed routes redirect to Home.
+- **Left for later phases (decided while building phase 02):**
+  - The tables of the removed features stay in existing databases; phase 03 drops them with its Alembic baseline.
+  - One default organization stays, because users and projects still filter on `organization_id`. Organization
+    management, blocking, seat limits and plans are gone. The org-scoped user endpoints
+    (`/api/organizations/{id}/users`) stay until phase 04 replaces the Users screen, and so does the `org_admin` role.
+  - The v1 app (`app/`) keeps its own billing, integration and webhook endpoints until phase 03 removes it.
+  - Security (sessions, API tokens, login history) stays in Settings; phase 05 decides its place.
 
 ### Phase 03: `feature/phase_03_backend_consolidation`
 - **Goal:** one backend and one data model.
