@@ -21,6 +21,11 @@ function readSessions(): Sessions {
   return sessions
 }
 
+/** Base URL of the GitHub, Jira and Confluence stand-ins (e2e/harness/fake-services.mjs). */
+export function fakeServicesUrl() {
+  return `http://127.0.0.1:${process.env.E2E_FAKE_PORT}`
+}
+
 /** Username and password of the seeded user for a role. */
 export function credentials(role: Role) {
   return { username: readSessions()[role].username, password: process.env.E2E_PASSWORD! }

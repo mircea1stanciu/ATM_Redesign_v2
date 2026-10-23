@@ -18,14 +18,20 @@ The harness uses `backend/.venv/bin/python` when it exists; set `ATM_PYTHON` to 
 
 ## What the harness does
 
-`playwright.config.ts` picks two free ports and starts:
+`playwright.config.ts` picks three free ports and starts:
 
-1. `harness/start-backend.mjs`: creates a temporary SQLite database (`ATM_DATABASE_PATH`), runs
-   `backend/tools/e2e_seed.py`, then starts `backend/main.py`. The database is deleted when the run ends.
-2. The Vite dev server, with its `/api` proxy pointed at that backend (`ATM_API_TARGET`).
+1. `harness/fake-services.mjs`: stand-ins for GitHub, Jira and Confluence. It serves git over HTTP (through
+   `git http-backend`) for the bare repositories in a temporary folder, a small GitHub REST API (repository,
+   branches, pull requests), and the Jira and Confluence calls the settings screens make. `GET /__e2e/requests`
+   shows what ATM sent, so tests can check it.
+2. `harness/start-backend.mjs`: creates the sample repository (a bare "GitHub" repository with a README and
+   `scripts/hello.sh`, plus a checkout of it), a temporary SQLite database (`ATM_DATABASE_PATH`), runs
+   `backend/tools/e2e_seed.py`, then starts `backend/main.py`. Everything is deleted when the run ends.
+3. The Vite dev server, with its `/api` proxy (REST and WebSockets) pointed at that backend (`ATM_API_TARGET`).
 
-The seed creates one user per role (`e2e_<role>`, password `E2E_PASSWORD`) and a sample project, and writes the
-users' access tokens to `e2e/.auth/sessions.json`.
+The seed creates one user per role (`e2e_<role>`, password `E2E_PASSWORD`) and the sample project, and writes the
+users' access tokens to `e2e/.auth/sessions.json`. The project points at the fake repository; the super admin and
+the automation user have the checkout linked and a GitHub token for it.
 
 ## Writing tests
 
@@ -34,3 +40,7 @@ users' access tokens to `e2e/.auth/sessions.json`.
   login endpoint allows only 5 attempts per minute; only the login tests sign in through the form.
 - Select elements by role and label (`getByRole`, `getByLabel`), not by CSS classes.
 - Never call real GitHub, Jira, Confluence or AI services.
+- Settings pages load their saved values and put them into the form; wait for the page to finish loading
+  (`waitForLoadState('networkidle')`) before typing, or the load can overwrite what was typed.
+- Tests run in parallel. Two tests that change the same user's settings can overwrite each other (settings are
+  saved as one record); give them different roles.
