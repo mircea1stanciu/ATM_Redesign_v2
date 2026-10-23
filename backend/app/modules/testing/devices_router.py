@@ -3,7 +3,7 @@ import enum
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.core.deps import get_current_user
+from app.core.permissions import require
 from app.services import device_service
 from app.services.device_service import DeviceError
 
@@ -22,12 +22,12 @@ def _require_operator(user) -> None:
 
 
 @router.get("")
-async def list_devices(_user=Depends(get_current_user)):
+async def list_devices(_user=Depends(require("run.view"))):
     return await device_service.list_devices()
 
 
 @router.post("/{platform}/{device_id}/boot")
-async def boot_device(platform: DevicePlatform, device_id: str, user=Depends(get_current_user)):
+async def boot_device(platform: DevicePlatform, device_id: str, user=Depends(require("device.manage"))):
     _require_operator(user)
     try:
         return await device_service.boot_device(platform.value, device_id)
@@ -36,7 +36,7 @@ async def boot_device(platform: DevicePlatform, device_id: str, user=Depends(get
 
 
 @router.post("/{platform}/{device_id}/shutdown")
-async def shutdown_device(platform: DevicePlatform, device_id: str, user=Depends(get_current_user)):
+async def shutdown_device(platform: DevicePlatform, device_id: str, user=Depends(require("device.manage"))):
     _require_operator(user)
     try:
         return await device_service.shutdown_device(platform.value, device_id)

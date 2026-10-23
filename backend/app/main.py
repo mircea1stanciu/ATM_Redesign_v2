@@ -5,7 +5,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -13,9 +13,11 @@ from slowapi.errors import RateLimitExceeded
 from app.core.config import BACKEND_DIR, settings
 from app.core.db import SessionLocal
 from app.core.migrations import upgrade_database
+from app.core.permissions import PermissionDenied
 from app.core.rate_limit import limiter
 from app.modules.identity.router import router as identity_router
 from app.modules.identity.service import get_default_organization, seed_dev_admin
+from app.modules.identity.users_router import router as users_router
 from app.modules.learning.community_router import router as community_router
 from app.modules.projects.router import router as projects_router
 from app.modules.reporting.router import router as reporting_router
@@ -46,6 +48,12 @@ app = FastAPI(
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
+
+
+@app.exception_handler(PermissionDenied)
+async def permission_denied_handler(request: Request, exc: PermissionDenied):
+    return JSONResponse(status_code=403, content={"detail": exc.detail, "code": "permission_denied"})
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -70,6 +78,7 @@ async def add_security_headers(request: Request, call_next):
 
 
 app.include_router(identity_router, tags=["Identity"])
+app.include_router(users_router)
 app.include_router(projects_router)
 app.include_router(workspace_router)
 app.include_router(testing_router)

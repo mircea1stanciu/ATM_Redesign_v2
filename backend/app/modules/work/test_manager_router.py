@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.db import get_db
-from app.core.deps import get_current_user, require_lead_or_above
+from app.core.permissions import LEAD_ROLES, require
 from app.modules.identity.models import User, UserRole
 from app.modules.settings.connections import get_secret
 from app.services.automation_tracker import VALID_STATUSES, AutomationTracker
@@ -19,7 +19,8 @@ from app.services.test_manager_service import TestManagerService
 
 router = APIRouter()
 
-_USER_OR_VIEWER = {UserRole.AUTOMATION_USER, UserRole.VIEWER}
+# Everyone below lead uses their lead's Jira base URL.
+_USER_OR_VIEWER = {role for role in UserRole if role not in LEAD_ROLES}
 
 
 def _read_user_setting(user, key: str):
@@ -51,7 +52,7 @@ async def _resolve_jira_auth(current_user, db: Session) -> tuple[str, str]:
 
 
 def _enforce_jira_project_scope(user, project_key: str) -> None:
-    if user.role in {UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.AUTOMATION_LEAD}:
+    if user.role in LEAD_ROLES:
         return
 
     allowed_project_key = _read_user_setting(user, "jira_project_key")
@@ -112,7 +113,7 @@ class SprintIssuesResponse(BaseModel):
 async def get_test_sprints(
     project_key: str,
     state: str = "active",
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("work.view")),
     db: Session = Depends(get_db),
 ):
     """
@@ -154,7 +155,7 @@ async def get_test_sprints(
 async def get_sprint_test_issues(
     sprint_id: int,
     project_key: str,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("work.view")),
     db: Session = Depends(get_db),
 ):
     """List Testing/Dev-Testing issues for a specific sprint."""
@@ -254,7 +255,7 @@ class EpicStoriesResponse(BaseModel):
 @router.get("/cases/{project_key}/stats", response_model=TestCaseStatsResponse)
 async def get_test_case_stats(
     project_key: str,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("work.view")),
     db: Session = Depends(get_db),
 ):
     """Return automation coverage statistics for all test cases in a project."""
@@ -298,7 +299,7 @@ async def get_test_cases(
     project_key: str,
     automation_status: str = "all",
     search: str = "",
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("work.view")),
     db: Session = Depends(get_db),
 ):
     """
@@ -356,7 +357,7 @@ async def update_test_case_automation(
     project_key: str,
     jira_key: str,
     body: AutomationStatusUpdate,
-    user=Depends(require_lead_or_above),
+    user=Depends(require("jira.write")),
 ):
     """Set the automation status of a test case (stored locally, not in Jira)."""
     if body.status not in VALID_STATUSES:
@@ -384,7 +385,7 @@ async def get_epics_with_stories(
     project_key: str,
     search: str = "",
     refresh: bool = False,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("work.view")),
     db: Session = Depends(get_db),
 ):
     """Return Epics (created DESC) and their child stories for a project.

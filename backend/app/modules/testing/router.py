@@ -11,7 +11,9 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.db import SessionLocal, get_db
-from app.core.deps import get_current_user
+from app.core.permissions import can_see_project, ensure, has_permission, require
+from app.core.security import decode_token, token_user_id
+from app.modules.identity.models import User
 from app.modules.projects.checkouts import (
     checkout_path,
     require_checkout,
@@ -19,14 +21,11 @@ from app.modules.projects.checkouts import (
 )
 from app.modules.projects.models import AllureReport, AnalyticsRun, AnalyticsSuite
 from app.modules.projects.service import (
-    check_organization_member,
-    check_product_manager_access,
     get_project_or_404,
     github_get,
     github_headers,
     github_repository_context,
     parse_github_datetime,
-    require_editor,
     save_script_config,
     script_configs,
 )
@@ -83,11 +82,10 @@ class AnalyticsRunRename(BaseModel):
 @runs_router.get("/suites/projects/{project_id}")
 async def list_analytics_suites(
     project_id: int,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("run.view", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Expose imported Allure results as a virtual suite to the Analytics client."""
-    check_organization_member(current_user)
     get_project_or_404(db, project_id)
     suites = (
         db.query(AnalyticsSuite)
@@ -121,12 +119,10 @@ async def list_analytics_suites(
 async def create_analytics_suite(
     project_id: int,
     payload: AnalyticsSuiteCreate,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("suite.manage", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Create legacy suite metadata for a project."""
-    check_organization_member(current_user)
-    check_product_manager_access(current_user)
     get_project_or_404(db, project_id)
     name = payload.name.strip()
     if not name:
@@ -136,6 +132,7 @@ async def create_analytics_suite(
         name=name,
         tags=[tag.strip() for tag in payload.tags if tag.strip()],
         active=payload.active,
+        created_by_user_id=current_user.id,
     )
     db.add(suite)
     db.commit()
@@ -154,11 +151,10 @@ async def create_analytics_suite(
 @runs_router.get("/runs/projects/{project_id}")
 async def list_analytics_runs(
     project_id: int,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("run.view", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Return imported local and GitHub Allure reports in the standard run list contract."""
-    check_organization_member(current_user)
     get_project_or_404(db, project_id)
     reports = (
         db.query(AllureReport)
@@ -184,11 +180,10 @@ async def list_analytics_runs(
 @runs_router.post("/runs")
 async def create_analytics_run(
     payload: AnalyticsRunCreate,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("run.execute")),
     db: Session = Depends(get_db),
 ):
     """Create a local pending run from a legacy project suite."""
-    check_organization_member(current_user)
     try:
         suite_id = int(payload.suite_id)
     except ValueError:
@@ -199,6 +194,7 @@ async def create_analytics_run(
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid Allure suite reference.")
         get_project_or_404(db, project_id)
+        ensure(db, current_user, "run.execute", project_id)
         suite = db.query(AnalyticsSuite).filter(
             AnalyticsSuite.project_id == project_id,
             AnalyticsSuite.name == "Default Suite",
@@ -213,6 +209,7 @@ async def create_analytics_run(
     if not suite:
         raise HTTPException(status_code=404, detail="Suite not found")
     get_project_or_404(db, suite.project_id)
+    ensure(db, current_user, "run.execute", suite.project_id)
     run = AnalyticsRun(
         suite_id=suite.id,
         branch=payload.branch,
@@ -232,11 +229,10 @@ async def create_analytics_run(
 async def rename_analytics_run(
     run_id: str,
     payload: AnalyticsRunRename,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("run.execute", project_from="run_id")),
     db: Session = Depends(get_db),
 ):
     """Set or clear the display name of a local run."""
-    check_organization_member(current_user)
     if not run_id.startswith("manual-"):
         raise HTTPException(status_code=400, detail="Only local runs can be renamed.")
     try:
@@ -259,10 +255,9 @@ async def rename_analytics_run(
 @runs_router.get("/runs/{run_id}")
 async def get_analytics_run_details(
     run_id: str,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("run.view", project_from="run_id")),
     db: Session = Depends(get_db),
 ):
-    check_organization_member(current_user)
     if run_id.startswith("manual-"):
         try:
             manual_run_id = int(run_id.removeprefix("manual-"))
@@ -330,13 +325,12 @@ async def get_analytics_run_details(
 async def get_run_report_file(
     run_id: str,
     file_name: str,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("run.view", project_from="run_id")),
     db: Session = Depends(get_db),
 ):
     """Serve a report document captured for this run (copied into the run's artifacts)."""
     import mimetypes
 
-    check_organization_member(current_user)
     if not run_id.startswith("manual-"):
         raise HTTPException(status_code=404, detail="Report not found")
     try:
@@ -365,11 +359,10 @@ async def get_run_report_file(
 @runs_router.get("/runs/{run_id}/allure-report")
 async def get_manual_allure_report(
     run_id: str,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("run.view", project_from="run_id")),
     db: Session = Depends(get_db),
 ):
     """Serve the generated Allure-style HTML report for one local execution."""
-    check_organization_member(current_user)
     if not run_id.startswith("manual-"):
         raise HTTPException(status_code=404, detail="Allure report not found")
     try:
@@ -395,11 +388,10 @@ async def get_manual_allure_report(
 async def execute_analytics_run(
     run_id: str,
     payload: AnalyticsRunExecuteRequest = AnalyticsRunExecuteRequest(),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("run.execute", project_from="run_id")),
     db: Session = Depends(get_db),
 ):
     """Start a Bruno collection in the user's linked local checkout and stream live logs."""
-    check_organization_member(current_user)
     if not run_id.startswith("manual-"):
         raise HTTPException(status_code=400, detail="Only manually created local runs can be executed here.")
     try:
@@ -496,11 +488,10 @@ async def execute_analytics_run(
 @runs_router.post("/runs/{run_id}/cancel")
 async def cancel_analytics_run(
     run_id: str,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("run.execute", project_from="run_id")),
     db: Session = Depends(get_db),
 ):
     """Cancel a manually-created local run."""
-    check_organization_member(current_user)
     if not run_id.startswith("manual-"):
         raise HTTPException(status_code=400, detail="Only manually created local runs can be cancelled here.")
     try:
@@ -531,11 +522,10 @@ async def cancel_analytics_run(
 @runs_router.delete("/runs/{run_id}")
 async def delete_analytics_run(
     run_id: str,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("run.execute", project_from="run_id")),
     db: Session = Depends(get_db),
 ):
     """Delete a manually-created run or an imported Allure report."""
-    check_organization_member(current_user)
     if run_id.startswith("allure-"):
         try:
             report_id = int(run_id.removeprefix("allure-"))
@@ -563,12 +553,49 @@ async def delete_analytics_run(
     return {"status": "deleted", "run_id": run_id}
 
 
+def _may_watch_run(token: Optional[str], run_id: str) -> bool:
+    """Whether the token's user may read this run's logs (run.view on the run's project)."""
+    payload = decode_token(token) if token else None
+    user_id = token_user_id(payload) if payload else None
+    if user_id is None:
+        return False
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user or not user.is_active or not has_permission(user, "run.view"):
+            return False
+        if not run_id.startswith("manual-"):
+            return True
+        try:
+            run = db.query(AnalyticsRun).filter(AnalyticsRun.id == int(run_id.removeprefix("manual-"))).first()
+        except ValueError:
+            return False
+        suite = db.query(AnalyticsSuite).filter(AnalyticsSuite.id == run.suite_id).first() if run else None
+        return bool(suite) and can_see_project(db, user, suite.project_id)
+    finally:
+        db.close()
+
+
+WS_TOKEN_PROTOCOL = "atm-token"
+
+
 @runs_router.websocket("/ws/runs/{run_id}")
-# Old path, kept for one phase so open browser tabs keep working (remove in phase 04).
-@runs_router.websocket("/v1/runs/ws/{run_id}")
 async def stream_manual_run_logs(websocket: WebSocket, run_id: str):
-    """Stream the status and log messages of a run."""
-    await websocket.accept()
+    """Stream the status and log messages of a run.
+
+    Browsers cannot send an Authorization header on a WebSocket. The client offers the subprotocols
+    ["atm-token", <access token>] (headers are not written to the access log, unlike the URL); the access_token
+    cookie works too.
+    """
+    offered = list(websocket.scope.get("subprotocols") or [])
+    token = None
+    if WS_TOKEN_PROTOCOL in offered and offered.index(WS_TOKEN_PROTOCOL) + 1 < len(offered):
+        token = offered[offered.index(WS_TOKEN_PROTOCOL) + 1]
+    token = token or websocket.cookies.get("access_token")
+    if not _may_watch_run(token, run_id):
+        await websocket.close(code=1008)  # policy violation: not signed in or not allowed
+        return
+    await websocket.accept(subprotocol=WS_TOKEN_PROTOCOL if WS_TOKEN_PROTOCOL in offered else None)
     sockets = manual_run_sockets.setdefault(run_id, set())
     sockets.add(websocket)
     try:
@@ -601,11 +628,10 @@ async def stream_manual_run_logs(websocket: WebSocket, run_id: str):
 async def sync_project_github_runs(
     project_id: int,
     payload: GitHubRunsSyncRequest,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("run.execute", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Import GitHub Actions history into the legacy Dashboard and Analytics runs."""
-    check_organization_member(current_user)
     project = get_project_or_404(db, project_id)
     workflow_id = (payload.workflow_id or "").strip()
     if workflow_id and "/" in workflow_id:
@@ -693,11 +719,10 @@ async def list_project_github_runs(
     workflow_id: str = "",
     branch: str = "",
     limit: int = 30,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("run.view", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Return live GitHub Actions run history for the selected workflow."""
-    check_organization_member(current_user)
     project = get_project_or_404(db, project_id)
     workflow_id = workflow_id.strip()
     if workflow_id and "/" in workflow_id:
@@ -739,11 +764,10 @@ async def list_project_github_runs(
 @router.get("/{project_id}/local/libraries")
 async def get_project_local_libraries(
     project_id: int,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("run.view", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Detect dependency manifests in the linked local checkout."""
-    check_organization_member(current_user)
     project = get_project_or_404(db, project_id)
     repo_path = checkout_path(current_user, project_id)
     from app.services.local_library_service import LocalLibraryError, LocalLibraryService
@@ -757,11 +781,10 @@ async def get_project_local_libraries(
 @router.get("/{project_id}/local/setup-plan")
 async def get_project_local_setup_plan(
     project_id: int,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("run.view", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Build the allowed dependency setup plan for the linked local checkout."""
-    check_organization_member(current_user)
     project = get_project_or_404(db, project_id)
     repo_path = checkout_path(current_user, project_id)
     from app.services.workflow_recipe_service import WorkflowRecipeError, WorkflowRecipeService
@@ -775,11 +798,10 @@ async def get_project_local_setup_plan(
 @router.get("/{project_id}/local/collections")
 async def get_project_local_bruno_collections(
     project_id: int,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("run.view", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Discover executable Bruno collections and environments in the linked checkout."""
-    check_organization_member(current_user)
     get_project_or_404(db, project_id)
     repo_path = require_checkout(current_user, project_id)
 
@@ -806,7 +828,7 @@ async def get_project_local_bruno_collections(
 async def detect_project_local_frameworks(
     project_id: int,
     refresh: bool = False,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("run.view", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Runnable test frameworks (and their targets) found in the linked checkout."""
@@ -814,7 +836,6 @@ async def detect_project_local_frameworks(
 
     from app.services import framework_run_service
 
-    check_organization_member(current_user)
     get_project_or_404(db, project_id)
     repo_path = require_checkout(current_user, project_id)
     cached = _framework_detection_cache.get(str(repo_path))
@@ -829,12 +850,11 @@ async def detect_project_local_frameworks(
 async def analyze_project_local_appium(
     project_id: int,
     refresh: bool = False,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("run.view", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Detect Appium runners/suites/device profiles in the linked checkout and
     report which settings or station tools need changing before a run."""
-    check_organization_member(current_user)
     get_project_or_404(db, project_id)
     repo_path = require_checkout(current_user, project_id)
 
@@ -866,13 +886,12 @@ def _properties_call(func, *args):
 @router.get("/{project_id}/local/properties")
 async def list_project_properties_files(
     project_id: int,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("run.view", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """List .properties files in the user's linked checkout."""
     from app.services import properties_service
 
-    check_organization_member(current_user)
     get_project_or_404(db, project_id)
     repo_path = require_checkout(current_user, project_id)
     return {"files": await asyncio.to_thread(properties_service.list_files, repo_path)}
@@ -883,16 +902,15 @@ async def read_project_properties_file(
     project_id: int,
     path: str,
     reveal: bool = False,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("run.view", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Read one .properties file; credential-like values are masked unless ``reveal``."""
     from app.services import properties_service
 
-    check_organization_member(current_user)
     get_project_or_404(db, project_id)
-    if reveal:
-        require_editor(current_user)
+    if reveal:  # unmasked credential values need edit rights
+        ensure(db, current_user, "code.edit", project_id)
     repo_path = require_checkout(current_user, project_id)
     return await asyncio.to_thread(_properties_call, properties_service.read_file, repo_path, path, reveal)
 
@@ -901,15 +919,13 @@ async def read_project_properties_file(
 async def update_project_properties_file(
     project_id: int,
     payload: PropertiesUpdateRequest,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("code.edit", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Change existing values / add new keys, preserving the rest of the file."""
     from app.services import properties_service
 
-    check_organization_member(current_user)
     get_project_or_404(db, project_id)
-    require_editor(current_user)
     repo_path = require_checkout(current_user, project_id)
     return await asyncio.to_thread(
         _properties_call, properties_service.update_file,
@@ -921,15 +937,13 @@ async def update_project_properties_file(
 async def revert_project_properties_file(
     project_id: int,
     payload: PropertiesRevertRequest,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("code.edit", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Discard local changes to a committed .properties file (git checkout)."""
     from app.services import properties_service
 
-    check_organization_member(current_user)
     get_project_or_404(db, project_id)
-    require_editor(current_user)
     repo_path = require_checkout(current_user, project_id)
     return await asyncio.to_thread(_properties_call, properties_service.revert_file, repo_path, payload.path)
 
@@ -946,13 +960,12 @@ class BrunoEnvUpdateRequest(BaseModel):
 async def list_project_bruno_env_files(
     project_id: int,
     collection: str,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("run.view", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """List the environment .bru files a collection's runs can use."""
     from app.services import bruno_env_service
 
-    check_organization_member(current_user)
     get_project_or_404(db, project_id)
     repo_path = require_checkout(current_user, project_id)
     return {"files": await asyncio.to_thread(_properties_call, bruno_env_service.list_files, repo_path, collection)}
@@ -963,16 +976,15 @@ async def read_project_bruno_env_file(
     project_id: int,
     path: str,
     reveal: bool = False,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("run.view", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Read one environment file; credential-like values are masked unless ``reveal``."""
     from app.services import bruno_env_service
 
-    check_organization_member(current_user)
     get_project_or_404(db, project_id)
-    if reveal:
-        require_editor(current_user)
+    if reveal:  # unmasked credential values need edit rights
+        ensure(db, current_user, "code.edit", project_id)
     repo_path = require_checkout(current_user, project_id)
     return await asyncio.to_thread(_properties_call, bruno_env_service.read_file, repo_path, path, reveal)
 
@@ -981,15 +993,13 @@ async def read_project_bruno_env_file(
 async def update_project_bruno_env_file(
     project_id: int,
     payload: BrunoEnvUpdateRequest,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("code.edit", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Change values, enable/disable or add variables, preserving the rest of the file."""
     from app.services import bruno_env_service
 
-    check_organization_member(current_user)
     get_project_or_404(db, project_id)
-    require_editor(current_user)
     repo_path = require_checkout(current_user, project_id)
     return await asyncio.to_thread(
         _properties_call, bruno_env_service.update_file,
@@ -1001,15 +1011,13 @@ async def update_project_bruno_env_file(
 async def revert_project_bruno_env_file(
     project_id: int,
     payload: PropertiesRevertRequest,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("code.edit", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Discard local changes to a committed environment file (git checkout)."""
     from app.services import bruno_env_service
 
-    check_organization_member(current_user)
     get_project_or_404(db, project_id)
-    require_editor(current_user)
     repo_path = require_checkout(current_user, project_id)
     return await asyncio.to_thread(_properties_call, bruno_env_service.revert_file, repo_path, payload.path)
 
@@ -1017,11 +1025,10 @@ async def revert_project_bruno_env_file(
 @router.get("/{project_id}/local/scripts")
 async def list_project_local_scripts(
     project_id: int,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("run.view", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Detect allow-listed runnable scripts in the user's linked checkout."""
-    check_organization_member(current_user)
     project = get_project_or_404(db, project_id)
     repo_path = require_checkout(current_user, project_id)
     configs = script_configs(current_user, project_id)
@@ -1084,13 +1091,11 @@ def _script_item(script: dict, configs: dict) -> dict:
 async def save_project_local_script_config(
     project_id: int,
     payload: LocalScriptConfigRequest,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("code.edit", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Save the input values for a detected script's "Usage:" parameters (kept per user)."""
-    check_organization_member(current_user)
     project = get_project_or_404(db, project_id)
-    require_editor(current_user)
     repo_path = require_checkout(current_user, project_id)
     script = next((s for s in _detect_scripts(project.id, repo_path) if s["id"] == payload.script_id), None)
     if not script:
@@ -1103,15 +1108,13 @@ async def save_project_local_script_config(
 async def run_project_local_script(
     project_id: int,
     payload: LocalScriptRunRequest,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("run.execute", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Run a detected script in the checkout and return its output."""
     from app.services.local_script_service import LocalScriptError, LocalScriptService
 
-    check_organization_member(current_user)
     project = get_project_or_404(db, project_id)
-    require_editor(current_user)
     repo_path = require_checkout(current_user, project_id)
     values = script_configs(current_user, project_id).get(payload.script_id, {})
     try:
@@ -1126,15 +1129,13 @@ async def run_project_local_script(
 async def install_project_local_libraries(
     project_id: int,
     payload: LibraryInstallRequest,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("run.execute", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Install a detected manifest's dependencies in the checkout and return the output."""
     from app.services.local_library_service import LocalLibraryError, LocalLibraryService
 
-    check_organization_member(current_user)
     project = get_project_or_404(db, project_id)
-    require_editor(current_user)
     repo_path = require_checkout(current_user, project_id)
     try:
         return await LocalLibraryService.install(
@@ -1148,15 +1149,13 @@ async def install_project_local_libraries(
 async def install_project_local_setup_plan(
     project_id: int,
     payload: Optional[SetupInstallRequest] = None,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("run.execute", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Run every step of the setup plan in order, stopping at the first failure."""
     from app.services.workflow_recipe_service import WorkflowRecipeError, WorkflowRecipeService
 
-    check_organization_member(current_user)
     project = get_project_or_404(db, project_id)
-    require_editor(current_user)
     repo_path = require_checkout(current_user, project_id)
     try:
         return await WorkflowRecipeService.install(
@@ -1170,13 +1169,11 @@ async def install_project_local_setup_plan(
 async def dispatch_project_github_workflow(
     project_id: int,
     payload: WorkflowDispatchRequest,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("run.execute.ci", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Start a GitHub Actions ``workflow_dispatch`` run. The run itself is recorded by the runs sync."""
-    check_organization_member(current_user)
     project = get_project_or_404(db, project_id)
-    require_editor(current_user)
     owner, repo, api_base, token = github_repository_context(project, current_user, project_id)
     ref = (payload.ref or "main").strip()
     workflow_id = payload.workflow_id.strip()

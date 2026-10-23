@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.deps import get_current_user
+from app.core.permissions import require
 from app.modules.settings.connections import store_settings
 from app.modules.work.schemas import (
     TaskCreate,
@@ -59,7 +60,7 @@ def _current_team(current_user) -> str:
 @router.get("", response_model=list[TaskResponse])
 async def list_tasks(
     team_name: str | None = None,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("work.view")),
     db: Session = Depends(get_db),
 ):
     """List tasks for a team (defaults to the current user's configured team)."""
@@ -70,7 +71,7 @@ async def list_tasks(
 @router.post("", response_model=TaskResponse)
 async def create_task(
     payload: TaskCreate,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("work.start")),
     db: Session = Depends(get_db),
 ):
     """Create a new task in the selected (or current user's) team."""
@@ -92,7 +93,7 @@ async def _get_task_or_404(db: Session, task_id: int):
 @router.post("/{task_id}/assign-to-me", response_model=TaskResponse)
 async def assign_task_to_me(
     task_id: int,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("work.start")),
     db: Session = Depends(get_db),
 ):
     """Assign a task to the current user."""
@@ -103,7 +104,7 @@ async def assign_task_to_me(
 @router.post("/{task_id}/unassign", response_model=TaskResponse)
 async def unassign_task(
     task_id: int,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("work.start")),
     db: Session = Depends(get_db),
 ):
     """Remove the current assignee from a task."""
@@ -115,7 +116,7 @@ async def unassign_task(
 async def update_task_status(
     task_id: int,
     payload: TaskStatusUpdate,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("work.start")),
     db: Session = Depends(get_db),
 ):
     """Update a task's progress status (todo / in_progress / done)."""

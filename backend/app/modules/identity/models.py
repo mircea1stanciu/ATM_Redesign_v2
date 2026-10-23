@@ -2,9 +2,10 @@
 import enum
 import secrets
 from datetime import datetime
+from typing import Optional
 
 from sqlalchemy import JSON, Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
 from app.core.security import pwd_context
@@ -22,15 +23,13 @@ def simple_verify_password(password: str, hashed: str) -> bool:
 
 
 class UserRole(enum.Enum):
-    """User role enumeration"""
-    SUPER_ADMIN = "super_admin"      # Platform administrator
-    ADMIN = "admin"                  # Administrator
-    ORG_ADMIN = "org_admin"          # Organization administrator
-    COMMUNITY_LEAD = "community_lead"  # Community leader/moderator
-    AUTOMATION_LEAD = "automation_lead"  # Automation workflow lead
-    AUTOMATION_USER = "automation_user"  # Automation workflow user
-    USER = "user"                    # Regular user
-    VIEWER = "viewer"                # Read-only user
+    """The six roles (docs/redesign/04-roles-and-permissions.md); permissions are in app.core.permissions."""
+    SUPER_ADMIN = "super_admin"  # configures the install and can do everything
+    AUTOMATION_LEAD = "automation_lead"  # manages people and projects, decides promotions
+    AUTOMATION_SENIOR = "automation_senior"  # implements and runs tests, reviews PRs, mentors
+    AUTOMATION_USER = "automation_user"  # implements and runs tests, opens PRs
+    AUTOMATION_TRAINEE = "automation_trainee"  # learns; pushes only their own branches
+    VIEWER = "viewer"  # reads results; changes nothing
 
 
 class SubscriptionPlan(enum.Enum):
@@ -89,42 +88,45 @@ class User(Base):
     """User account"""
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, index=True, nullable=False)
-    email = Column(String, unique=True, index=True, nullable=False)
-    hashed_password = Column(String, nullable=False)
-    full_name = Column(String)
-    role = Column(Enum(UserRole), default=UserRole.USER, nullable=False)
-    is_active = Column(Boolean, default=True)
-    
-    # For automation lead assignment (which lead manages this user)
-    assigned_lead_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    
-    # Multi-tenancy
-    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=True)
-    
-    # Community Lead assignment (which communities they manage)
-    assigned_communities = Column(String, nullable=True)  # JSON string: ["qa", "backend"]
-    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    username: Mapped[str] = mapped_column(String, index=True, nullable=False)
+    email: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
+    hashed_password: Mapped[str] = mapped_column(String, nullable=False)
+    full_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # Stored as the member name in a plain string column (not a database enum type), so roles can change.
+    role: Mapped[UserRole] = mapped_column(
+        Enum(UserRole, native_enum=False, length=32), default=UserRole.VIEWER, nullable=False
+    )
+    # project_base | shared for seniors, users and trainees; empty for the other roles.
+    scope_tag: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    is_active: Mapped[Optional[bool]] = mapped_column(Boolean, default=True, nullable=True)
+
+    # The automation lead this person reports to (leads manage their people's roles and projects).
+    assigned_lead_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    organization_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("organizations.id"), nullable=True)
+
+    # Legacy community assignment (JSON list of community ids), still read by the hidden community forum.
+    assigned_communities: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
     # User preferences
-    preferred_communities = Column(String, nullable=True)  # JSON string of community preferences
-    theme_preference = Column(String, default="system")  # light, dark, system
-    preferred_ai_model = Column(String, default="gpt-4o-mini")  # User's preferred AI model
-    ai_model_provider = Column(String, default="openai")  # openai or anthropic
-    ai_temperature = Column(String, default="0.7")  # AI creativity level (0.0-1.0)
-    
+    preferred_communities: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    theme_preference: Mapped[Optional[str]] = mapped_column(String, default="system", nullable=True)
+    preferred_ai_model: Mapped[Optional[str]] = mapped_column(String, default="gpt-4o-mini", nullable=True)
+    ai_model_provider: Mapped[Optional[str]] = mapped_column(String, default="openai", nullable=True)
+    ai_temperature: Mapped[Optional[str]] = mapped_column(String, default="0.7", nullable=True)
+
     # 2FA (Two-Factor Authentication)
-    two_fa_enabled = Column(Boolean, default=False)
-    two_fa_secret = Column(String, nullable=True)  # TOTP secret key
+    two_fa_enabled: Mapped[Optional[bool]] = mapped_column(Boolean, default=False, nullable=True)
+    two_fa_secret: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # TOTP secret key
 
-    # Free-form per-user integration settings (GitHub/Jira tokens, base URLs, etc.)
-    settings_json = Column(JSON, default=dict, nullable=True)
+    # Non-secret personal settings (tokens are in user_connections)
+    settings_json: Mapped[Optional[dict]] = mapped_column(JSON, default=dict, nullable=True)
 
-    # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
-    last_login = Column(DateTime, nullable=True)
-    
-    # Relationships
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=datetime.utcnow, nullable=True)
+    last_login: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
     organization = relationship("Organization", back_populates="users")
     login_history = relationship("LoginHistory", back_populates="user")
     sessions = relationship("UserSession", back_populates="user")
@@ -161,6 +163,18 @@ class User(Base):
         except Exception:
             # Fallback to simple hash
             return simple_hash_password(password)
+
+
+class RoleMigrationLog(Base):
+    """Old and new role of every user, written by the phase 04 role migration for the super admin to review."""
+    __tablename__ = "role_migration_log"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    old_role = Column(String(32), nullable=False)
+    new_role = Column(String(32), nullable=False)
+    scope_tag = Column(String(16), nullable=True)
+    migrated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
 class LoginHistory(Base):

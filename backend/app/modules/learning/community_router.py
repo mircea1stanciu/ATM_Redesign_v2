@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import BACKEND_DIR
 from app.core.db import get_db
-from app.core.deps import get_current_user
+from app.core.permissions import has_permission, require
 from app.modules.learning.models import (
     ForumAttachment,
     ForumComment,
@@ -52,9 +52,6 @@ DOC_EXT = {
 }
 ALLOWED_EXT = IMAGE_EXT | VIDEO_EXT | DOC_EXT
 
-MODERATOR_ROLES = {"super_admin", "admin", "org_admin", "community_lead", "automation_lead"}
-
-
 # ── Helpers ──────────────────────────────────────────────────────────────────
 def _role_value(user) -> str:
     role = getattr(user, "role", None)
@@ -76,14 +73,8 @@ def _assigned_communities(user) -> list[str]:
 
 
 def _can_moderate(user, community_id: Optional[str] = None) -> bool:
-    role = _role_value(user)
-    if role in {"super_admin", "admin", "org_admin"}:
-        return True
-    if role in {"community_lead", "automation_lead"}:
-        if community_id is None:
-            return True
-        return community_id in _assigned_communities(user)
-    return False
+    """Moderation (lock, pin, edit or delete others' posts) is learning.manage."""
+    return has_permission(user, "learning.manage")
 
 
 def _ensure_can_access(user, community_id: str) -> None:
@@ -165,7 +156,7 @@ async def _link_attachments(
 @router.post("/attachments", response_model=AttachmentOut, status_code=status.HTTP_201_CREATED)
 async def upload_attachment(
     file: UploadFile = File(...),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("learning.use")),
     db: Session = Depends(get_db),
 ):
     """Upload a single file. Returns an attachment id to link to a post/comment."""
@@ -207,7 +198,7 @@ async def upload_attachment(
 @router.get("/attachments/{file_name}")
 async def download_attachment(
     file_name: str,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("learning.use")),
 ):
     """Serve an uploaded attachment (authenticated)."""
     # Prevent path traversal — only allow plain file names.
@@ -294,7 +285,7 @@ async def list_posts(
     sort: str = Query("latest", pattern="^(latest|top)$"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=50),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("learning.use")),
     db: Session = Depends(get_db),
 ):
     _ensure_can_access(current_user, community_id)
@@ -342,7 +333,7 @@ async def list_posts(
 @router.get("/posts/tags/all")
 async def get_available_tags(
     community_id: str = Query(...),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("learning.use")),
     db: Session = Depends(get_db),
 ):
     """Get all unique tags used in posts for a community, with their usage counts."""
@@ -375,7 +366,7 @@ async def get_available_tags(
 @router.post("/posts", response_model=PostOut, status_code=status.HTTP_201_CREATED)
 async def create_post(
     payload: PostCreate,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("learning.use")),
     db: Session = Depends(get_db),
 ):
     _ensure_can_access(current_user, payload.community_id)
@@ -406,7 +397,7 @@ async def create_post(
 @router.get("/posts/{post_id}", response_model=PostOut)
 async def get_post(
     post_id: int,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("learning.use")),
     db: Session = Depends(get_db),
 ):
     post = (
@@ -448,7 +439,7 @@ async def _get_owned_post(db: Session, post_id: int, current_user, *, moderate: 
 async def update_post(
     post_id: int,
     payload: PostUpdate,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("learning.use")),
     db: Session = Depends(get_db),
 ):
     post = await _get_owned_post(db, post_id, current_user)
@@ -469,7 +460,7 @@ async def update_post(
 async def moderate_post(
     post_id: int,
     payload: PostModeration,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("learning.manage")),
     db: Session = Depends(get_db),
 ):
     post = await _get_owned_post(db, post_id, current_user, moderate=True)
@@ -485,7 +476,7 @@ async def moderate_post(
 @router.delete("/posts/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_post(
     post_id: int,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("learning.use")),
     db: Session = Depends(get_db),
 ):
     post = await _get_owned_post(db, post_id, current_user)
@@ -545,7 +536,7 @@ async def _serialize_comments(
 @router.get("/posts/{post_id}/comments", response_model=list[CommentOut])
 async def list_comments(
     post_id: int,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("learning.use")),
     db: Session = Depends(get_db),
 ):
     post = (
@@ -572,7 +563,7 @@ async def list_comments(
 async def create_comment(
     post_id: int,
     payload: CommentCreate,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("learning.use")),
     db: Session = Depends(get_db),
 ):
     post = (
@@ -637,7 +628,7 @@ async def _get_owned_comment(db: Session, comment_id: int, current_user) -> Foru
 async def update_comment(
     comment_id: int,
     payload: CommentUpdate,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("learning.use")),
     db: Session = Depends(get_db),
 ):
     comment = await _get_owned_comment(db, comment_id, current_user)
@@ -650,7 +641,7 @@ async def update_comment(
 @router.delete("/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_comment(
     comment_id: int,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("learning.use")),
     db: Session = Depends(get_db),
 ):
     comment = await _get_owned_comment(db, comment_id, current_user)
@@ -693,7 +684,7 @@ async def _toggle_reaction(
 @router.post("/posts/{post_id}/like", response_model=ReactionResponse)
 async def toggle_post_like(
     post_id: int,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("learning.use")),
     db: Session = Depends(get_db),
 ):
     post = (
@@ -708,7 +699,7 @@ async def toggle_post_like(
 @router.post("/comments/{comment_id}/like", response_model=ReactionResponse)
 async def toggle_comment_like(
     comment_id: int,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("learning.use")),
     db: Session = Depends(get_db),
 ):
     comment = (

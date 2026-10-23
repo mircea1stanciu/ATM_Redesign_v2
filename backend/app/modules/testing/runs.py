@@ -12,8 +12,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.db import SessionLocal
+from app.core.permissions import ensure
 from app.modules.projects.models import AnalyticsRun
-from app.modules.projects.service import require_editor
 from app.modules.reporting.report_template import render_report_html
 
 manual_run_sockets: dict[str, set[WebSocket]] = {}
@@ -800,8 +800,8 @@ async def _start_framework_run(
         framework_run_service.FRAMEWORK_TARGET_PREFIX)).strip()
     if not target:
         raise HTTPException(status_code=400, detail="Select what to run.")
-    if (payload.extra_args or "").strip():
-        require_editor(current_user)
+    if (payload.extra_args or "").strip():  # extra command-line arguments need edit rights
+        ensure(db, current_user, "code.edit")
     if run_id in manual_run_processes:
         raise HTTPException(status_code=409, detail="This run is already executing.")
     artifact_dir = _manual_run_artifact_dir(repo_path, run_id)

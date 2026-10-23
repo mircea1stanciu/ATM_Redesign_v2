@@ -8,16 +8,17 @@ from typing import Optional
 
 import pyotp
 import qrcode
-from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
-from app.core.deps import get_current_user, get_org_admin_user, get_super_admin_user
+from app.core.deps import get_current_user
 from app.core.rate_limit import limiter
 from app.core.security import create_access_token, pwd_context
-from app.modules.identity.models import Organization, User, UserRole
+from app.modules.identity.models import User, UserRole
 from app.modules.identity.service import authenticate_user, get_default_organization
+from app.modules.identity.users_router import me_payload
 
 logger = logging.getLogger("atm.auth")
 router = APIRouter()
@@ -252,30 +253,9 @@ async def logout(response: Response):
 
 @router.get("/api/auth/me", tags=["Authentication"])
 async def get_current_user_info(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Get current user information"""
-    # Get organization info
-    org_info = None
-    if current_user.organization_id:
-        org = db.query(Organization).filter(Organization.id == current_user.organization_id).first()
-        if org:
-            org_info = {
-                "id": org.id,
-                "name": org.name,
-                "slug": org.slug
-            }
-    
-    return {
-        "id": current_user.id,
-        "username": current_user.username,
-        "email": current_user.email,
-        "full_name": current_user.full_name,
-        "role": current_user.role.value,
-        "two_fa_enabled": current_user.two_fa_enabled,
-        "assigned_communities": (
-            json.loads(current_user.assigned_communities) if current_user.assigned_communities else []
-        ),
-        "organization": org_info
-    }
+    """Same as /api/me (kept for existing clients)."""
+    return me_payload(db, current_user)
+
 
 @router.post("/api/auth/change-password", tags=["Authentication"])
 async def change_password(
@@ -479,75 +459,6 @@ async def get_2fa_status(
         "user_id": current_user.id
     }
 
-@router.post("/api/users/{user_id}/2fa/disable", tags=["User Management"])
-async def admin_disable_user_2fa(
-    user_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Super Admin or Org Admin: Disable 2FA for users"""
-    # Get the target user
-    target_user = db.query(User).filter(User.id == user_id).first()
-    if not target_user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    # Authorization checks
-    if current_user.role == UserRole.SUPER_ADMIN:
-        # Super admins can disable 2FA for any user
-        pass
-    elif current_user.role == UserRole.ORG_ADMIN:
-        # Org admins can only disable 2FA for users in their organization
-        if not current_user.organization_id:
-            raise HTTPException(
-                status_code=403,
-                detail="Organization admin must be associated with an organization"
-            )
-        if target_user.organization_id != current_user.organization_id:
-            raise HTTPException(
-                status_code=403,
-                detail="You can only disable 2FA for users in your organization"
-            )
-    else:
-        raise HTTPException(
-            status_code=403,
-            detail="Only super administrators and organization administrators can disable 2FA for other users"
-        )
-    
-    # Don't allow disabling 2FA for yourself through this endpoint
-    if target_user.id == current_user.id:
-        raise HTTPException(
-            status_code=400, 
-            detail="Use the regular 2FA disable endpoint for your own account"
-        )
-    
-    # Check if 2FA is enabled
-    if not target_user.two_fa_enabled:
-        return {
-            "message": "2FA is already disabled for this user",
-            "enabled": False,
-            "user_id": target_user.id,
-            "username": target_user.username
-        }
-    
-    # Disable 2FA
-    target_user.two_fa_enabled = False
-    target_user.two_fa_secret = None
-    db.add(target_user)
-    db.commit()
-    
-    # Log the action
-    admin_type = "Super admin" if current_user.role == UserRole.SUPER_ADMIN else "Org admin"
-    logger.info(
-        f"{admin_type} {current_user.username} disabled 2FA for user {target_user.username} (ID: {target_user.id})"
-    )
-    
-    return {
-        "message": f"2FA disabled successfully for user {target_user.username}",
-        "enabled": False,
-        "user_id": target_user.id,
-        "username": target_user.username
-    }
-
 @router.post("/api/auth/profile/picture", tags=["Authentication"])
 async def upload_profile_picture(
     file: UploadFile = None,
@@ -656,7 +567,7 @@ async def register(register_data: RegisterRequest, db: Session = Depends(get_db)
         email=register_data.email,
         hashed_password=User.hash_password(register_data.password),
         full_name=register_data.full_name,
-        role=UserRole.USER,
+        role=UserRole.VIEWER,  # self-registered people see nothing until a lead assigns a role and projects
         organization_id=organization_id,
         is_active=True
     )
@@ -695,269 +606,3 @@ async def register(register_data: RegisterRequest, db: Session = Depends(get_db)
             "organization": org_info
         }
     )
-
-
-@router.get("/api/organizations/{org_id}/users", tags=["Organizations"])
-async def list_organization_users(
-    org_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_org_admin_user)
-):
-    """List all users in an organization"""
-    # Verify user has permission
-    if current_user.role != UserRole.SUPER_ADMIN:
-        if current_user.organization_id != org_id:
-            raise HTTPException(status_code=403, detail="Not authorized")
-    
-    users = db.query(User).filter(User.organization_id == org_id).all()
-    
-    import json
-    return [{
-        "id": user.id,
-        "username": user.username,
-        "email": user.email,
-        "full_name": user.full_name,
-        "role": user.role.value,
-        "assigned_communities": json.loads(user.assigned_communities) if user.assigned_communities else [],
-        "is_active": user.is_active,
-        "two_fa_enabled": user.two_fa_enabled,
-        "created_at": user.created_at.isoformat(),
-        "last_login": user.last_login.isoformat() if user.last_login else None
-    } for user in users]
-
-
-@router.post("/api/organizations/{org_id}/users", tags=["Organizations"])
-async def create_organization_user(
-    org_id: int,
-    user_data: dict,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_org_admin_user)
-):
-    """Create a new user in an organization (Org Admin or Super Admin)"""
-    # Verify user has permission
-    if current_user.role != UserRole.SUPER_ADMIN:
-        if current_user.organization_id != org_id:
-            raise HTTPException(status_code=403, detail="Not authorized to create users in this organization")
-    
-    # Get organization
-    org = db.query(Organization).filter(Organization.id == org_id).first()
-    if not org:
-        raise HTTPException(status_code=404, detail="Organization not found")
-
-    # Validate required fields
-    required_fields = ["username", "email", "password", "full_name"]
-    for field in required_fields:
-        if field not in user_data or not user_data[field]:
-            raise HTTPException(status_code=400, detail=f"Missing required field: {field}")
-    
-    # Check if email already exists
-    if db.query(User).filter(User.email == user_data["email"]).first():
-        raise HTTPException(status_code=400, detail="Email already registered")
-    
-    # Check if username exists within organization
-    if db.query(User).filter(
-        User.username == user_data["username"],
-        User.organization_id == org_id
-    ).first():
-        raise HTTPException(status_code=400, detail="Username already taken in this organization")
-    
-    # Determine user role
-    user_role = UserRole.USER
-    assigned_communities = None
-    
-    if current_user.role == UserRole.SUPER_ADMIN or current_user.role == UserRole.ORG_ADMIN:
-        # Super admins and org admins can specify role
-        if user_data.get("role"):
-            role_value = user_data["role"].upper()
-            if role_value in ["ORG_ADMIN", "COMMUNITY_LEAD", "USER", "VIEWER"]:
-                user_role = UserRole[role_value]
-        
-        # Handle community assignments for community leads and regular users
-        scoped_role = user_role == UserRole.COMMUNITY_LEAD or user_role in {UserRole.USER, UserRole.VIEWER}
-        if scoped_role and user_data.get("assigned_communities"):
-            import json
-            assigned_communities = json.dumps(user_data["assigned_communities"])
-        
-        # Only super admins can create org admins
-        if user_role == UserRole.ORG_ADMIN and current_user.role != UserRole.SUPER_ADMIN:
-            raise HTTPException(status_code=403, detail="Only super admins can create org admins")
-    
-    # Create new user
-    new_user = User(
-        username=user_data["username"],
-        email=user_data["email"],
-        hashed_password=User.hash_password(user_data["password"]),
-        full_name=user_data["full_name"],
-        role=user_role,
-        assigned_communities=assigned_communities,
-        organization_id=org_id,
-        is_active=True
-    )
-    
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    
-    import json
-    return {
-        "message": "User created successfully",
-        "user": {
-            "id": new_user.id,
-            "username": new_user.username,
-            "email": new_user.email,
-            "full_name": new_user.full_name,
-            "role": new_user.role.value,
-            "assigned_communities": json.loads(new_user.assigned_communities) if new_user.assigned_communities else [],
-            "organization_id": new_user.organization_id,
-            "is_active": new_user.is_active
-        }
-    }
-
-
-@router.patch("/api/organizations/{org_id}/users/{user_id}", tags=["Organizations"])
-async def update_organization_user(
-    org_id: int,
-    user_id: int,
-    user_data: dict = Body(...),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_org_admin_user)
-):
-    """Update a user's role and assigned communities (Org Admin or Super Admin)"""
-    try:
-        # Debug: Log the received data
-        
-        # Verify user has permission
-        if current_user.role != UserRole.SUPER_ADMIN:
-            if current_user.organization_id != org_id:
-                raise HTTPException(status_code=403, detail="Not authorized to update users in this organization")
-        
-        # Get user - Super admins can update any user, org admins only their org's users
-        if current_user.role == UserRole.SUPER_ADMIN:
-            user = db.query(User).filter(User.id == user_id).first()
-        else:
-            user = db.query(User).filter(User.id == user_id, User.organization_id == org_id).first()
-        
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-        
-        # Update role if provided
-        if user_data.get("role"):
-            role_value = user_data["role"].upper()
-            if role_value in ["ORG_ADMIN", "COMMUNITY_LEAD", "USER"]:
-                new_role = UserRole[role_value]
-                
-                # Only super admins can create/update org admins
-                if new_role == UserRole.ORG_ADMIN and current_user.role != UserRole.SUPER_ADMIN:
-                    raise HTTPException(status_code=403, detail="Only super admins can create org admins")
-                
-                user.role = new_role
-        
-        # Update assigned communities for community leads and regular users
-        if user_data.get("assigned_communities") is not None:
-            if user.role == UserRole.COMMUNITY_LEAD or user.role in {UserRole.USER, UserRole.VIEWER}:
-                import json
-                user.assigned_communities = json.dumps(user_data["assigned_communities"])
-            else:
-                # Org admins and super admins don't have assigned communities
-                user.assigned_communities = None
-        
-        # Update other fields if provided
-        if user_data.get("full_name"):
-            user.full_name = user_data["full_name"]
-        
-        if user_data.get("username"):
-            user.username = user_data["username"]
-        
-        if user_data.get("email"):
-            user.email = user_data["email"]
-        
-        if user_data.get("password"):
-            # bcrypt has a 72-byte limit for passwords
-            password = user_data["password"]
-            password_bytes = password.encode('utf-8') if isinstance(password, str) else password
-            password_len = len(password_bytes)
-            
-            if password_len > 72:
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        f"Password cannot exceed 72 bytes when encoded as UTF-8. Current length: {password_len} bytes"
-                    ),
-                )
-            user.hashed_password = pwd_context.hash(password)
-
-        if user_data.get("is_active") is not None:
-            user.is_active = user_data["is_active"]
-        
-        # Update organization for org admins (super admin only)
-        if user_data.get("organization_id") and current_user.role == UserRole.SUPER_ADMIN:
-            if user.role == UserRole.ORG_ADMIN or user_data.get("role") == "org_admin":
-                user.organization_id = user_data["organization_id"]
-        
-        db.commit()
-        db.refresh(user)
-        
-        import json
-        return {
-            "message": "User updated successfully",
-            "user": {
-                "id": user.id,
-                "username": user.username,
-                "email": user.email,
-                "full_name": user.full_name,
-                "role": user.role.value,
-                "assigned_communities": json.loads(user.assigned_communities) if user.assigned_communities else [],
-                "organization_id": user.organization_id,
-                "is_active": user.is_active
-            }
-        }
-    except HTTPException:
-        # Re-raise HTTPException without wrapping it
-        raise
-    except ValueError as e:
-        error_msg = str(e)
-        logger.warning(f"Updating user {user_id} failed: {error_msg}")
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid data: {error_msg}"
-        )
-    except Exception as e:
-        error_msg = str(e)
-        logger.error(f"Updating user {user_id} failed unexpectedly: {error_msg}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Internal server error: {error_msg}"
-        )
-
-
-@router.delete("/api/organizations/{org_id}/users/{user_id}", tags=["Organizations"])
-async def delete_organization_user(
-    org_id: int,
-    user_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_super_admin_user)
-):
-    """Delete a user from an organization (Super Admin only)"""
-    # Get user
-    user = db.query(User).filter(User.id == user_id, User.organization_id == org_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    # Prevent deleting super admins
-    if user.role == UserRole.SUPER_ADMIN:
-        raise HTTPException(status_code=403, detail="Cannot delete super admin users")
-    
-    # Prevent deleting yourself
-    if user.id == current_user.id:
-        raise HTTPException(status_code=403, detail="Cannot delete yourself")
-    
-    username = user.username
-    
-    # Delete user
-    db.delete(user)
-    db.commit()
-    
-    return {
-        "message": "User deleted successfully",
-        "username": username
-    }

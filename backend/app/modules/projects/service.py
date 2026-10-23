@@ -1,5 +1,4 @@
 """Shared project helpers: lookup, access checks and GitHub API access for a project."""
-import json
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -10,51 +9,11 @@ import httpx
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.modules.identity.models import UserRole
 from app.modules.projects.models import Project
 from app.modules.settings.connections import get_secret, set_secret, store_settings
 
 
 # Helper functions for access control
-def check_product_manager_access(current_user):
-    """Check if user has Product Manager access for create/update/delete operations
-    
-    Requirements:
-    - Must have "product" in assigned_communities (any role), OR
-    - Super Admin or Org Admin
-    """
-    # Super admins and org admins have full access
-    if current_user.role in [UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN]:
-        return True
-    
-    # Check if user has "product" in their assigned communities (works for both community_lead and user roles)
-    if current_user.assigned_communities:
-        try:
-            communities = json.loads(current_user.assigned_communities)
-            if "product" in communities:
-                return True
-        except Exception:
-            pass
-    
-    raise HTTPException(
-        status_code=403, 
-        detail=(
-            "Access denied. Only users assigned to Product Management "
-            "community can create, edit, or delete projects."
-        )
-    )
-
-
-def check_organization_member(current_user):
-    """Check if user belongs to an organization (for read operations)"""
-    if not current_user.organization_id:
-        raise HTTPException(
-            status_code=403, 
-            detail="Access denied. User must belong to an organization."
-        )
-    return True
-
-
 def user_settings(user) -> dict:
     """The user's non-secret settings (tokens are in user_connections, see app.modules.settings.connections)."""
     return dict(getattr(user, "settings_json", None) or {})
@@ -217,12 +176,6 @@ def local_status(repo_path: Path) -> dict:
             "message": commit_lines[3] if len(commit_lines) > 3 else "",
         }
     return response
-
-
-def require_editor(current_user) -> None:
-    role = getattr(current_user.role, "value", str(current_user.role))
-    if str(role).lower() == "viewer":
-        raise HTTPException(status_code=403, detail="Viewers cannot edit project files.")
 
 
 def script_configs(user, project_id) -> dict:
