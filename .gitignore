@@ -13,7 +13,7 @@ env/
 *.egg
 .eggs/
 
-# === Secrets — NICIODATĂ în git ===
+# === Secrets — never in git ===
 .env
 *.env
 !.env.example
@@ -25,7 +25,6 @@ backend/.pytest_cache/
 backend/htmlcov/
 backend/.mypy_cache/
 backend/.ruff_cache/
-backend/alembic/versions/  # versionat separat sau include dacă vrei
 
 # === Node / Frontend ===
 node_modules/

@@ -14,7 +14,7 @@ if not os.getenv("ATM_DATABASE_PATH"):
     sys.exit("ATM_DATABASE_PATH must point to a throwaway database; refusing to seed the real one.")
 
 from core.auth import create_access_token  # noqa: E402
-from core.database import Organization, SessionLocal, User, UserRole, init_db  # noqa: E402
+from core.database import SessionLocal, User, UserRole, get_default_organization, init_db  # noqa: E402
 from models.project_models import Project  # noqa: E402
 
 SAMPLE_PROJECT_KEY = "E2E"
@@ -25,7 +25,7 @@ def seed(sessions_path: str) -> None:
     init_db()
     db = SessionLocal()
     try:
-        org = db.query(Organization).filter(Organization.slug == "unifiedwork").one()
+        org = get_default_organization(db)
         sessions = {}
         for role in UserRole:
             username = f"e2e_{role.value}"

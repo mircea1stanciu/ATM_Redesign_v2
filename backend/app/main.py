@@ -24,7 +24,7 @@ FRONTEND_DIST = Path(__file__).parent.parent.parent / "frontend" / "dist"
 # app integrations router is intentionally NOT used: it targets app.models
 # tables (plural names) that don't exist in the live DB; the ported router
 # targets the core.database tables (singular names) that do.
-from api import auth_profile_routes, integrations_routes, settings_routes
+from api import auth_profile_routes, settings_routes
 from app.api.v1.endpoints import auth, badges, projects, reports, runs, suites, webhooks
 from app.api.v1.endpoints import community as community_router
 from app.api.v1.endpoints import devices as devices_router
@@ -100,7 +100,6 @@ app.include_router(devices_router.router,      prefix="/api/devices",         ta
 # settings, and data/integrations/subscription/billing.
 app.include_router(auth_profile_routes.router, prefix="/api/v1/auth", tags=["profile"])
 app.include_router(settings_routes.router,     prefix="/api/v1")
-app.include_router(integrations_routes.router, prefix="/api/v1")
 
 
 @app.get("/health")

@@ -1,7 +1,7 @@
 import { Outlet, useNavigate, NavLink } from 'react-router-dom'
 import {
   BookOpen, FolderGit2, GraduationCap, LayoutDashboard,
-  LogOut, Settings, Users, UsersRound, X, Zap,
+  LogOut, Settings, Users, X, Zap,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { useAppStore } from '@/store/useAppStore'
@@ -14,7 +14,6 @@ const NAV = [
   { to: '/projects',  label: 'Projects',  icon: FolderGit2 },
   { to: '/jira-confluence', label: 'Jira and Confluence', icon: BookOpen },
   { to: '/upskilling', label: 'Upskilling', icon: GraduationCap },
-  { to: '/community', label: 'Community',  icon: UsersRound },
   { to: '/users',     label: 'Users',      icon: Users },
   { to: '/settings',  label: 'Settings',   icon: Settings },
 ]

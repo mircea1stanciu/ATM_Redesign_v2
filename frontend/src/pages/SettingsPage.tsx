@@ -3,7 +3,7 @@ import { NavLink, Navigate, useParams } from 'react-router-dom'
 import {
   AlertCircle, Bot, BookOpen, CheckCircle2, Github, Loader2,
   Save, Search, Settings2, Unplug, Eye, EyeOff, Trash2, Link2, User,
-  Lock, Sliders, Shield, Zap, CreditCard,
+  Lock, Sliders,
 } from 'lucide-react'
 import AiAssistantPanel from '@/components/settings/AiAssistantPanel'
 import { useAppStore } from '@/store/useAppStore'
@@ -11,9 +11,6 @@ import { apiService, notifyConnectionStatusChanged } from '@/services/api'
 import { UserProfilePanel } from '@/components/settings/UserProfilePanel'
 import { SecuritySettingsPanel } from '@/components/settings/SecuritySettingsPanel'
 import { PreferencesSettingsPanel } from '@/components/settings/PreferencesSettingsPanel'
-import { CommunityPrivacyPanel } from '@/components/settings/CommunityPrivacyPanel'
-import DataIntegrationsPanel from '@/components/settings/DataIntegrationsPanel'
-import SubscriptionBillingPanel from '@/components/settings/SubscriptionBillingPanel'
 
 interface ProjectGithubSettings {
   github_token_set: boolean
@@ -1106,7 +1103,7 @@ export default function SettingsPage() {
   // Determine current active section (mcp takes precedence if provided)
   const activeSection = mcp ? 'mcp' : (section || 'profile')
   const activeMcp = mcp || (section && ['jira', 'confluence', 'github', 'ai'].includes(section) ? section : 'jira')
-  const allowedSections = new Set(['profile', 'security', 'preferences', 'community-privacy', 'data-integrations', 'subscription-billing', 'mcp'])
+  const allowedSections = new Set(['profile', 'security', 'preferences', 'mcp'])
   const allowedMcps = new Set(['jira', 'confluence', 'github', 'ai'])
   
   if (activeSection === 'mcp' && !allowedMcps.has(activeMcp)) {
@@ -1126,12 +1123,6 @@ export default function SettingsPage() {
   const securityItems: Array<{ id: string; label: string; description: string; icon: any }> = [
     { id: 'security', label: 'Security', description: 'Sessions, API tokens, login history', icon: Lock },
     { id: 'preferences', label: 'Preferences', description: 'Theme, AI, notifications', icon: Sliders },
-    { id: 'community-privacy', label: 'Privacy', description: 'Communities, privacy settings', icon: Shield },
-  ]
-
-  const dataItems: Array<{ id: string; label: string; description: string; icon: any }> = [
-    { id: 'data-integrations', label: 'Data & Integrations', description: 'Exports, integrations, webhooks', icon: Zap },
-    { id: 'subscription-billing', label: 'Billing', description: 'Plans, invoices, payment methods', icon: CreditCard },
   ]
 
   const mcpItems: Array<{ id: string; label: string; description: string; icon: any }> = [
@@ -1212,34 +1203,6 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* Data & Billing Section */}
-            <div className="px-2 py-2 border-t border-gray-200 dark:border-gray-700">
-              <p className="text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-gray-400 px-1 mb-2">Data & Billing</p>
-              <div className="space-y-1">
-                {dataItems.map(item => {
-                  const Icon = item.icon
-                  const isActive = activeSection === item.id
-                  return (
-                    <NavLink
-                      key={item.id}
-                      to={`/settings/${item.id}`}
-                      className={`flex items-center gap-3 rounded-xl px-3 py-2 transition ${
-                        isActive
-                          ? 'bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300'
-                          : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700/60'
-                      }`}
-                    >
-                      <Icon size={16} className="shrink-0" />
-                      <span className="min-w-0">
-                        <span className="block text-sm font-medium">{item.label}</span>
-                        <span className="block truncate text-[11px] opacity-75">{item.description}</span>
-                      </span>
-                    </NavLink>
-                  )
-                })}
-              </div>
-            </div>
-
             {/* MCP's Settings Section */}
             <div className="px-2 py-2 border-t border-gray-200 dark:border-gray-700">
               <p className="text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-gray-400 px-1 mb-2">MCP Settings</p>
@@ -1295,33 +1258,6 @@ export default function SettingsPage() {
                 Preferences & Display
               </h2>
               <PreferencesSettingsPanel />
-            </>
-          )}
-
-          {activeSection === 'community-privacy' && (
-            <>
-              <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-gray-400">
-                Community & Privacy
-              </h2>
-              <CommunityPrivacyPanel />
-            </>
-          )}
-
-          {activeSection === 'data-integrations' && (
-            <>
-              <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-gray-400">
-                Data & Integrations
-              </h2>
-              <DataIntegrationsPanel />
-            </>
-          )}
-
-          {activeSection === 'subscription-billing' && (
-            <>
-              <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-gray-400">
-                Subscription & Billing
-              </h2>
-              <SubscriptionBillingPanel />
             </>
           )}
 

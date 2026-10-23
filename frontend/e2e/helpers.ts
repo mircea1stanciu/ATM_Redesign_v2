@@ -26,6 +26,11 @@ export function credentials(role: Role) {
   return { username: readSessions()[role].username, password: process.env.E2E_PASSWORD! }
 }
 
+/** Authorization header for calling the API (through the Vite proxy) as the seeded user of a role. */
+export function authHeaders(role: Role) {
+  return { Authorization: `Bearer ${readSessions()[role].token}` }
+}
+
 /**
  * Opens the app as the seeded user of a role, using the token minted by the seed script.
  * The login endpoint allows 5 attempts per minute, so only the login spec signs in through the form.

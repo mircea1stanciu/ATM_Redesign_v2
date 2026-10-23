@@ -741,7 +741,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       runEnvironment,
     } = get()
     if (!selectedProjectId || !user?.email) {
-      set({ error: 'Selecteaza un proiect si asigura-te ca esti autentificat.' })
+      set({ error: 'Select a project and make sure you are signed in.' })
       return
     }
 
@@ -775,7 +775,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ error: null, runError: null })
     const { selectedSuiteId, suites, user, runBranch, projects, selectedProjectId } = get()
     if (!selectedProjectId || !user?.email) {
-      set({ error: 'Selecteaza un proiect si asigura-te ca esti autentificat.' })
+      set({ error: 'Select a project and make sure you are signed in.' })
       return
     }
     const project = projects.find(p => p.id === selectedProjectId)
@@ -809,7 +809,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ error: null, runError: null })
     const { selectedSuiteId, suites, user, runBranch, projects, selectedProjectId } = get()
     if (!selectedProjectId || !user?.email) {
-      set({ error: 'Selecteaza un proiect si asigura-te ca esti autentificat.' })
+      set({ error: 'Select a project and make sure you are signed in.' })
       return
     }
     const project = projects.find(p => p.id === selectedProjectId)
@@ -842,7 +842,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ error: null, runError: null })
     const { selectedSuiteId, suites, user, runBranch, projects, selectedProjectId } = get()
     if (!selectedProjectId || !user?.email) {
-      set({ error: 'Selecteaza un proiect si asigura-te ca esti autentificat.' })
+      set({ error: 'Select a project and make sure you are signed in.' })
       return
     }
     const project = projects.find(p => p.id === selectedProjectId)

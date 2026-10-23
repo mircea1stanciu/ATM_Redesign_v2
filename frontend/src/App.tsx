@@ -20,7 +20,6 @@ const AiImplementationTab = lazy(() => import('@/pages/projects/AiImplementation
 const LibraryTab = lazy(() => import('@/pages/projects/LibraryTab'))
 const AnalyticsPage = lazy(() => import('@/pages/AnalyticsPage'))
 const UpskillingPage = lazy(() => import('@/pages/UpskillingPage'))
-const CommunityPage = lazy(() => import('@/pages/CommunityPage'))
 const UsersPage = lazy(() => import('@/pages/UsersPage'))
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'))
 
@@ -243,7 +242,8 @@ export default function App() {
               <Route path="confluence/analyzer" element={<ConfluenceReleaseManagementAnalyzerTab />} />
             </Route>
             <Route path="upskilling" element={<RoleGuard path="/upskilling"><UpskillingPage /></RoleGuard>} />
-            <Route path="community"  element={<RoleGuard path="/community"><CommunityPage /></RoleGuard>} />
+            {/* Community is hidden until phase 13 decides whether Q&A stays inside Learning; /community now
+                falls through to Home. Its code stays in pages/CommunityPage.tsx and components/community/. */}
             {/* Legacy route redirects into the unified Projects hub */}
             <Route path="jira-projects" element={<Navigate to="/jira-confluence/jira" replace />} />
             <Route path="runs" element={<Navigate to="/projects/runs" replace />} />
