@@ -1,48 +1,45 @@
-export type UserRole = 'super_admin' | 'org_admin' | 'community_lead' | 'user' | 'admin' | 'automation_lead' | 'automation_user' | 'viewer'
+export type UserRole = 'super_admin' | 'automation_lead' | 'automation_senior' | 'automation_user' | 'automation_trainee' | 'viewer'
+
+/** Highest first; the order the Users screen lists and offers them in. */
+export const ALL_ROLES: UserRole[] = ['super_admin', 'automation_lead', 'automation_senior', 'automation_user', 'automation_trainee', 'viewer']
+
+/** Roles a lead may give to their own people (docs/redesign/04-roles-and-permissions.md). */
+export const LEAD_ASSIGNABLE_ROLES: UserRole[] = ['automation_senior', 'automation_user', 'automation_trainee', 'viewer']
+
+/** Roles that carry a scope tag. */
+export const TAGGED_ROLES: UserRole[] = ['automation_senior', 'automation_user', 'automation_trainee']
+
+export type ScopeTag = 'project_base' | 'shared'
+
+export const SCOPE_TAG_LABELS: Record<ScopeTag, string> = {
+  project_base: 'Project based',
+  shared: 'Shared',
+}
 
 export const ROLE_LABELS: Record<UserRole, string> = {
   super_admin: 'Super Admin',
-  org_admin: 'Organization Admin',
-  community_lead: 'Community Lead',
-  user: 'User',
-  admin: 'Admin',
   automation_lead: 'Automation Lead',
+  automation_senior: 'Automation Senior',
   automation_user: 'Automation User',
+  automation_trainee: 'Automation Trainee',
   viewer: 'Viewer',
 }
 
 export const ROLE_COLORS: Record<UserRole, string> = {
   super_admin: 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300',
-  org_admin: 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300',
-  community_lead: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300',
-  user: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300',
-  admin: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300',
-  automation_lead: 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300',
+  automation_lead: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300',
+  automation_senior: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300',
   automation_user: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300',
+  automation_trainee: 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300',
   viewer: 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400',
 }
 
-/** Roles allowed to access each route. Absence = all authenticated users. */
-export const ROUTE_ROLES: Record<string, UserRole[]> = {
-  '/jira-projects': ['super_admin', 'org_admin', 'community_lead', 'user', 'admin', 'automation_lead', 'automation_user', 'viewer'],
-  '/jira-confluence': ['super_admin', 'org_admin', 'community_lead', 'user', 'admin', 'automation_lead', 'automation_user', 'viewer'],
-  '/projects': ['super_admin', 'org_admin', 'community_lead', 'user', 'admin', 'automation_lead', 'automation_user', 'viewer'],
-  '/upskilling': ['super_admin', 'org_admin', 'community_lead', 'user', 'admin', 'automation_lead', 'automation_user', 'viewer'],
-  '/community': ['super_admin', 'org_admin', 'community_lead', 'user', 'admin', 'automation_lead', 'automation_user', 'viewer'],
-  '/runs':     ['super_admin', 'org_admin', 'community_lead', 'user', 'admin', 'automation_lead', 'automation_user', 'viewer'],
-  '/analytics':['super_admin', 'org_admin', 'community_lead', 'user', 'admin', 'automation_lead', 'automation_user', 'viewer'],
-  '/users':    ['super_admin', 'org_admin', 'admin', 'automation_lead'],
-  '/settings': ['super_admin', 'org_admin', 'community_lead', 'user', 'admin', 'automation_lead', 'automation_user', 'viewer'],
-}
-
-export function canAccess(role: UserRole | string | undefined, path: string): boolean {
-  // Super admin has access to everything
-  if (role === 'super_admin') return true
-  
-  const allowed = ROUTE_ROLES[path]
-  if (!allowed) return true           // dashboard and other open pages
-  const normalizedRole = role === 'developer' ? 'automation_user' : role
-  return allowed.includes(normalizedRole as UserRole)
+/** Permission needed to open each area. Absence = every signed-in user. */
+export const ROUTE_PERMISSIONS: Record<string, string> = {
+  '/projects': 'project.view',
+  '/jira-confluence': 'work.view',
+  '/upskilling': 'learning.use',
+  '/users': 'user.view',
 }
 
 export type RunStatus =
@@ -66,12 +63,19 @@ export interface UserResponse {
   theme_preference?: 'light' | 'dark' | 'system' | string
   full_name: string | null
   role: string
+  username?: string
+  scope_tag?: ScopeTag | null
   assigned_lead_id?: string | null
   assigned_lead_name?: string | null
   is_active: boolean
   created_at: string
   assigned_communities?: string[] | null
   two_fa_enabled?: boolean
+  /** /api/me: what the signed-in user may do and which projects they see. */
+  permissions?: string[]
+  all_projects?: boolean
+  /** /api/me: the projects the user sees; /api/users: the projects the user is a member of. */
+  project_ids?: string[]
 }
 
 // ── Community Forum ──────────────────────────────────────────────────────────

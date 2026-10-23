@@ -10,8 +10,9 @@ from sqlalchemy.orm import Session
 
 from app.core.config import BACKEND_DIR, settings
 from app.core.db import get_db
-from app.core.deps import get_current_user, require_admin, require_lead_or_above
-from app.modules.identity.models import User
+from app.core.deps import get_current_user
+from app.core.permissions import LEAD_ROLES, require
+from app.modules.identity.models import User, UserRole
 from app.modules.settings.connections import set_secret, settings_with_secrets, store_settings
 from app.services.confluence_release_analyzer import (
     analyze_release_page_html,
@@ -328,8 +329,9 @@ def _role(user) -> str:
     return r.value if hasattr(r, 'value') else str(r)
 
 
-_LEAD_OR_ABOVE = {"admin", "super_admin", "org_admin", "automation_lead"}
-_USER_OR_VIEWER = {"automation_user", "viewer"}
+# Leads configure the team's Jira/Confluence base URL and project; everyone else uses their lead's.
+_LEAD_OR_ABOVE = {role.value for role in LEAD_ROLES}
+_USER_OR_VIEWER = {role.value for role in UserRole if role not in LEAD_ROLES}
 
 
 def _can_manage_jira_project_config(user) -> bool:
@@ -809,7 +811,7 @@ async def _find_jira_custom_field(
 @router.get("/jira/create-meta", response_model=JiraCreateMetaResponse)
 async def get_jira_create_meta(
     project_key: Optional[str] = Query(None),
-    _user=Depends(get_current_user),
+    _user=Depends(require("jira.write")),
     db: Session = Depends(get_db),
 ):
     """List the issue types available for creating a ticket in the configured
@@ -907,7 +909,7 @@ async def get_jira_create_meta(
 @router.post("/jira/create-issue", response_model=JiraCreateIssueResponse)
 async def create_jira_issue(
     payload: JiraCreateIssueRequest,
-    _user=Depends(get_current_user),
+    _user=Depends(require("jira.write")),
     db: Session = Depends(get_db),
 ):
     """Create a Jira ticket directly through the configured Jira REST
@@ -1042,7 +1044,7 @@ async def create_jira_issue(
 # ── Confluence MCP endpoints ──────────────────────────────────────────────────
 
 @router.get("/confluence/releases", response_model=ConfluenceReleasesResponse)
-async def list_confluence_releases(_user=Depends(get_current_user), db: Session = Depends(get_db)):
+async def list_confluence_releases(_user=Depends(require("work.view")), db: Session = Depends(get_db)):
     """List release-related pages from the configured Confluence space.
 
     Matches pages whose title contains "release" inside the configured space,
@@ -1125,7 +1127,7 @@ async def list_confluence_releases(_user=Depends(get_current_user), db: Session 
 @router.get("/confluence/release-containers/search", response_model=ConfluencePagesResponse)
 async def search_confluence_release_containers(
     q: str = Query(default="", description="Page title search text"),
-    _user=Depends(get_current_user),
+    _user=Depends(require("work.view")),
     db: Session = Depends(get_db),
 ):
     """Search Confluence pages in configured space to link one as release container."""
@@ -1219,7 +1221,7 @@ async def list_confluence_release_pages(
     container_id: Optional[str] = Query(
         default=None, description="Container page id; defaults to configured release container"
     ),
-    _user=Depends(get_current_user),
+    _user=Depends(require("work.view")),
     db: Session = Depends(get_db),
 ):
     """List child pages under the configured release container page."""
@@ -1387,7 +1389,7 @@ async def analyze_confluence_release_page(
     page_id: Optional[str] = Query(
         default=None, description="Release page id; defaults to configured selected release page"
     ),
-    _user=Depends(get_current_user),
+    _user=Depends(require("work.view")),
     db: Session = Depends(get_db),
 ):
     """Run the 3-step BE/FE version analyzer against a release page.
@@ -1503,7 +1505,7 @@ async def analyze_confluence_release_page(
 # ── Zephyr (Test Manager) endpoints ──────────────────────────────────────────
 
 @router.get("/zephyr", response_model=ZephyrSettingsResponse)
-async def get_zephyr_settings(_user=Depends(get_current_user)):
+async def get_zephyr_settings(_user=Depends(require("work.view"))):
     """Return current Zephyr project and folder selection."""
     return ZephyrSettingsResponse(
         zephyr_project_key=settings.ZEPHYR_PROJECT_KEY or "",
@@ -1514,7 +1516,7 @@ async def get_zephyr_settings(_user=Depends(get_current_user)):
 @router.patch("/zephyr", response_model=ZephyrSettingsResponse)
 async def update_zephyr_settings(
     payload: dict,
-    _user=Depends(require_admin),
+    _user=Depends(require("settings.system")),
 ):
     """Save Zephyr project and folder selection to .env (admin only)."""
     if "zephyr_project_key" in payload:
@@ -1536,7 +1538,7 @@ async def update_zephyr_settings(
 @router.get("/zephyr/cycles/{project_key}", response_model=ZephyrCyclesResponse)
 async def get_zephyr_cycles(
     project_key: str,
-    _user=Depends(get_current_user),
+    _user=Depends(require("work.view")),
     db: Session = Depends(get_db),
 ):
     """List Zephyr test cycles (folders) for a project.
@@ -1627,7 +1629,7 @@ async def get_zephyr_cycles(
 @router.get("/zephyr/diagnose/{project_key}")
 async def diagnose_zephyr(
     project_key: str,
-    _user=Depends(require_lead_or_above),
+    _user=Depends(require("project.configure")),
 ):
     """
     Diagnostic endpoint: probes all known Zephyr/Jira API variants

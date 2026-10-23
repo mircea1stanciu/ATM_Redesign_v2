@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.deps import get_current_user
-from app.modules.identity.models import UserRole
+from app.core.permissions import LEAD_ROLES, can_see_project, ensure, require
 from app.modules.projects.checkouts import checkout_path, managed_checkouts_dir
 from app.modules.projects.models import Project
 from app.modules.settings.connections import get_secret, set_secret
@@ -42,7 +42,8 @@ from app.services.zephyr_service import (
 
 router = APIRouter()
 
-_ALLOW_ABSOLUTE_TARGET_PATH_ROLES = {"admin", "super_admin", "org_admin", "automation_lead"}
+# Only leads may point the generator at an arbitrary folder under the checkouts directory.
+_ALLOW_ABSOLUTE_TARGET_PATH_ROLES = {role.value for role in LEAD_ROLES}
 
 
 # ── Schemas ─────────────────────────────────────────────────────────────────
@@ -167,9 +168,8 @@ def _get_project(db: Session, project_id: str | int) -> Project:
     return project
 
 
-def _enforce_view_project(project: Project, user) -> None:
-    if user.role != UserRole.SUPER_ADMIN and user.organization_id != project.organization_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You cannot view this project.")
+def _enforce_view_project(db: Session, project: Project, user, permission: str = "project.view") -> None:
+    ensure(db, user, permission, int(project.id))
 
 
 def _http_502_from_zephyr(exc: Exception) -> HTTPException:
@@ -228,7 +228,7 @@ async def _resolve_target_dir(
             detail="Provide either project_id or target_path.",
         )
     project = _get_project(db, project_id)
-    _enforce_view_project(project, current_user)
+    _enforce_view_project(db, project, current_user)
     return checkout_path(current_user, project.id)
 
 
@@ -240,7 +240,7 @@ async def list_folders(
     project_key: str,
     case_status: str | None = None,
     case_team: str | None = None,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("work.view")),
     db: Session = Depends(get_db),
 ):
     """Return Zephyr folders (or, when folders aren't configured, cycles).
@@ -279,7 +279,7 @@ async def list_cases(
     folder_id: str | None = None,
     case_status: str | None = None,
     case_team: str | None = None,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("work.view")),
     db: Session = Depends(get_db),
 ):
     """Return manual test cases with their steps for the given project/folder."""
@@ -331,7 +331,7 @@ class UpdateCaseStatusResponse(BaseModel):
 @router.get("/statuses/{project_key}", response_model=ZephyrStatusesResponse)
 async def list_case_statuses(
     project_key: str,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("work.view")),
     db: Session = Depends(get_db),
 ):
     """Return the project's configured Zephyr test-case statuses (for the
@@ -367,7 +367,7 @@ class ZephyrTeamsResponse(BaseModel):
 @router.get("/teams/{project_key}", response_model=ZephyrTeamsResponse)
 async def list_teams(
     project_key: str,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("work.view")),
     db: Session = Depends(get_db),
 ):
     """Return the project's team names (its Jira components) for the Team
@@ -399,7 +399,7 @@ async def update_case_status(
     project_key: str,
     case_key: str,
     body: UpdateCaseStatusBody,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("jira.write")),
     db: Session = Depends(get_db),
 ):
     """Update a single test case's status directly in Zephyr (TM4J)."""
@@ -426,7 +426,7 @@ async def update_case_status(
 
 @router.get("/targets", response_model=TargetsResponse)
 async def list_targets(
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("work.view")),
     db: Session = Depends(get_db),
 ):
     """Return every project the user can view that has a resolvable local repo.
@@ -436,15 +436,13 @@ async def list_targets(
     """
     projects = (
         db.query(Project)
-        .filter(Project.organization_id == current_user.organization_id, Project.is_archived.is_(False))
+        .filter(Project.is_archived.is_(False))
         .all()
     )
 
     out: list[TargetProject] = []
     for project in projects:
-        try:
-            _enforce_view_project(project, current_user)
-        except HTTPException:
+        if not can_see_project(db, current_user, project.id):
             continue
 
         local_path = checkout_path(current_user, project.id)
@@ -488,7 +486,7 @@ class ReferenceFoldersResponse(BaseModel):
 async def list_reference_folders(
     project_id: str | None = None,
     target_path: str | None = None,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("work.view")),
     db: Session = Depends(get_db),
 ):
     """List local folders containing existing ``.bru`` requests ("collections")
@@ -510,7 +508,7 @@ async def list_reference_folders(
 @router.post("/generate", response_model=GenerateResponse)
 async def generate(
     body: GenerateRequestBody,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("code.edit")),
     db: Session = Depends(get_db),
 ):
     """Generate automation script files for the selected test cases.
@@ -542,7 +540,7 @@ async def generate(
     else:
         assert body.project_id  # for type checker
         project = _get_project(db, body.project_id)
-        _enforce_view_project(project, current_user)
+        _enforce_view_project(db, project, current_user, "code.edit")  # generation writes into the checkout
         target_dir = checkout_path(current_user, project.id)
 
     cases_payload: list[dict[str, Any]] = [c.dict() for c in body.cases]

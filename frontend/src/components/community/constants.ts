@@ -26,7 +26,7 @@ export function communityById(id: string): CommunityMeta {
  * this mirrors the backend's soft access rules.
  */
 export function accessibleCommunities(user: { role?: string; assigned_communities?: string[] | null } | null): CommunityMeta[] {
-  const adminRoles = ['super_admin', 'admin', 'org_admin']
+  const adminRoles = ['super_admin', 'automation_lead']
   if (!user) return COMMUNITIES
   if (user.role && adminRoles.includes(user.role)) return COMMUNITIES
   const assigned = user.assigned_communities

@@ -3,7 +3,8 @@ import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-
 import { AnimatePresence } from 'framer-motion'
 import { useAppStore } from '@/store/useAppStore'
 import { apiService, CONNECTION_STATUS_CHANGED_EVENT } from '@/services/api'
-import { canAccess } from '@/types/domain'
+import { ROUTE_PERMISSIONS } from '@/types/domain'
+import { hasPermission } from '@/hooks/usePermission'
 import AppLayout from '@/components/layout/AppLayout'
 import LoginPage from '@/pages/LoginPage'
 import DashboardPage from '@/pages/DashboardPage'
@@ -44,7 +45,8 @@ function RoleGuard({ path, children }: { path: string; children: React.ReactNode
   }, [user])
 
   if (!user) return <>{children}</>
-  if (!canAccess(user?.role, path)) return <Navigate to="/" replace />
+  const permission = ROUTE_PERMISSIONS[path]
+  if (permission && !hasPermission(user, permission)) return <Navigate to="/" replace />
   return <>{children}</>
 }
 

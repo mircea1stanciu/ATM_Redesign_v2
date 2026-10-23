@@ -6,6 +6,8 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
+from app.core.permissions import PermissionDenied, ensure
+from app.modules.identity.models import UserRole
 from app.modules.workspace import router as routes
 
 
@@ -29,7 +31,6 @@ def repo(tmp_path: Path) -> Path:
 
 
 def _patch(monkeypatch, repo: Path, role: str = "editor"):
-    monkeypatch.setattr(routes, "check_organization_member", lambda user: None)
     monkeypatch.setattr(routes, "get_project_or_404",
                         lambda db, pid: SimpleNamespace(id=pid, github_repo_url=""))
     monkeypatch.setattr(routes, "require_checkout", lambda user, pid: repo)
@@ -54,12 +55,10 @@ def test_editor_reads_and_saves_files_of_the_linked_checkout(monkeypatch, repo):
     assert exc.value.status_code == 404
 
 
-def test_viewers_cannot_save(monkeypatch, repo):
-    user = _patch(monkeypatch, repo, role="viewer")
-    with pytest.raises(HTTPException) as exc:
-        asyncio.run(routes.write_project_local_file(5, routes.LocalFileWriteRequest(path="x.txt", content=""),
-                                                    user, None))
-    assert exc.value.status_code == 403
+def test_viewers_cannot_save():
+    # Saving is guarded by require("code.edit") on the route; viewers do not have it.
+    with pytest.raises(PermissionDenied):
+        ensure(None, SimpleNamespace(role=UserRole.VIEWER), "code.edit")
 
 
 def test_branches_and_checkout(monkeypatch, repo):

@@ -19,11 +19,14 @@ SECRET_SETTINGS = {
 
 
 def _migrate(engine, target):
-    """Upgrade to `target`, or downgrade for a relative target such as "-1"."""
+    """Upgrade to `target`, or downgrade to the revision after a leading "-"."""
     config = _alembic_config()
     with engine.begin() as connection:
         config.attributes["connection"] = connection
-        (command.downgrade if target.startswith("-") else command.upgrade)(config, target)
+        if target.startswith("-"):
+            command.downgrade(config, target[1:])
+        else:
+            command.upgrade(config, target)
 
 
 def test_migration_moves_tokens_out_of_settings_and_encrypts_them(tmp_path):
@@ -47,7 +50,7 @@ def test_migration_moves_tokens_out_of_settings_and_encrypts_them(tmp_path):
     assert decrypt(secrets[("jira", "")]) == "jira-secret-1234"
     assert json.loads(decrypt(secrets[("ai_assistant", "")]))["api_key"] == "sk-ant-secret"
 
-    _migrate(engine, "-1")
+    _migrate(engine, "-0002_drop_removed_features")
     with engine.connect() as connection:
         restored = json.loads(connection.execute(sa.text("select settings_json from users")).scalar())
     assert restored == SECRET_SETTINGS

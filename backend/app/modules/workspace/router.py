@@ -9,16 +9,15 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
-from app.core.deps import get_current_user
+from app.core.permissions import check_trainee_push, require
 from app.modules.projects.checkouts import checkout_path, require_checkout, save_linked_path, service_project
+from app.modules.projects.models import BranchOwner
 from app.modules.projects.service import (
-    check_organization_member,
     get_project_or_404,
     github_headers,
     github_repository_context,
     local_status,
     project_github_token,
-    require_editor,
 )
 
 router = APIRouter(prefix="/api/projects", tags=["Workspace"])
@@ -28,13 +27,12 @@ router = APIRouter(prefix="/api/projects", tags=["Workspace"])
 async def list_project_local_branches(
     project_id: int,
     fetch: bool = False,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("project.view", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Local and GitHub (origin) branches of the linked checkout; ``fetch`` refreshes the GitHub ones first."""
     from app.services.local_repo_service import LocalRepoError, LocalRepoService
 
-    check_organization_member(current_user)
     project = get_project_or_404(db, project_id)
     repo_path = require_checkout(current_user, project_id)
     repo_url = str(project.github_repo_url or "")
@@ -61,16 +59,14 @@ class LocalCheckoutRequest(BaseModel):
 async def checkout_project_local_branch(
     project_id: int,
     payload: LocalCheckoutRequest,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("code.edit", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Switch the linked checkout to a local branch, or create a tracking branch from ``origin/<branch>``."""
     from app.services.local_import_service import _check_branch_name, _git
     from app.services.local_repo_service import LocalRepoError, LocalRepoService
 
-    check_organization_member(current_user)
     get_project_or_404(db, project_id)
-    require_editor(current_user)
     repo_path = require_checkout(current_user, project_id)
     branch = payload.branch.strip()
     try:
@@ -101,13 +97,12 @@ async def get_project_local_changes(
     project_id: int,
     base: str = "",
     committed: bool = True,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("project.view", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """New/modified files of the linked checkout (uncommitted, plus commits not on ``base``) for focused runs."""
     from app.services import changed_tests_service
 
-    check_organization_member(current_user)
     project = get_project_or_404(db, project_id)
     repo_path = require_checkout(current_user, project_id)
     try:
@@ -175,13 +170,12 @@ def _write_editor_file(repo_path: Path, rel_path: str, content: str) -> dict:
 async def read_project_local_file(
     project_id: int,
     path: str,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("project.view", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Read a text file of the linked checkout (for the editors)."""
     from app.services import ai_project_service  # noqa: F401 - imported in the event loop, not the worker thread
 
-    check_organization_member(current_user)
     get_project_or_404(db, project_id)
     repo_path = require_checkout(current_user, project_id)
     return await asyncio.to_thread(_read_editor_file, repo_path, path)
@@ -191,15 +185,13 @@ async def read_project_local_file(
 async def write_project_local_file(
     project_id: int,
     payload: LocalFileWriteRequest,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("code.edit", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Save a text file in the linked checkout (not for viewers)."""
-    check_organization_member(current_user)
     get_project_or_404(db, project_id)
     from app.services import ai_project_service  # noqa: F401 - imported in the event loop, not the worker thread
 
-    require_editor(current_user)
     repo_path = require_checkout(current_user, project_id)
     return await asyncio.to_thread(_write_editor_file, repo_path, payload.path, payload.content)
 
@@ -208,11 +200,10 @@ async def write_project_local_file(
 async def get_project_local_tree(
     project_id: int,
     path: str = "",
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("project.view", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """List an immediate directory in the user's linked local checkout."""
-    check_organization_member(current_user)
     get_project_or_404(db, project_id)
     repo_path = require_checkout(current_user, project_id)
 
@@ -246,11 +237,10 @@ async def compare_project_local_repository(
     base: str = "main",
     head: str = "local",
     fetch: bool = True,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("project.view", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Compare the linked local checkout with the project's GitHub refs."""
-    check_organization_member(current_user)
     project = get_project_or_404(db, project_id)
     repo_path = require_checkout(current_user, project_id)
 
@@ -304,9 +294,7 @@ class PullRequestCreate(BaseModel):
 
 def _publish_context(db: Session, current_user, project_id: int):
     """Project, the user's checkout folder and the service view of it, for publish operations."""
-    check_organization_member(current_user)
     project = get_project_or_404(db, project_id)
-    require_editor(current_user)
     repo_path = checkout_path(current_user, project_id)
     return project, repo_path, service_project(project.id, repo_path)
 
@@ -325,13 +313,11 @@ def _repository_url_and_token(project, current_user, project_id: int) -> tuple[s
 async def set_project_local_config(
     project_id: int,
     payload: LocalRepoConfigRequest,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("code.edit", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Point the project at another folder on this station, or clear the link with an empty path."""
-    check_organization_member(current_user)
     get_project_or_404(db, project_id)
-    require_editor(current_user)
     value = (payload.local_repo_path or "").strip()
     if value:
         folder = Path(value).expanduser().resolve()
@@ -347,7 +333,7 @@ async def set_project_local_config(
 async def sync_project_local_repo(
     project_id: int,
     payload: LocalRepoSyncRequest,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("code.edit", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Clone the GitHub repository into the checkout folder, or fetch and pull when it already exists."""
@@ -365,7 +351,7 @@ async def sync_project_local_repo(
 async def create_project_local_branch(
     project_id: int,
     payload: LocalBranchRequest,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("code.push", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Create a branch in the checkout (from ``from_ref`` or the current HEAD) and switch to it."""
@@ -374,16 +360,22 @@ async def create_project_local_branch(
     _, _, service_view = _publish_context(db, current_user, project_id)
     require_checkout(current_user, project_id)
     try:
-        return await LocalRepoService.create_branch(service_view, payload.branch, payload.from_ref)
+        status = await LocalRepoService.create_branch(service_view, payload.branch, payload.from_ref)
     except LocalRepoError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    # Remember who started the branch: trainees may push only their own branches.
+    branch = status.get("current_branch") or payload.branch.strip()
+    if not db.query(BranchOwner).filter(BranchOwner.project_id == project_id, BranchOwner.branch == branch).first():
+        db.add(BranchOwner(project_id=project_id, branch=branch, user_id=current_user.id))
+        db.commit()
+    return status
 
 
 @router.post("/{project_id}/local/commit")
 async def commit_project_local_changes(
     project_id: int,
     payload: LocalCommitRequest,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("code.push", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Stage every change in the checkout and commit it."""
@@ -401,17 +393,19 @@ async def commit_project_local_changes(
 async def push_project_local_branch(
     project_id: int,
     payload: LocalPushRequest,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("code.push", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Push a branch (default: the current one) to the project's GitHub repository."""
     from app.services.local_repo_service import LocalRepoError, LocalRepoService
 
-    project, _, service_view = _publish_context(db, current_user, project_id)
+    project, repo_path, service_view = _publish_context(db, current_user, project_id)
     require_checkout(current_user, project_id)
+    branch = (payload.branch or "").strip() or (await asyncio.to_thread(local_status, repo_path))["current_branch"]
+    check_trainee_push(db, current_user, project_id, branch or "")
     repo_url, token = _repository_url_and_token(project, current_user, project_id)
     try:
-        return await LocalRepoService.push(service_view, repo_url, token, branch=payload.branch)
+        return await LocalRepoService.push(service_view, repo_url, token, branch=branch)
     except LocalRepoError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -420,7 +414,7 @@ async def push_project_local_branch(
 async def create_project_pull_request(
     project_id: int,
     payload: PullRequestCreate,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("pr.create", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Open a pull request on GitHub from ``head`` into ``base`` (default ``main``)."""

@@ -1,8 +1,9 @@
 """Projects, their test runs and imported Allure reports."""
 from datetime import datetime
+from typing import Optional
 
 from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
 
@@ -73,6 +74,7 @@ class AnalyticsSuite(Base):
     cron_expression = Column(String(100))
     active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
 
 class AnalyticsRun(Base):
@@ -99,3 +101,27 @@ class AnalyticsRun(Base):
     results_json = Column(JSON, default=list, nullable=False)
     details_json = Column(JSON)  # execution details: app version, device, technology, reports
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ProjectMember(Base):
+    """A user assigned to a project (project_base users and viewers see only these projects)."""
+    __tablename__ = "project_members"
+    __table_args__ = (UniqueConstraint("project_id", "user_id", name="uq_project_member"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    added_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    added_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class BranchOwner(Base):
+    """Who started a branch in ATM; trainees may push only their own branches."""
+    __tablename__ = "branch_owners"
+    __table_args__ = (UniqueConstraint("project_id", "branch", name="uq_branch_owner"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    branch: Mapped[str] = mapped_column(String(255))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

@@ -6,6 +6,7 @@ import {
   Lock, Sliders,
 } from 'lucide-react'
 import AiAssistantPanel from '@/components/settings/AiAssistantPanel'
+import { usePermission } from '@/hooks/usePermission'
 import { useAppStore } from '@/store/useAppStore'
 import { apiService, notifyConnectionStatusChanged } from '@/services/api'
 import { UserProfilePanel } from '@/components/settings/UserProfilePanel'
@@ -1098,11 +1099,9 @@ export default function SettingsPage() {
   const projects = useAppStore(s => s.projects)
   const selectedProjectId = useAppStore(s => s.selectedProjectId)
 
-  const isProjectManager = user?.role === 'admin' || user?.role === 'automation_lead' || user?.role === 'super_admin' || user?.role === 'org_admin'
-  const canManageJiraProject =
-    user?.role === 'admin' || user?.role === 'super_admin' || user?.role === 'org_admin' ||
-    user?.role === 'automation_lead' ||
-    ((user?.role === 'automation_user' || user?.role === 'viewer') && Boolean(user?.assigned_lead_id))
+  // Leads and the super admin set the team's base URLs; people assigned to a lead manage the team's project/space.
+  const isProjectManager = usePermission('project.members.manage')
+  const canManageJiraProject = isProjectManager || Boolean(user?.assigned_lead_id)
 
   // Determine current active section (mcp takes precedence if provided)
   const activeSection = mcp ? 'mcp' : (section || 'profile')

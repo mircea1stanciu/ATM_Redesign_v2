@@ -9,13 +9,12 @@ from sqlalchemy.orm import Session
 
 from app.core.config import BACKEND_DIR
 from app.core.db import get_db
-from app.core.deps import get_current_user
+from app.core.permissions import require
 from app.modules.projects.checkouts import (
     require_checkout,
 )
 from app.modules.projects.models import AllureReport
 from app.modules.projects.service import (
-    check_organization_member,
     get_project_or_404,
     github_get,
     github_repository_context,
@@ -34,11 +33,10 @@ router = APIRouter(prefix="/api/projects", tags=["Reporting"])
 @router.get("/{project_id}/allure/reports")
 async def list_allure_reports(
     project_id: int,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("report.view", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """List normalized Allure reports from local and GitHub Actions imports."""
-    check_organization_member(current_user)
     get_project_or_404(db, project_id)
     reports = (
         db.query(AllureReport)
@@ -53,11 +51,10 @@ async def list_allure_reports(
 async def get_imported_allure_report_html(
     project_id: int,
     report_id: int,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("report.view", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Generate the interactive Allure-style HTML view for an imported report."""
-    check_organization_member(current_user)
     get_project_or_404(db, project_id)
     report = db.query(AllureReport).filter(
         AllureReport.id == report_id,
@@ -87,11 +84,10 @@ async def get_imported_allure_report_html(
 @router.post("/{project_id}/allure/import/local")
 async def import_local_allure_reports(
     project_id: int,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("run.execute", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Import standard allure-results bundles from the linked local checkout."""
-    check_organization_member(current_user)
     get_project_or_404(db, project_id)
     repo_path = require_checkout(current_user, project_id)
 
@@ -130,11 +126,10 @@ async def import_local_allure_reports(
 async def sync_github_allure_reports(
     project_id: int,
     limit: int = 20,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("run.execute", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Download and import Allure result artifacts from recent GitHub Actions runs."""
-    check_organization_member(current_user)
     project = get_project_or_404(db, project_id)
     owner, repo, api_base, token = github_repository_context(project, current_user, project_id)
     created = updated = 0

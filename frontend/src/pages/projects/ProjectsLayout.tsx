@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import {
   Activity, BarChart2, CheckCircle2, FolderGit2, Github, Info, Loader2, Package, Plus, Sparkles, X,
 } from 'lucide-react'
+import Can from '@/components/ui/Can'
 import { useAppStore } from '@/store/useAppStore'
 import ProjectOpenInIde from '@/components/ai/ProjectOpenInIde'
 import type { Project } from '@/types/domain'
@@ -25,10 +26,8 @@ export default function ProjectsLayout() {
   const setProjectForm = useAppStore(s => s.setProjectForm)
   const createProject = useAppStore(s => s.createProject)
   const deleteProject = useAppStore(s => s.deleteProject)
-  const user = useAppStore(s => s.user)
   const error = useAppStore(s => s.error)
 
-  const canCreate = user?.role === 'admin' || user?.role === 'automation_lead' || user?.role === 'super_admin' || user?.role === 'org_admin'
   const navigate = useNavigate()
   const [showCreate, setShowCreate] = useState(false)
   const [creating, setCreating] = useState(false)
@@ -165,16 +164,18 @@ export default function ProjectsLayout() {
             {activeProject && (
               <ProjectOpenInIde key={activeProject.id} projectId={activeProject.id} projectName={activeProject.name} />
             )}
-            {canCreate && activeProject && (
-              <button onClick={handleDelete} className="btn-ghost !px-2.5 !py-1.5 text-xs text-red-500 hover:text-red-600">
-                Delete
-              </button>
+            {activeProject && (
+              <Can permission="project.delete">
+                <button onClick={handleDelete} className="btn-ghost !px-2.5 !py-1.5 text-xs text-red-500 hover:text-red-600">
+                  Delete
+                </button>
+              </Can>
             )}
-            {canCreate && (
+            <Can permission="project.create">
               <button onClick={openCreate} className="btn-primary !px-3 !py-1.5 text-xs">
                 <Plus size={14} /> New Project
               </button>
-            )}
+            </Can>
           </div>
         </div>
 

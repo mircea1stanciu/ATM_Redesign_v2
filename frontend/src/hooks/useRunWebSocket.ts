@@ -21,7 +21,9 @@ export function useRunWebSocket({ runId, enabled }: UseRunWebSocketOptions) {
 
     // Same origin as the page: the dev proxy and nginx forward /api/ws/* to the backend.
     const base = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`
-    const socket = new WebSocket(`${base}/api/ws/runs/${runId}`)
+    // Browsers cannot send an Authorization header on a WebSocket; the token travels as a subprotocol instead.
+    const token = localStorage.getItem('tm_access_token') || ''
+    const socket = new WebSocket(`${base}/api/ws/runs/${runId}`, ['atm-token', token])
 
     socket.onopen = () => {
       setConnected(true)

@@ -63,10 +63,7 @@ test('removed backend features answer 404, kept ones still work', async ({ reque
 
 test('a fresh database has no accounts with built-in passwords', async ({ request }) => {
   const headers = authHeaders('super_admin')
-  const me = await (await request.get('/api/auth/me', { headers })).json()
-  const users: Array<{ username: string; email: string }> = await (
-    await request.get(`/api/organizations/${me.organization.id}/users`, { headers })
-  ).json()
+  const users: Array<{ username: string; email: string }> = await (await request.get('/api/users', { headers })).json()
 
   const usernames = users.map(user => user.username)
   expect(usernames).toContain('e2e_super_admin')

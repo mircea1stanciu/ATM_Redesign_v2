@@ -3,54 +3,52 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useSearchParams } from 'react-router-dom'
 import {
   CheckCircle2, Edit2, Loader2, Search, Shield, UserCheck,
-  UserCog, Users, X, Eye, AlertCircle, Trash2, Filter, Plus,
+  UserCog, Users, X, Eye, AlertCircle, Trash2, Filter, Plus, GraduationCap,
 } from 'lucide-react'
 import { apiService } from '@/services/api'
+import type { UserUpdatePayload } from '@/services/api'
 import { useAppStore } from '@/store/useAppStore'
-import type { UserResponse, UserRole } from '@/types/domain'
-import { ROLE_LABELS, ROLE_COLORS } from '@/types/domain'
-
-const ALL_ROLES: UserRole[] = ['admin', 'automation_lead', 'automation_user', 'viewer', 'user', 'super_admin', 'org_admin', 'community_lead']
-
-const ROLE_ORDER: Record<UserRole, number> = {
-  super_admin: 0,
-  admin: 1,
-  org_admin: 2,
-  community_lead: 3,
-  automation_lead: 4,
-  automation_user: 5,
-  viewer: 6,
-  user: 7,
-}
+import { usePermission } from '@/hooks/usePermission'
+import type { ScopeTag, UserResponse, UserRole } from '@/types/domain'
+import {
+  ALL_ROLES, LEAD_ASSIGNABLE_ROLES, ROLE_COLORS, ROLE_LABELS, SCOPE_TAG_LABELS, TAGGED_ROLES,
+} from '@/types/domain'
 
 const ROLE_ICONS: Record<UserRole, React.ReactNode> = {
   super_admin: <Shield size={13} />,
-  admin: <Shield size={13} />,
-  org_admin: <Shield size={13} />,
-  community_lead: <UserCog size={13} />,
   automation_lead: <UserCog size={13} />,
+  automation_senior: <UserCheck size={13} />,
   automation_user: <UserCheck size={13} />,
+  automation_trainee: <GraduationCap size={13} />,
   viewer: <Eye size={13} />,
-  user: <Eye size={13} />,
 }
 
 const ROLE_DESCRIPTIONS: Record<UserRole, string> = {
-  super_admin: 'Super admin — full system access',
-  admin: 'Full access — manage users, projects, runs and all settings',
-  org_admin: 'Organization admin — manage org users and projects',
-  community_lead: 'Community lead — manage community members',
-  automation_lead: 'Configure projects, suites and schedulers; execute runs',
-  automation_user: 'Execute test runs; read project and suite details',
-  viewer: 'Read-only access to runs, results and analytics',
-  user: 'Registered user — default role for new registrations',
+  super_admin: 'Configures the install and can do everything',
+  automation_lead: 'Manages people and projects, decides promotions',
+  automation_senior: 'Implements and runs tests, publishes reports, reviews pull requests, mentors',
+  automation_user: 'Implements and runs tests, opens pull requests',
+  automation_trainee: 'Learns and implements tests on their own branches',
+  viewer: 'Reads dashboards, runs and reports; changes nothing',
 }
+
+const SCOPE_TAG_DESCRIPTIONS: Record<ScopeTag, string> = {
+  project_base: 'Works only on the projects below',
+  shared: 'Works on every project',
+}
+
+const isTagged = (role: string) => TAGGED_ROLES.includes(role as UserRole)
+// People who report to a lead: everyone below Lead.
+const hasLead = (role: string) => LEAD_ASSIGNABLE_ROLES.includes(role as UserRole)
 
 interface EditState {
   userId: string
   email: string
   full_name: string
   role: UserRole
+  scope_tag: ScopeTag
   assigned_lead_id: string
+  project_ids: string[]
   is_active: boolean
   password: string
   passwordConfirm: string
@@ -64,6 +62,9 @@ export default function UsersPage() {
     : ''
 
   const currentUser = useAppStore(s => s.user)
+  const projects = useAppStore(s => s.projects)
+  const canManage = usePermission('user.manage')
+  const canAssignProjects = usePermission('project.members.manage')
   const [users, setUsers] = useState<UserResponse[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState(searchParams.get('q') || '')
@@ -79,35 +80,29 @@ export default function UsersPage() {
   const [error, setError] = useState<string | null>(null)
   const [successId, setSuccessId] = useState<string | null>(null)
   const [showCreateModal, setShowCreateModal] = useState(false)
-  const [createForm, setCreateForm] = useState({
+  const emptyCreateForm = {
     email: '',
     password: '',
     full_name: '',
-    role: 'automation_user' as UserRole,
-  })
+    role: 'automation_trainee' as UserRole,
+    scope_tag: 'project_base' as ScopeTag,
+  }
+  const [createForm, setCreateForm] = useState(emptyCreateForm)
   const [creatingUser, setCreatingUser] = useState(false)
 
-  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super_admin' || currentUser?.role === 'org_admin'
+  const isAdmin = currentUser?.role === 'super_admin'
   const isLead = currentUser?.role === 'automation_lead'
-  const isManager = isAdmin || isLead
-  const visibleRoleFilters = isLead
-    ? ALL_ROLES.filter(role => role !== 'admin')
-    : ALL_ROLES
-  const leadOptions = users.filter(u => u.role === 'automation_lead')
+  // Leads give roles up to Senior, and only to their own people; the super admin changes anyone.
+  const assignableRoles = isAdmin ? ALL_ROLES : LEAD_ASSIGNABLE_ROLES
+  const leadOptions = users.filter(u => u.role === 'automation_lead' || u.role === 'super_admin')
 
   const canEditUser = (u: UserResponse) => {
+    if (!canManage) return false
     if (isAdmin) return true
-    if (isLead) return u.role === 'automation_user' || u.role === 'viewer'
-    return false
+    return isLead && hasLead(u.role) && u.assigned_lead_id === currentUser?.id
   }
 
-  const canDeleteUser = (u: UserResponse) => {
-    if (!currentUser) return false
-    if (u.id === currentUser.id) return false
-    if (isAdmin) return true
-    if (isLead) return Boolean(u.assigned_lead_id && u.assigned_lead_id === currentUser.id)
-    return false
-  }
+  const canDeleteUser = (u: UserResponse) => u.id !== currentUser?.id && canEditUser(u)
 
   const fetchUsers = async () => {
     setLoading(true)
@@ -137,12 +132,6 @@ export default function UsersPage() {
     }
   }, [search, filterRole, filterLeadId, filterUnassigned, searchParams, setSearchParams])
 
-  useEffect(() => {
-    if (isLead && filterRole === 'admin') {
-      setFilterRole('')
-    }
-  }, [isLead, filterRole])
-
   const openEdit = (u: UserResponse) => {
     setError(null)
     setEditState({
@@ -150,7 +139,9 @@ export default function UsersPage() {
       email: u.email,
       full_name: u.full_name || '',
       role: u.role as UserRole,
+      scope_tag: u.scope_tag || 'project_base',
       assigned_lead_id: u.assigned_lead_id || '',
+      project_ids: u.project_ids || [],
       is_active: u.is_active,
       password: '',
       passwordConfirm: '',
@@ -169,18 +160,17 @@ export default function UsersPage() {
     setSaving(true)
     setError(null)
     try {
-      const payload: Record<string, unknown> = isAdmin
-        ? {
-            email: editState.email,
-            full_name: editState.full_name || undefined,
-            role: editState.role,
-            assigned_lead_id: editState.assigned_lead_id || null,
-            is_active: editState.is_active,
-          }
-        : {
-            assigned_lead_id: editState.assigned_lead_id || null,
-          }
-      if (isAdmin && editState.password) payload.password = editState.password
+      const original = users.find(u => u.id === editState.userId)
+      const payload: UserUpdatePayload = {
+        email: editState.email,
+        full_name: editState.full_name || undefined,
+        is_active: editState.is_active,
+      }
+      if (editState.role !== original?.role) payload.role = editState.role
+      if (isTagged(editState.role)) payload.scope_tag = editState.scope_tag
+      if (isAdmin && hasLead(editState.role)) payload.assigned_lead_id = editState.assigned_lead_id || null
+      if (canAssignProjects) payload.project_ids = editState.project_ids
+      if (editState.password) payload.password = editState.password
       const updatedUser = await apiService.updateUser(editState.userId, payload)
 
       // Optimistic local update so assignment is visible even if refresh fails.
@@ -231,10 +221,11 @@ export default function UsersPage() {
         password: createForm.password,
         full_name: createForm.full_name,
         role: createForm.role,
+        scope_tag: isTagged(createForm.role) ? createForm.scope_tag : null,
       })
       setUsers(prev => [...prev, newUser])
       setShowCreateModal(false)
-      setCreateForm({ email: '', password: '', full_name: '', role: 'automation_user' })
+      setCreateForm(emptyCreateForm)
     } catch (e) {
       setError(apiService.errorMessage(e))
     } finally {
@@ -267,11 +258,8 @@ export default function UsersPage() {
       // Role filter
       if (filterRole && u.role !== filterRole) return false
 
-      // Unassigned filter: only Automation User / Viewer without assigned lead
-      if (filterUnassigned) {
-        const isAssignableRole = u.role === 'automation_user' || u.role === 'viewer'
-        if (!isAssignableRole || Boolean(u.assigned_lead_id)) return false
-      }
+      // Unassigned filter: people below Lead without an assigned lead
+      if (filterUnassigned && (!hasLead(u.role) || Boolean(u.assigned_lead_id))) return false
 
       // Lead group filter: show the lead + their assigned users
       if (filterLeadId) {
@@ -283,8 +271,7 @@ export default function UsersPage() {
       return true
     })
     .sort((a, b) => {
-      const isUnassignedAssignable = (u: UserResponse) =>
-        (u.role === 'automation_user' || u.role === 'viewer') && !u.assigned_lead_id
+      const isUnassignedAssignable = (u: UserResponse) => hasLead(u.role) && !u.assigned_lead_id
 
       // Unassigned assignable users are always shown at the bottom.
       const unassignedA = isUnassignedAssignable(a)
@@ -292,9 +279,11 @@ export default function UsersPage() {
       if (unassignedA !== unassignedB) return unassignedA ? 1 : -1
 
       // Primary: role order
-      const roleA = ROLE_ORDER[a.role as UserRole] ?? 99
-      const roleB = ROLE_ORDER[b.role as UserRole] ?? 99
-      if (roleA !== roleB) return roleA - roleB
+      const order = (role: string) => {
+        const index = ALL_ROLES.indexOf(role as UserRole)
+        return index === -1 ? 99 : index
+      }
+      if (order(a.role) !== order(b.role)) return order(a.role) - order(b.role)
 
       // Secondary: assigned lead name (for users/viewers grouped under same lead)
       const leadNameA = (
@@ -317,13 +306,13 @@ export default function UsersPage() {
       return nameA.localeCompare(nameB)
     })
 
-  if (!isManager) {
+  if (!currentUser?.permissions?.includes('user.view')) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-center">
           <Shield size={40} className="mx-auto mb-3 text-gray-300 dark:text-gray-600" />
           <p className="text-base font-semibold text-gray-700 dark:text-gray-300">Access Denied</p>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Only Admin and Automation Lead can manage user assignments.</p>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Only Super Admin, Automation Lead and Automation Senior can see users.</p>
         </div>
       </div>
     )
@@ -354,100 +343,126 @@ export default function UsersPage() {
               </div>
 
               <div className="overflow-y-auto flex-1 space-y-4 px-6 py-4">
-                {isAdmin && (
-                  <div>
-                    <label className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Email</label>
-                    <input className="form-input" type="email" value={editState.email}
-                      onChange={e => setEditState(s => s ? { ...s, email: e.target.value } : s)} />
-                  </div>
-                )}
+                <div>
+                  <label htmlFor="edit-email" className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Email</label>
+                  <input id="edit-email" className="form-input" type="email" value={editState.email}
+                    onChange={e => setEditState(s => s ? { ...s, email: e.target.value } : s)} />
+                </div>
 
-                {isAdmin && (
-                  <div>
-                    <label className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Full Name</label>
-                    <input className="form-input" value={editState.full_name}
-                      onChange={e => setEditState(s => s ? { ...s, full_name: e.target.value } : s)} />
-                  </div>
-                )}
+                <div>
+                  <label htmlFor="edit-name" className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Full Name</label>
+                  <input id="edit-name" className="form-input" value={editState.full_name}
+                    onChange={e => setEditState(s => s ? { ...s, full_name: e.target.value } : s)} />
+                </div>
 
-                {isAdmin && (
-                  <div>
-                    <label className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Role</label>
-                    <div className="space-y-2">
-                      {ALL_ROLES.map(role => (
-                        <label key={role}
-                          className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-all ${
-                            editState.role === role
-                              ? 'border-blue-400 dark:border-blue-500 bg-blue-50 dark:bg-blue-500/10'
-                              : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-                          }`}
-                        >
-                          <input type="radio" name="role" value={role} checked={editState.role === role}
-                            onChange={() => setEditState(s => s ? { ...s, role } : s)}
-                            className="mt-0.5 accent-blue-600" />
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${ROLE_COLORS[role]}`}>
-                                {ROLE_ICONS[role]} {ROLE_LABELS[role]}
-                              </span>
-                            </div>
-                            <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">{ROLE_DESCRIPTIONS[role]}</p>
-                          </div>
+                <fieldset>
+                  <legend className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Role</legend>
+                  <div className="space-y-2">
+                    {assignableRoles.map(role => (
+                      <label key={role}
+                        className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-all ${
+                          editState.role === role
+                            ? 'border-blue-400 dark:border-blue-500 bg-blue-50 dark:bg-blue-500/10'
+                            : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                        }`}
+                      >
+                        <input type="radio" name="role" value={role} checked={editState.role === role}
+                          aria-label={ROLE_LABELS[role]}
+                          onChange={() => setEditState(s => s ? { ...s, role } : s)}
+                          className="mt-0.5 accent-blue-600" />
+                        <div className="flex-1">
+                          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${ROLE_COLORS[role]}`}>
+                            {ROLE_ICONS[role]} {ROLE_LABELS[role]}
+                          </span>
+                          <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">{ROLE_DESCRIPTIONS[role]}</p>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+
+                {isTagged(editState.role) && (
+                  <fieldset>
+                    <legend className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Scope tag</legend>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(Object.keys(SCOPE_TAG_LABELS) as ScopeTag[]).map(tag => (
+                        <label key={tag} className={`cursor-pointer rounded-xl border p-2.5 text-xs transition-all ${
+                          editState.scope_tag === tag
+                            ? 'border-blue-400 dark:border-blue-500 bg-blue-50 dark:bg-blue-500/10'
+                            : 'border-gray-200 dark:border-gray-700'
+                        }`}>
+                          <input type="radio" name="scope_tag" value={tag} checked={editState.scope_tag === tag}
+                            aria-label={SCOPE_TAG_LABELS[tag]}
+                            onChange={() => setEditState(s => s ? { ...s, scope_tag: tag } : s)}
+                            className="mr-1.5 accent-blue-600" />
+                          <span className="font-semibold text-gray-800 dark:text-gray-200">{SCOPE_TAG_LABELS[tag]}</span>
+                          <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">{SCOPE_TAG_DESCRIPTIONS[tag]}</p>
                         </label>
                       ))}
                     </div>
-                  </div>
+                  </fieldset>
                 )}
 
-                {(editState.role === 'automation_user' || editState.role === 'viewer') && (
+                {isAdmin && hasLead(editState.role) && (
                   <div>
-                    <label className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Assigned Automation Lead</label>
+                    <label htmlFor="edit-lead" className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Assigned Automation Lead</label>
                     <select
+                      id="edit-lead"
                       className="form-input"
                       value={editState.assigned_lead_id}
                       onChange={e => setEditState(s => (s ? { ...s, assigned_lead_id: e.target.value } : s))}
                     >
                       <option value="">Unassigned</option>
-                      {leadOptions
-                        .filter(l => (isLead ? l.id === currentUser?.id : true))
-                        .map(lead => (
-                          <option key={lead.id} value={lead.id}>
-                            {(lead.full_name || lead.email)}
-                          </option>
-                        ))}
+                      {leadOptions.map(lead => (
+                        <option key={lead.id} value={lead.id}>{lead.full_name || lead.email}</option>
+                      ))}
                     </select>
-                    <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-                      {isAdmin
-                        ? 'Admin can assign Automation User and Viewer accounts to any Automation Lead.'
-                        : 'Automation Leads can assign Automation User and Viewer accounts to themselves.'}
-                    </p>
                   </div>
                 )}
 
-                {isAdmin && (
-                  <div>
-                    <label className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">New Password <span className="text-gray-400">(leave blank to keep current)</span></label>
-                    <input className="form-input" type="password" placeholder="••••••••" value={editState.password}
-                      onChange={e => setEditState(s => s ? { ...s, password: e.target.value } : s)} />
-                  </div>
+                {canAssignProjects && (
+                  <fieldset>
+                    <legend className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Projects</legend>
+                    {projects.length === 0 ? (
+                      <p className="text-[11px] text-gray-500 dark:text-gray-400">No projects in your scope.</p>
+                    ) : (
+                      <div className="max-h-40 space-y-1 overflow-y-auto rounded-xl border border-gray-200 dark:border-gray-700 p-2">
+                        {projects.map(project => (
+                          <label key={project.id} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                            <input type="checkbox" className="h-4 w-4 accent-blue-600"
+                              checked={editState.project_ids.includes(String(project.id))}
+                              onChange={e => setEditState(s => s ? {
+                                ...s,
+                                project_ids: e.target.checked
+                                  ? [...s.project_ids, String(project.id)]
+                                  : s.project_ids.filter(id => id !== String(project.id)),
+                              } : s)} />
+                            {project.name}
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </fieldset>
                 )}
 
-                {isAdmin && (
-                  <div>
-                    <label className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Confirm Password</label>
-                    <input className="form-input" type="password" placeholder="••••••••" value={editState.passwordConfirm}
-                      onChange={e => setEditState(s => s ? { ...s, passwordConfirm: e.target.value } : s)} />
-                  </div>
-                )}
+                <div>
+                  <label htmlFor="edit-password" className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">New Password <span className="text-gray-400">(leave blank to keep current)</span></label>
+                  <input id="edit-password" className="form-input" type="password" placeholder="••••••••" value={editState.password}
+                    onChange={e => setEditState(s => s ? { ...s, password: e.target.value } : s)} />
+                </div>
 
-                {isAdmin && (
-                  <label className="flex cursor-pointer items-center justify-between rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/20 px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 transition hover:border-blue-300 dark:hover:border-blue-500/50">
-                    Account Active
-                    <input type="checkbox" checked={editState.is_active}
-                      onChange={e => setEditState(s => s ? { ...s, is_active: e.target.checked } : s)}
-                      className="h-4 w-4 accent-blue-600" />
-                  </label>
-                )}
+                <div>
+                  <label htmlFor="edit-password-confirm" className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Confirm Password</label>
+                  <input id="edit-password-confirm" className="form-input" type="password" placeholder="••••••••" value={editState.passwordConfirm}
+                    onChange={e => setEditState(s => s ? { ...s, passwordConfirm: e.target.value } : s)} />
+                </div>
+
+                <label className="flex cursor-pointer items-center justify-between rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/20 px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 transition hover:border-blue-300 dark:hover:border-blue-500/50">
+                  Account Active
+                  <input type="checkbox" checked={editState.is_active}
+                    onChange={e => setEditState(s => s ? { ...s, is_active: e.target.checked } : s)}
+                    className="h-4 w-4 accent-blue-600" />
+                </label>
 
                 {error && (
                   <div className="flex items-center gap-2 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-500/20 px-3 py-2.5 text-sm text-red-700 dark:text-red-300">
@@ -460,7 +475,7 @@ export default function UsersPage() {
                 <button onClick={() => setEditState(null)} className="btn-ghost">Cancel</button>
                 <button onClick={handleSave} disabled={saving} className="btn-primary">
                   {saving && <Loader2 size={14} className="animate-spin" />}
-                  {saving ? 'Saving...' : (isAdmin ? 'Save changes' : 'Save assignment')}
+                  {saving ? 'Saving...' : 'Save changes'}
                 </button>
               </div>
             </motion.div>
@@ -472,10 +487,10 @@ export default function UsersPage() {
       <div className="flex shrink-0 items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-gray-900 dark:text-white">User Management</h1>
-          <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">Manage users and assign Automation User/Viewer accounts to Automation Leads</p>
+          <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">Roles, scope tags, leads and projects</p>
         </div>
         <div className="flex items-center gap-3">
-          {currentUser?.role === 'super_admin' && (
+          {canManage && (
             <button
               onClick={() => setShowCreateModal(true)}
               className="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
@@ -500,8 +515,8 @@ export default function UsersPage() {
       )}
 
       {/* Role legend */}
-      <div className="grid shrink-0 grid-cols-2 gap-3 sm:grid-cols-4">
-        {visibleRoleFilters.map(role => (
+      <div className="grid shrink-0 grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+        {ALL_ROLES.map(role => (
           <div key={role} className="rounded-2xl border border-gray-200/80 dark:border-gray-700/70 bg-white dark:bg-gray-800/90 p-3 shadow-soft">
             <div className="flex items-center gap-2 mb-1">
               <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${ROLE_COLORS[role]}`}>
@@ -552,7 +567,7 @@ export default function UsersPage() {
               >
                 All Roles
               </button>
-              {visibleRoleFilters.map(role => (
+              {ALL_ROLES.map(role => (
                 <button
                   key={role}
                   onClick={() => setFilterRole(filterRole === role ? '' : role)}
@@ -669,8 +684,14 @@ export default function UsersPage() {
                       {ROLE_ICONS[role]} {ROLE_LABELS[role] ?? role}
                     </span>
 
+                    {u.scope_tag && (
+                      <span className="hidden shrink-0 rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-[11px] font-medium text-gray-600 dark:text-gray-300 md:inline">
+                        {SCOPE_TAG_LABELS[u.scope_tag]}
+                      </span>
+                    )}
+
                     {/* Assigned lead */}
-                    {(u.role === 'automation_user' || u.role === 'viewer') && (
+                    {hasLead(u.role) && (
                       <span className="hidden shrink-0 text-xs text-gray-500 dark:text-gray-400 lg:inline">
                         Lead: {resolvedAssignedLeadName || 'Unassigned'}
                       </span>
@@ -691,7 +712,8 @@ export default function UsersPage() {
                       <button
                         onClick={() => openEdit(u)}
                         className="btn-ghost !px-2.5 !py-1.5 shrink-0"
-                        title={isAdmin ? 'Edit user' : 'Assign Automation Lead'}
+                        title="Edit user"
+                        aria-label={`Edit ${u.full_name || u.email}`}
                       >
                         <Edit2 size={13} />
                       </button>
@@ -780,13 +802,22 @@ export default function UsersPage() {
                     onChange={e => setCreateForm(f => ({ ...f, role: e.target.value as UserRole }))}
                     className="form-input"
                   >
-                    <option value="admin">Admin</option>
-                    <option value="automation_lead">Automation Lead</option>
-                    <option value="automation_user">Automation User</option>
-                    <option value="user">User</option>
-                    <option value="viewer">Viewer</option>
+                    {assignableRoles.map(role => <option key={role} value={role}>{ROLE_LABELS[role]}</option>)}
                   </select>
                 </div>
+
+                {isTagged(createForm.role) && (
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Scope tag</label>
+                    <select
+                      value={createForm.scope_tag}
+                      onChange={e => setCreateForm(f => ({ ...f, scope_tag: e.target.value as ScopeTag }))}
+                      className="form-input"
+                    >
+                      {(Object.keys(SCOPE_TAG_LABELS) as ScopeTag[]).map(tag => <option key={tag} value={tag}>{SCOPE_TAG_LABELS[tag]}</option>)}
+                    </select>
+                  </div>
+                )}
 
                 {error && (
                   <div className="flex items-center gap-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-500/20 px-3 py-2.5 text-sm text-red-700 dark:text-red-300">

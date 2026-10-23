@@ -109,6 +109,25 @@ They touch different modules, so their PRs do not conflict (see section 6.4).
   - Frontend: `usePermission`, `<Can>`, and guarded routes and navigation.
 - **UI tests:** log in as each of the six roles and check the visible navigation and the allowed and hidden actions.
   A Lead changes a User into a Senior.
+- **Decided while building phase 04:**
+  - A permission `project.delete` (Super Admin and Lead) was added; deleting a project is not part of configuring it.
+  - Existing `project_base` users and Viewers become members of every existing project during the migration, so the
+    upgrade takes nobody's access away. Self-registered users become Viewers.
+  - A user's own GitHub token for a project needs only `project.view`; changing the project's repository URL needs
+    `project.configure`.
+  - Allure import and sync need `run.execute`, Zephyr diagnostics `project.configure`, and the Zephyr install
+    settings `settings.system`.
+  - The org-scoped user endpoints, the `org_admin`, `admin`, `community_lead` and `user` roles, and the old run log
+    path `/api/v1/runs/ws/{id}` are gone. User management is `/api/users`; `/api/auth/me` stays as an alias of
+    `/api/me`.
+  - Trainees own the branches they create in ATM (`branch_owners`); a push of any other branch, or of the default
+    branch, is refused. Branches created outside ATM are not theirs.
+  - Leads change only the people assigned to them; a Super Admin assigns people to leads. A lead's new people are
+    assigned to that lead.
+- **Left for later phases:**
+  - The readiness review and the promotion note (section 4.4) come with Learning (phase 13); today a lead changes the
+    role on the Users screen.
+  - Screens hide actions with `usePermission` or `<Can>`; phase 05 keeps this as each area is restyled.
 
 ### Phase 05: `feature/phase_05_design_system_shell`
 - **Goal:** the new look and navigation.

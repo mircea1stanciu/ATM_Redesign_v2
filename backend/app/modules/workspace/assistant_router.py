@@ -14,9 +14,10 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.deps import get_current_user
+from app.core.permissions import require
 from app.modules.projects.checkouts import require_checkout
 from app.modules.projects.models import AnalyticsRun, AnalyticsSuite
-from app.modules.projects.service import check_organization_member, get_project_or_404, require_editor
+from app.modules.projects.service import get_project_or_404
 from app.modules.settings.connections import get_json, set_json
 from app.services import ai_project_service as project_ai
 from app.services import ai_provider_service as providers
@@ -174,12 +175,12 @@ def _settings_response(user) -> dict:
 
 
 @router.get("/ai/settings")
-async def get_ai_settings(current_user=Depends(get_current_user)):
+async def get_ai_settings(current_user=Depends(require("ai.use"))):
     return _settings_response(current_user)
 
 
 @router.put("/ai/settings")
-async def save_ai_settings(payload: AISettingsRequest, current_user=Depends(get_current_user),
+async def save_ai_settings(payload: AISettingsRequest, current_user=Depends(require("ai.use")),
                            db: Session = Depends(get_db)):
     if payload.provider == "microsoft_copilot":
         raise HTTPException(status_code=400, detail="Use 'Sign in with Microsoft' for Microsoft 365 Copilot.")
@@ -205,7 +206,7 @@ async def save_ai_settings(payload: AISettingsRequest, current_user=Depends(get_
 
 
 @router.delete("/ai/settings")
-async def delete_ai_settings(current_user=Depends(get_current_user), db: Session = Depends(get_db)):
+async def delete_ai_settings(current_user=Depends(require("ai.use")), db: Session = Depends(get_db)):
     _pending_signins.pop(current_user.id, None)
     pending = _pending_rbi_logins.pop(current_user.id, None)
     if pending:
@@ -215,7 +216,7 @@ async def delete_ai_settings(current_user=Depends(get_current_user), db: Session
 
 
 @router.post("/ai/settings/test")
-async def test_ai_settings(payload: AISettingsRequest | None = None, current_user=Depends(get_current_user),
+async def test_ai_settings(payload: AISettingsRequest | None = None, current_user=Depends(require("ai.use")),
                            db: Session = Depends(get_db)):
     try:
         config = await _active_config(current_user, db, payload)
@@ -249,7 +250,7 @@ async def _detected_models(user, config: providers.AIConfig, refresh: bool = Fal
 
 
 @router.get("/ai/models")
-async def list_ai_models(refresh: bool = False, current_user=Depends(get_current_user),
+async def list_ai_models(refresh: bool = False, current_user=Depends(require("ai.use")),
                          db: Session = Depends(get_db)):
     """All models the saved connection can use (detected from the provider, cached for a few minutes)."""
     if not _settings_response(current_user)["configured"]:
@@ -265,7 +266,7 @@ async def list_ai_models(refresh: bool = False, current_user=Depends(get_current
 
 
 @router.put("/ai/settings/model")
-async def switch_ai_model(payload: ModelSwitchRequest, current_user=Depends(get_current_user),
+async def switch_ai_model(payload: ModelSwitchRequest, current_user=Depends(require("ai.use")),
                           db: Session = Depends(get_db)):
     """Switch the saved connection to another of its models (checked with the provider first)."""
     if not _settings_response(current_user)["configured"]:
@@ -292,7 +293,7 @@ async def switch_ai_model(payload: ModelSwitchRequest, current_user=Depends(get_
 
 
 @router.post("/ai/microsoft/signin")
-async def start_microsoft_signin(payload: MicrosoftSignInRequest, current_user=Depends(get_current_user)):
+async def start_microsoft_signin(payload: MicrosoftSignInRequest, current_user=Depends(require("ai.use"))):
     """Start the device-code sign-in; the user enters the returned code at the verification URL."""
     try:
         tenant_id, client_id = providers.validate_microsoft_app(payload.tenant_id, payload.client_id)
@@ -306,7 +307,7 @@ async def start_microsoft_signin(payload: MicrosoftSignInRequest, current_user=D
 
 
 @router.post("/ai/microsoft/signin/poll")
-async def poll_microsoft_signin(current_user=Depends(get_current_user), db: Session = Depends(get_db)):
+async def poll_microsoft_signin(current_user=Depends(require("ai.use")), db: Session = Depends(get_db)):
     pending = _pending_signins.get(current_user.id)
     if not pending:
         return {"status": "expired", "message": "No sign-in in progress. Start again."}
@@ -333,7 +334,7 @@ async def poll_microsoft_signin(current_user=Depends(get_current_user), db: Sess
 
 
 @router.post("/ai/rbi/signin")
-async def start_rbi_signin(payload: RbiSignInRequest, current_user=Depends(get_current_user)):
+async def start_rbi_signin(payload: RbiSignInRequest, current_user=Depends(require("ai.use"))):
     """Start the RBI account sign-in for the GenAI LLM Gateway: open ``login_url`` in the browser."""
     previous = _pending_rbi_logins.pop(current_user.id, None)
     if previous:
@@ -350,7 +351,7 @@ async def start_rbi_signin(payload: RbiSignInRequest, current_user=Depends(get_c
 
 
 @router.post("/ai/rbi/signin/poll")
-async def poll_rbi_signin(current_user=Depends(get_current_user), db: Session = Depends(get_db)):
+async def poll_rbi_signin(current_user=Depends(require("ai.use")), db: Session = Depends(get_db)):
     pending = _pending_rbi_logins.get(current_user.id)
     if not pending:
         return {"status": "expired", "message": "No sign-in in progress. Start again."}
@@ -369,7 +370,7 @@ async def poll_rbi_signin(current_user=Depends(get_current_user), db: Session = 
 
 
 @router.post("/ai/rbi/signin/cancel")
-async def cancel_rbi_signin(current_user=Depends(get_current_user)):
+async def cancel_rbi_signin(current_user=Depends(require("ai.use"))):
     pending = _pending_rbi_logins.pop(current_user.id, None)
     if pending:
         pending.close()
@@ -388,9 +389,12 @@ async def _analysis(repo: Path, refresh: bool = False) -> dict:
 
 
 @router.get("/projects/{project_id}/ai/analysis")
-async def get_project_ai_analysis(project_id: int, refresh: bool = False, current_user=Depends(get_current_user),
-                                  db: Session = Depends(get_db)):
-    check_organization_member(current_user)
+async def get_project_ai_analysis(
+    project_id: int,
+    refresh: bool = False,
+    current_user=Depends(require("ai.use", project_from="project_id")),
+    db: Session = Depends(get_db),
+):
     get_project_or_404(db, project_id)
     return await _analysis(require_checkout(current_user, project_id), refresh)
 
@@ -443,25 +447,30 @@ class ConversationCreate(BaseModel):
 
 
 @router.get("/projects/{project_id}/ai/conversations")
-async def list_ai_conversations(project_id: int, current_user=Depends(get_current_user),
+async def list_ai_conversations(project_id: int, current_user=Depends(require("ai.use", project_from="project_id")),
                                 db: Session = Depends(get_db)):
-    check_organization_member(current_user)
     get_project_or_404(db, project_id)
     return {"conversations": _store(current_user, project_id).list()}
 
 
 @router.post("/projects/{project_id}/ai/conversations")
-async def create_ai_conversation(project_id: int, payload: ConversationCreate = ConversationCreate(),
-                                 current_user=Depends(get_current_user), db: Session = Depends(get_db)):
-    check_organization_member(current_user)
+async def create_ai_conversation(
+    project_id: int,
+    payload: ConversationCreate = ConversationCreate(),
+    current_user=Depends(require("ai.use", project_from="project_id")),
+    db: Session = Depends(get_db),
+):
     get_project_or_404(db, project_id)
     return _store(current_user, project_id).create(payload.title)
 
 
 @router.get("/projects/{project_id}/ai/conversations/{conversation_id}")
-async def get_ai_conversation(project_id: int, conversation_id: str, current_user=Depends(get_current_user),
-                              db: Session = Depends(get_db)):
-    check_organization_member(current_user)
+async def get_ai_conversation(
+    project_id: int,
+    conversation_id: str,
+    current_user=Depends(require("ai.use", project_from="project_id")),
+    db: Session = Depends(get_db),
+):
     get_project_or_404(db, project_id)
     data = _call(_store(current_user, project_id).load, conversation_id)
     repo = _repo_or_none(current_user, project_id)
@@ -469,9 +478,12 @@ async def get_ai_conversation(project_id: int, conversation_id: str, current_use
 
 
 @router.delete("/projects/{project_id}/ai/conversations/{conversation_id}")
-async def delete_ai_conversation(project_id: int, conversation_id: str, current_user=Depends(get_current_user),
-                                 db: Session = Depends(get_db)):
-    check_organization_member(current_user)
+async def delete_ai_conversation(
+    project_id: int,
+    conversation_id: str,
+    current_user=Depends(require("ai.use", project_from="project_id")),
+    db: Session = Depends(get_db),
+):
     get_project_or_404(db, project_id)
     _call(_store(current_user, project_id).delete, conversation_id)
     return {"deleted": True}
@@ -514,10 +526,14 @@ def _context_files(conversation: dict, extra: list[str]) -> list[str]:
 
 
 @router.post("/projects/{project_id}/ai/conversations/{conversation_id}/messages")
-async def send_ai_message(project_id: int, conversation_id: str, payload: ChatMessageRequest,
-                          current_user=Depends(get_current_user), db: Session = Depends(get_db)):
+async def send_ai_message(
+    project_id: int,
+    conversation_id: str,
+    payload: ChatMessageRequest,
+    current_user=Depends(require("ai.use", project_from="project_id")),
+    db: Session = Depends(get_db),
+):
     """Store the user's message and stream the assistant's answer as NDJSON events."""
-    check_organization_member(current_user)
     get_project_or_404(db, project_id)
     if not payload.content.strip() and not payload.run_id:
         raise HTTPException(status_code=400, detail="Write a message first.")
@@ -614,10 +630,13 @@ def _find_change(conversation: dict, message_id: str, path: str) -> dict:
 
 
 @router.post("/projects/{project_id}/ai/conversations/{conversation_id}/changes/apply")
-async def apply_ai_change(project_id: int, conversation_id: str, payload: ChangeRequest,
-                          current_user=Depends(get_current_user), db: Session = Depends(get_db)):
-    check_organization_member(current_user)
-    require_editor(current_user)
+async def apply_ai_change(
+    project_id: int,
+    conversation_id: str,
+    payload: ChangeRequest,
+    current_user=Depends(require("code.edit", project_from="project_id")),
+    db: Session = Depends(get_db),
+):
     get_project_or_404(db, project_id)
     repo = require_checkout(current_user, project_id)
     store = _store(current_user, project_id)
@@ -636,10 +655,13 @@ async def apply_ai_change(project_id: int, conversation_id: str, payload: Change
 
 
 @router.post("/projects/{project_id}/ai/conversations/{conversation_id}/changes/undo")
-async def undo_ai_change(project_id: int, conversation_id: str, payload: ChangeRequest,
-                         current_user=Depends(get_current_user), db: Session = Depends(get_db)):
-    check_organization_member(current_user)
-    require_editor(current_user)
+async def undo_ai_change(
+    project_id: int,
+    conversation_id: str,
+    payload: ChangeRequest,
+    current_user=Depends(require("code.edit", project_from="project_id")),
+    db: Session = Depends(get_db),
+):
     get_project_or_404(db, project_id)
     repo = require_checkout(current_user, project_id)
     store = _store(current_user, project_id)
@@ -656,10 +678,15 @@ async def undo_ai_change(project_id: int, conversation_id: str, payload: ChangeR
 
 
 @router.get("/projects/{project_id}/ai/conversations/{conversation_id}/changes/content")
-async def get_ai_change_content(project_id: int, conversation_id: str, message_id: str, path: str,
-                                current_user=Depends(get_current_user), db: Session = Depends(get_db)):
+async def get_ai_change_content(
+    project_id: int,
+    conversation_id: str,
+    message_id: str,
+    path: str,
+    current_user=Depends(require("ai.use", project_from="project_id")),
+    db: Session = Depends(get_db),
+):
     """Current file content and the assistant's proposal, for the side-by-side review."""
-    check_organization_member(current_user)
     get_project_or_404(db, project_id)
     repo = require_checkout(current_user, project_id)
     change = _find_change(_call(_store(current_user, project_id).load, conversation_id), message_id, path)
@@ -678,11 +705,14 @@ async def get_ai_change_content(project_id: int, conversation_id: str, message_i
 
 
 @router.post("/projects/{project_id}/ai/conversations/{conversation_id}/changes/reject")
-async def reject_ai_change(project_id: int, conversation_id: str, payload: ChangeRequest,
-                           current_user=Depends(get_current_user), db: Session = Depends(get_db)):
+async def reject_ai_change(
+    project_id: int,
+    conversation_id: str,
+    payload: ChangeRequest,
+    current_user=Depends(require("code.edit", project_from="project_id")),
+    db: Session = Depends(get_db),
+):
     """Discard a proposed change (the file is not touched)."""
-    check_organization_member(current_user)
-    require_editor(current_user)
     get_project_or_404(db, project_id)
     store = _store(current_user, project_id)
     conversation = _call(store.load, conversation_id)
@@ -706,18 +736,20 @@ async def list_station_ides(refresh: bool = False, current_user=Depends(get_curr
     """IDEs installed on the station running ATM (only detected ones are returned)."""
     from app.services import ide_service
 
-    check_organization_member(current_user)
     ides = await asyncio.to_thread(ide_service.detect_ides, refresh)
     return {"station": ide_service.station_name(), "ides": [ide.public() for ide in ides]}
 
 
 @router.post("/projects/{project_id}/ide/open")
-async def open_project_in_ide(project_id: int, payload: OpenInIdeRequest, current_user=Depends(get_current_user),
-                              db: Session = Depends(get_db)):
+async def open_project_in_ide(
+    project_id: int,
+    payload: OpenInIdeRequest,
+    current_user=Depends(require("code.edit", project_from="project_id")),
+    db: Session = Depends(get_db),
+):
     """Open the project's local copy (or a folder/file inside it) in a detected IDE."""
     from app.services import ide_service
 
-    check_organization_member(current_user)
     get_project_or_404(db, project_id)
     repo = require_checkout(current_user, project_id)
     if payload.path.strip() in ("", "."):

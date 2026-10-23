@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
-from app.core.deps import get_current_user
+from app.core.permissions import ensure, require, visible_project_ids
 from app.modules.projects.checkouts import (
     checkout_path,
     read_linked_path,
@@ -21,8 +21,6 @@ from app.modules.projects.checkouts import (
 )
 from app.modules.projects.models import Project
 from app.modules.projects.service import (
-    check_organization_member,
-    check_product_manager_access,
     get_project_or_404,
     github_get,
     github_repository_context,
@@ -58,19 +56,15 @@ class ProjectUpdate(BaseModel):
 # Project Endpoints
 @router.get("/")
 async def list_projects(
-    current_user = Depends(get_current_user),
+    current_user = Depends(require("project.view")),
     db: Session = Depends(get_db)
 ):
-    """Return projects in the test-automation client contract."""
-    if not current_user.organization_id:
-        return []
-
-    projects = db.query(Project).filter(
-        Project.organization_id == current_user.organization_id,
-        Project.is_archived.is_(False)
-    ).all()
-
-    return [_project_response(project) for project in projects]
+    """The projects in the user's scope (all of them for a super admin or a shared tag)."""
+    query = db.query(Project).filter(Project.is_archived.is_(False))
+    visible = visible_project_ids(db, current_user)
+    if visible is not None:
+        query = query.filter(Project.id.in_(visible))
+    return [_project_response(project) for project in query.order_by(Project.name).all()]
 
 
 def _project_response(project: Project) -> dict:
@@ -102,11 +96,10 @@ def _unique_project_key(db: Session, name: str) -> str:
 @router.post("/")
 async def create_project(
     project_data: ProjectCreate,
-    current_user = Depends(get_current_user),
+    current_user = Depends(require("project.create")),
     db: Session = Depends(get_db)
 ):
     """Create a project in the user's organization (product community or admins until phase 04)."""
-    check_product_manager_access(current_user)
     name = project_data.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="A project name is required.")
@@ -132,12 +125,11 @@ async def create_project(
 @router.get("/{project_id}")
 async def get_project(
     project_id: int,
-    current_user = Depends(get_current_user),
+    current_user = Depends(require("project.view", project_from="project_id")),
     db: Session = Depends(get_db)
 ):
     """Get project details - All organization members can view"""
     # Check user belongs to organization
-    check_organization_member(current_user)
     
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
@@ -150,12 +142,11 @@ async def get_project(
 async def update_project(
     project_id: int,
     project_data: ProjectUpdate,
-    current_user = Depends(get_current_user),
+    current_user = Depends(require("project.configure", project_from="project_id")),
     db: Session = Depends(get_db)
 ):
     """Update project - Only Product Managers"""
     # Check access
-    check_product_manager_access(current_user)
     
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
@@ -174,12 +165,11 @@ async def update_project(
 @router.delete("/{project_id}")
 async def delete_project(
     project_id: int,
-    current_user = Depends(get_current_user),
+    current_user = Depends(require("project.delete", project_from="project_id")),
     db: Session = Depends(get_db)
 ):
     """Delete project - Only Product Managers"""
     # Check access
-    check_product_manager_access(current_user)
     
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
@@ -242,7 +232,7 @@ def _forget_github_overview(project_id: int) -> None:
 async def get_project_github_overview(
     project_id: int,
     refresh: bool = False,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("project.view", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Repository metadata, recent activity and detected test setup for the Overview page."""
@@ -250,7 +240,6 @@ async def get_project_github_overview(
 
     from app.services import github_overview_service as overview
 
-    check_organization_member(current_user)
     project = get_project_or_404(db, project_id)
     if not (project.github_repo_url or "").strip():
         raise HTTPException(status_code=400, detail="No GitHub repository is configured for this project.")
@@ -367,11 +356,10 @@ async def get_project_github_overview(
 @router.get("/{project_id}/github/analyze")
 async def analyze_project_repository(
     project_id: int,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("project.view", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Detect test frameworks and collections from the GitHub repository tree."""
-    check_organization_member(current_user)
     project = get_project_or_404(db, project_id)
     owner, repo, api_base, token = github_repository_context(project, current_user, project_id)
     async with httpx.AsyncClient(timeout=20) as client:
@@ -400,11 +388,10 @@ async def analyze_project_repository(
 async def get_project_github_templates(
     project_id: int,
     ref: str = "",
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("project.view", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """List dispatchable workflows and structured issue templates from GitHub."""
-    check_organization_member(current_user)
     project = get_project_or_404(db, project_id)
     owner, repo, api_base, token = github_repository_context(project, current_user, project_id)
     branch = ref or "main"
@@ -474,11 +461,10 @@ _MAX_BRANCH_PAGES = 20
 @router.get("/{project_id}/branches")
 async def get_project_branches(
     project_id: int,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("project.view", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Return GitHub branches using the legacy project's saved repository URL."""
-    check_organization_member(current_user)
     project = get_project_or_404(db, project_id)
     owner, repo, api_base, token = github_repository_context(project, current_user, project_id)
     branches: list[dict] = []
@@ -514,11 +500,10 @@ async def get_project_repo_tree(
     project_id: int,
     path: str = "",
     ref: str = "",
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("project.view", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Return a repository folder in the frontend's file-tree contract."""
-    check_organization_member(current_user)
     project = get_project_or_404(db, project_id)
     owner, repo, api_base, token = github_repository_context(project, current_user, project_id)
     branch = ref or "main"
@@ -554,11 +539,10 @@ async def get_project_repo_tree(
 async def get_project_github_commit(
     project_id: int,
     ref: str = "",
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("project.view", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Return the commit metadata at the requested GitHub branch or ref."""
-    check_organization_member(current_user)
     project = get_project_or_404(db, project_id)
     owner, repo, api_base, token = github_repository_context(project, current_user, project_id)
     async with httpx.AsyncClient(timeout=15) as client:
@@ -581,11 +565,10 @@ async def get_project_github_commit(
 @router.get("/{project_id}/local/status")
 async def get_project_local_status(
     project_id: int,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("project.view", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Report whether the legacy managed local checkout exists for a project."""
-    check_organization_member(current_user)
     get_project_or_404(db, project_id)
     repo_path = checkout_path(current_user, project_id)
     return await asyncio.to_thread(local_status, repo_path)
@@ -595,15 +578,13 @@ async def get_project_local_status(
 async def link_existing_local_repo(
     project_id: int,
     payload: LocalRepoLinkExistingRequest,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("code.edit", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Link an existing checkout (optionally switching to one of its local branches)."""
     from app.services import local_import_service
     from app.services.local_repo_service import LocalRepoError
 
-    check_organization_member(current_user)
-    check_product_manager_access(current_user)
     project = get_project_or_404(db, project_id)
     repo_url = (project.github_repo_url or "").strip()
     if not repo_url:
@@ -631,14 +612,13 @@ async def link_existing_local_repo(
 async def inspect_local_folder(
     project_id: int,
     path: str,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("code.edit", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Check a folder before linking it: git status, origin match and local branches."""
     from app.services import local_import_service
     from app.services.local_repo_service import LocalRepoError
 
-    check_organization_member(current_user)
     project = get_project_or_404(db, project_id)
     try:
         repo_path = local_import_service.normalize_user_path(path).resolve()
@@ -651,15 +631,13 @@ async def inspect_local_folder(
 async def import_local_repo(
     project_id: int,
     payload: LocalRepoImportRequest,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("code.edit", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Clone the chosen branch into a folder (created if missing) and remember it for this project."""
     from app.services import local_import_service
     from app.services.local_repo_service import LocalRepoError
 
-    check_organization_member(current_user)
-    check_product_manager_access(current_user)
     project = get_project_or_404(db, project_id)
     try:
         repo_path = local_import_service.normalize_user_path(payload.path)
@@ -688,12 +666,10 @@ async def import_local_repo(
 @router.delete("/{project_id}/local")
 async def remove_local_repo(
     project_id: int,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("code.edit", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Forget the local checkout; folders ATM cloned itself are deleted from disk too."""
-    check_organization_member(current_user)
-    check_product_manager_access(current_user)
     get_project_or_404(db, project_id)
     saved_path = read_linked_path(current_user, project_id)
     managed_path = (user_settings(current_user).get("project_local_repo_managed") or {}).get(str(project_id))
@@ -739,13 +715,12 @@ def _set_project_scaffold_info(db: Session, user, project_id: int, info: Optiona
 @router.get("/{project_id}/scaffold/catalog")
 async def get_scaffold_catalog(
     project_id: int,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("project.view", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Starter templates (framework x language) and which tools this station has."""
     from app.services import scaffold_service
 
-    check_organization_member(current_user)
     get_project_or_404(db, project_id)
     return await asyncio.to_thread(scaffold_service.catalog)
 
@@ -753,13 +728,12 @@ async def get_scaffold_catalog(
 @router.get("/{project_id}/scaffold")
 async def get_project_scaffold(
     project_id: int,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("project.view", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """The starter project generated for this project (if any) and its latest install & run check."""
     from app.services import scaffold_service
 
-    check_organization_member(current_user)
     get_project_or_404(db, project_id)
     info = _project_scaffold_info(current_user, project_id)
     if info and info.get("path") != read_linked_path(current_user, project_id):
@@ -773,14 +747,12 @@ async def get_project_scaffold(
 @router.delete("/{project_id}/scaffold")
 async def delete_project_scaffold(
     project_id: int,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("code.edit", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Delete the generated starter folder (only if it was never connected to a remote) and unlink it."""
     from app.services import scaffold_service
 
-    check_organization_member(current_user)
-    check_product_manager_access(current_user)
     get_project_or_404(db, project_id)
     info = _project_scaffold_info(current_user, project_id)
     if not info or info.get("path") != read_linked_path(current_user, project_id):
@@ -800,15 +772,13 @@ async def delete_project_scaffold(
 async def create_project_scaffold(
     project_id: int,
     payload: ScaffoldCreateRequest,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("code.edit", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Generate a working starter project in a local folder and link it as the project's local copy."""
     from app.services import local_import_service, scaffold_service
     from app.services.local_repo_service import LocalRepoError
 
-    check_organization_member(current_user)
-    check_product_manager_access(current_user)
     project = get_project_or_404(db, project_id)
     try:
         path = local_import_service.normalize_user_path(payload.path).resolve()
@@ -834,14 +804,12 @@ async def create_project_scaffold(
 @router.post("/{project_id}/scaffold/verify")
 async def start_project_scaffold_verify(
     project_id: int,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("code.edit", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     """Install dependencies and run the starter's sample tests in the background."""
     from app.services import scaffold_service
 
-    check_organization_member(current_user)
-    check_product_manager_access(current_user)
     get_project_or_404(db, project_id)
     info = _project_scaffold_info(current_user, project_id)
     if not info:
@@ -858,12 +826,11 @@ async def get_project_scaffold_verify(
     project_id: int,
     job_id: str,
     since: int = 0,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("project.view", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     from app.services import scaffold_service
 
-    check_organization_member(current_user)
     get_project_or_404(db, project_id)
     job = scaffold_service.get_job(job_id)
     if not job or job.project_id != project_id:
@@ -875,13 +842,11 @@ async def get_project_scaffold_verify(
 async def cancel_project_scaffold_verify(
     project_id: int,
     job_id: str,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require("code.edit", project_from="project_id")),
     db: Session = Depends(get_db),
 ):
     from app.services import scaffold_service
 
-    check_organization_member(current_user)
-    check_product_manager_access(current_user)
     get_project_or_404(db, project_id)
     job = scaffold_service.get_job(job_id)
     if not job or job.project_id != project_id:
@@ -892,11 +857,10 @@ async def cancel_project_scaffold_verify(
 @router.get("/{project_id}/github", response_model=ProjectGitHubResponse)
 async def get_project_github(
     project_id: int,
-    current_user = Depends(get_current_user),
+    current_user = Depends(require("project.view", project_from="project_id")),
     db: Session = Depends(get_db)
 ):
     """Get project GitHub URL and current user's token state for the project."""
-    check_organization_member(current_user)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -912,17 +876,16 @@ async def get_project_github(
 async def update_project_github(
     project_id: int,
     payload: ProjectGitHubConfig,
-    current_user = Depends(get_current_user),
+    current_user = Depends(require("project.view", project_from="project_id")),
     db: Session = Depends(get_db)
 ):
-    """Save current user's GitHub token; repo URL requires manage access."""
-    check_organization_member(current_user)
+    """Save the user's own GitHub token for the project; changing the repository URL needs project.configure."""
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    if payload.github_repo_url is not None:
-        check_product_manager_access(current_user)
+    if payload.github_repo_url is not None and payload.github_repo_url != (project.github_repo_url or ""):
+        ensure(db, current_user, "project.configure", project_id)
         project.github_repo_url = payload.github_repo_url
         db.commit()
         db.refresh(project)
@@ -942,11 +905,10 @@ async def update_project_github(
 @router.delete("/{project_id}/github", status_code=204)
 async def disconnect_project_github(
     project_id: int,
-    current_user = Depends(get_current_user),
+    current_user = Depends(require("project.view", project_from="project_id")),
     db: Session = Depends(get_db)
 ):
     """Remove current user's GitHub token for this project."""
-    check_organization_member(current_user)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -958,11 +920,10 @@ async def disconnect_project_github(
 @router.post("/{project_id}/github/test", response_model=ProjectGitHubTestResponse)
 async def test_project_github(
     project_id: int,
-    current_user = Depends(get_current_user),
+    current_user = Depends(require("project.view", project_from="project_id")),
     db: Session = Depends(get_db)
 ):
     """Test current user's GitHub token for the selected project repository."""
-    check_organization_member(current_user)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")

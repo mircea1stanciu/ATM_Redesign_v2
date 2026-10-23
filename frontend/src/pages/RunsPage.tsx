@@ -3,6 +3,7 @@ import {
   BarChart2, ExternalLink, FileCog, Github, GitBranch, Info, Laptop, Loader2,
   Pencil, PlayCircle, Smartphone, Square, Terminal, Trash2, XCircle,
 } from 'lucide-react'
+import { usePermission } from '@/hooks/usePermission'
 import { useAppStore } from '@/store/useAppStore'
 import { useRunWebSocket } from '@/hooks/useRunWebSocket'
 import { useRunFilters } from '@/hooks/useRunFilters'
@@ -77,8 +78,7 @@ export default function RunsPage({ embedded = false }: { embedded?: boolean } = 
   const loadProjectData = useAppStore(s => s.loadProjectData)
   const cancelRun = useAppStore(s => s.cancelRun)
   const deleteRun = useAppStore(s => s.deleteRun)
-  const user = useAppStore(s => s.user)
-  const canExecute = user?.role !== 'viewer'
+  const canExecute = usePermission('run.execute')
   const selectedRun = runs.find(r => r.id === selectedRunId) ?? null
   const selectedRunStatus = selectedRun?.status
   const runName = useAppStore(s => s.runName)
