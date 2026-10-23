@@ -9,10 +9,10 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from sqlalchemy import inspect, text
 
 from app.core.config import BACKEND_DIR, settings
-from app.core.db import Base, SessionLocal, engine, import_all_models
+from app.core.db import SessionLocal
+from app.core.migrations import upgrade_database
 from app.core.rate_limit import limiter
 from app.modules.identity.router import router as identity_router
 from app.modules.identity.service import get_default_organization, seed_dev_admin
@@ -91,24 +91,9 @@ async def health_check():
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
 
-def _init_db() -> None:
-    import_all_models()
-    Base.metadata.create_all(bind=engine)
-    inspector = inspect(engine)
-    if "analytics_runs" in inspector.get_table_names():
-        run_columns = {column["name"] for column in inspector.get_columns("analytics_runs")}
-        added = {
-            "logs_json": "JSON NOT NULL DEFAULT '[]'",
-            "collection_path": "VARCHAR(512)",
-            "environment": "VARCHAR(255)",
-            "results_json": "JSON NOT NULL DEFAULT '[]'",
-            "name": "VARCHAR(255)",
-            "details_json": "JSON",
-        }
-        with engine.begin() as connection:
-            for column, ddl in added.items():
-                if column not in run_columns:
-                    connection.execute(text(f"ALTER TABLE analytics_runs ADD COLUMN {column} {ddl}"))
+def prepare_database() -> None:
+    """Apply pending migrations, then make sure the default organization (and dev admin) exist."""
+    upgrade_database()
     db = SessionLocal()
     try:
         get_default_organization(db)
@@ -120,7 +105,7 @@ def _init_db() -> None:
 @app.on_event("startup")
 async def startup_event():
     """Prepare the database and re-attach long-running executions started before a restart."""
-    _init_db()
+    prepare_database()
     try:
         await resume_orphaned_manual_runs()
     except Exception as exc:

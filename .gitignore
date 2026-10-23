@@ -44,6 +44,8 @@ artifacts/
 *.db
 backend/unifiedwork.db
 unifiedwork.db
+# Copies made before each migration (same contents as the database, including tokens)
+*.before-migration-*
 
 # === Local repo working copies (server-side managed git checkouts) ===
 backend/local_repos/

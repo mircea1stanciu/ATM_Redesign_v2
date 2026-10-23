@@ -59,21 +59,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     env:
-      DATABASE_URL: postgresql+asyncpg://testmanager:testmanager@localhost:5432/testmanager_test
-      REDIS_URL: redis://localhost:6379/0
-      CELERY_BROKER_URL: redis://localhost:6379/0
-      CELERY_RESULT_BACKEND: redis://localhost:6379/1
       SECRET_KEY: ci-test-secret-key
 
     defaults:
@@ -100,6 +86,13 @@ jobs:
 
       - name: Run tests
         run: pytest tests/ -v --tb=short
+
+      - name: Migrations on Postgres
+        env:
+          ATM_DATABASE_URL: postgresql+psycopg2://testmanager:testmanager@localhost:5432/testmanager_test
+        run: |
+          alembic upgrade head
+          alembic check
 
   # ─────────────────────────────────────────────
   # Frontend — lint + type-check + build

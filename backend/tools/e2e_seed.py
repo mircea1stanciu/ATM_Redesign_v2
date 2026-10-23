@@ -15,7 +15,7 @@ if not os.getenv("ATM_DATABASE_PATH"):
 
 from app.core.db import SessionLocal  # noqa: E402
 from app.core.security import create_access_token  # noqa: E402
-from app.main import _init_db  # noqa: E402
+from app.main import prepare_database  # noqa: E402
 from app.modules.identity.models import User, UserRole  # noqa: E402
 from app.modules.identity.service import get_default_organization  # noqa: E402
 from app.modules.projects.models import Project  # noqa: E402
@@ -25,7 +25,7 @@ SAMPLE_PROJECT_KEY = "E2E"
 
 def seed(sessions_path: str) -> None:
     password = os.environ["E2E_PASSWORD"]
-    _init_db()
+    prepare_database()
     db = SessionLocal()
     try:
         org = get_default_organization(db)

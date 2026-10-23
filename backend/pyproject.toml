@@ -65,10 +65,11 @@ select = ["E", "F", "I", "UP"]
 # Standard alembic/dotenv-config idiom: sys.path/config must run before the
 # subsequent imports, so they can't be moved to the top of the file.
 "alembic/env.py" = ["E402"]
+# Generated table definitions (frozen schema of a revision).
+"alembic/versions/*" = ["E501"]
 "app/main.py" = ["E402"]
 # One-off maintenance scripts and the UI-test seed; lightly linted.
 "tools/*" = ["E501", "E402", "UP006", "UP035", "UP045"]
-"migrations/*" = ["E501", "E402", "UP006", "UP035", "UP045"]
 # Generated report page with minified CSS/JS (one statement per line by design).
 "app/modules/reporting/report_template.py" = ["E501"]
 
