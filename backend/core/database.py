@@ -29,7 +29,8 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
 
 _current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # Get parent directory (project root)
-_db_path = os.path.join(_current_dir, "unifiedwork.db")
+# ATM_DATABASE_PATH lets the UI-test harness run the app on a throwaway database.
+_db_path = os.getenv("ATM_DATABASE_PATH") or os.path.join(_current_dir, "unifiedwork.db")
 SQLALCHEMY_DATABASE_URL = f"sqlite:///{_db_path}"
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}

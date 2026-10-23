@@ -153,8 +153,9 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="mt-8 space-y-4">
             {mode === 'register' && (
               <div>
-                <label className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Full name</label>
+                <label htmlFor="login-full-name" className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Full name</label>
                 <input
+                  id="login-full-name"
                   className="form-input"
                   type="text"
                   required
@@ -165,10 +166,11 @@ export default function LoginPage() {
               </div>
             )}
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">
+              <label htmlFor="login-identifier" className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">
                 {mode === 'login' ? 'Username or email' : 'Email'}
               </label>
               <input
+                id="login-identifier"
                 className="form-input"
                 type={mode === 'login' ? 'text' : 'email'}
                 required
@@ -178,8 +180,9 @@ export default function LoginPage() {
               />
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Password</label>
+              <label htmlFor="login-password" className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Password</label>
               <input
+                id="login-password"
                 className="form-input"
                 type="password"
                 required

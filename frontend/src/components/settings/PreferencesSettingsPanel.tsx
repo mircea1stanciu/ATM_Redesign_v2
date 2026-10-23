@@ -36,6 +36,8 @@ export function PreferencesSettingsPanel() {
 
   useEffect(() => {
     loadPreferences()
+    // Load once when the panel opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const loadPreferences = async () => {

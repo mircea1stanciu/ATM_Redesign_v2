@@ -38,6 +38,8 @@ export default function AllureReportsPanel({ projectId }: AllureReportsPanelProp
 
   useEffect(() => {
     void load()
+    // Reload only when the project changes; `load` is recreated on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
 
   const totals = useMemo(() => reports.reduce(

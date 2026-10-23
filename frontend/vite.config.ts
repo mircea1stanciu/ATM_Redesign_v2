@@ -2,6 +2,9 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 
+// The UI-test harness starts the backend on a free port and points the proxy at it.
+const apiTarget = process.env.ATM_API_TARGET || 'http://127.0.0.1:8000'
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -13,7 +16,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8000',
+        target: apiTarget,
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path,
@@ -21,12 +24,12 @@ export default defineConfig({
       // The frontend probes the backend's OpenAPI schema to feature-detect
       // available endpoints; it lives at the server root, so proxy it too.
       '/openapi.json': {
-        target: 'http://127.0.0.1:8000',
+        target: apiTarget,
         changeOrigin: true,
         secure: false,
       },
       '/ws': {
-        target: 'ws://127.0.0.1:8000',
+        target: apiTarget.replace(/^http/, 'ws'),
         ws: true,
         changeOrigin: true,
       },
