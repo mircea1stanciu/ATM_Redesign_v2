@@ -563,9 +563,11 @@ async def delete_analytics_run(
     return {"status": "deleted", "run_id": run_id}
 
 
+@runs_router.websocket("/ws/runs/{run_id}")
+# Old path, kept for one phase so open browser tabs keep working (remove in phase 04).
 @runs_router.websocket("/v1/runs/ws/{run_id}")
 async def stream_manual_run_logs(websocket: WebSocket, run_id: str):
-    """Stream status/log messages for legacy manual runs at the frontend's v1 URL."""
+    """Stream the status and log messages of a run."""
     await websocket.accept()
     sockets = manual_run_sockets.setdefault(run_id, set())
     sockets.add(websocket)

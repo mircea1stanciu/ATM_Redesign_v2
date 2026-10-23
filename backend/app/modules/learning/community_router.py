@@ -121,7 +121,7 @@ def _attachment_out(att: ForumAttachment) -> AttachmentOut:
         file_type=att.file_type,
         file_size=att.file_size,
         kind=att.kind,
-        url=f"/api/v1/community/attachments/{att.file_name}",
+        url=f"/api/community/attachments/{att.file_name}",
         created_at=att.created_at,
     )
 

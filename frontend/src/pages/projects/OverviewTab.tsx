@@ -80,60 +80,6 @@ function FileList({ items, empty }: { items: string[]; empty: string }) {
   )
 }
 
-function NotificationsCard() {
-  const notificationsForm = useAppStore(s => s.notificationsForm)
-  const setNotificationsForm = useAppStore(s => s.setNotificationsForm)
-  const saveNotifications = useAppStore(s => s.saveNotifications)
-  const savingNotifications = useAppStore(s => s.savingNotifications)
-  const user = useAppStore(s => s.user)
-  const canConfigure = user?.role === 'admin' || user?.role === 'automation_lead' || user?.role === 'super_admin' || user?.role === 'org_admin'
-
-  return (
-    <section className="rounded-2xl border border-gray-200/80 dark:border-gray-700/70 bg-white dark:bg-gray-800/90 shadow-soft p-5 space-y-3">
-      <div className="mb-2">
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Notifications</h3>
-        <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">Email and Slack alerts on failure</p>
-      </div>
-      {([
-        { label: 'Email enabled', key: 'emailEnabled' as const },
-        { label: 'Notify on failure', key: 'notifyOnFailed' as const },
-        { label: 'Notify on error', key: 'notifyOnError' as const },
-        { label: 'Slack enabled', key: 'slackEnabled' as const },
-      ] as const).map(({ label, key }) => (
-        <label key={key} className="flex cursor-pointer items-center justify-between rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/20 px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 transition hover:border-blue-300 dark:hover:border-blue-500/50">
-          {label}
-          <input type="checkbox" checked={notificationsForm[key]}
-            disabled={!canConfigure}
-            onChange={e => setNotificationsForm(p => ({ ...p, [key]: e.target.checked }))}
-            className="h-4 w-4 accent-blue-600" />
-        </label>
-      ))}
-      {notificationsForm.emailEnabled && (
-        <div>
-          <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">Recipients</label>
-          <input className="form-input" placeholder="email1@x.com, email2@x.com"
-            disabled={!canConfigure}
-            value={notificationsForm.emailRecipients}
-            onChange={e => setNotificationsForm(p => ({ ...p, emailRecipients: e.target.value }))} />
-        </div>
-      )}
-      {notificationsForm.slackEnabled && (
-        <div>
-          <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">Slack Webhook</label>
-          <input className="form-input" placeholder="https://hooks.slack.com/services/..."
-            disabled={!canConfigure}
-            value={notificationsForm.slackWebhookUrl}
-            onChange={e => setNotificationsForm(p => ({ ...p, slackWebhookUrl: e.target.value }))} />
-        </div>
-      )}
-      <button onClick={() => void saveNotifications()} disabled={!canConfigure || savingNotifications} className="btn-primary w-full py-2.5 mt-2">
-        {savingNotifications && <Loader2 size={14} className="animate-spin" />}
-        {savingNotifications ? 'Saving...' : 'Save settings'}
-      </button>
-    </section>
-  )
-}
-
 function WorkflowBadge({ run }: { run: NonNullable<ProjectGithubOverview['repository']['latest_workflow_run']> }) {
   const outcome = run.conclusion || run.status || 'unknown'
   const ok = outcome === 'success'
@@ -446,12 +392,9 @@ export default function OverviewTab() {
               </p>
             )}
           </Card>
-
-          <NotificationsCard />
         </div>
       )}
 
-      {!(repo && detection) && !loading && <div className="grid gap-4 xl:grid-cols-2"><NotificationsCard /></div>}
     </div>
   )
 }

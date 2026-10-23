@@ -15,23 +15,12 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      // REST and WebSockets (/api/ws/...) go through the same proxy.
       '/api': {
         target: apiTarget,
         changeOrigin: true,
         secure: false,
-        rewrite: (path) => path,
-      },
-      // The frontend probes the backend's OpenAPI schema to feature-detect
-      // available endpoints; it lives at the server root, so proxy it too.
-      '/openapi.json': {
-        target: apiTarget,
-        changeOrigin: true,
-        secure: false,
-      },
-      '/ws': {
-        target: apiTarget.replace(/^http/, 'ws'),
         ws: true,
-        changeOrigin: true,
       },
     },
   },

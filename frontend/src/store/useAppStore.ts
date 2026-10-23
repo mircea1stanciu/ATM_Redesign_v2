@@ -3,7 +3,6 @@ import { apiService, setAccessToken } from '@/services/api'
 import type {
   JiraProject,
   Project,
-  ProjectNotificationsConfig,
   TestResult,
   TestRun,
   TestRunDetails,
@@ -111,15 +110,6 @@ export interface FlakyTestInsight {
   instability: number
 }
 
-export interface NotificationsFormState {
-  emailEnabled: boolean
-  emailRecipients: string
-  notifyOnFailed: boolean
-  notifyOnError: boolean
-  slackEnabled: boolean
-  slackWebhookUrl: string
-}
-
 // ─── Store shape ─────────────────────────────────────────────────────────────
 
 interface AppState {
@@ -161,10 +151,6 @@ interface AppState {
   // Forms
   projectForm: { name: string; git_repo_url: string; description: string; default_branch: string; framework: string }
   suiteForm: { name: string; tags: string }
-  notificationsForm: NotificationsFormState
-  savingNotifications: boolean
-  schedulerDrafts: Record<string, { cronExpression: string; active: boolean }>
-  savingSchedulerSuiteId: string | null
 
   // Analytics
   flakyTests: FlakyTestInsight[]
@@ -205,8 +191,6 @@ interface AppState {
   setFrameworkRunSelection: (selection: FrameworkRunSelection | null) => void
   setProjectForm: (fn: (prev: AppState['projectForm']) => AppState['projectForm']) => void
   setSuiteForm: (fn: (prev: AppState['suiteForm']) => AppState['suiteForm']) => void
-  setNotificationsForm: (fn: (prev: NotificationsFormState) => NotificationsFormState) => void
-  setSchedulerDrafts: (fn: (prev: AppState['schedulerDrafts']) => AppState['schedulerDrafts']) => void
   setCompareRunAId: (id: string | null) => void
   setCompareRunBId: (id: string | null) => void
 
@@ -218,7 +202,6 @@ interface AppState {
   createProject: () => Promise<Project | null>
   deleteProject: (projectId: string) => Promise<void>
   createSuite: () => Promise<void>
-  deleteSuite: (suiteId: string) => Promise<void>
   createRun: () => Promise<void>
   createAppiumRun: (params: { target: string; label: string; appEnv: string; deviceRunOption: string }) => Promise<void>
   createFrameworkRun: (params: { target: string; label: string; extraArgs: string }) => Promise<void>
@@ -227,8 +210,6 @@ interface AppState {
   executeRun: () => Promise<void>
   cancelRun: (runId: string) => Promise<void>
   deleteRun: (runId: string) => Promise<void>
-  saveScheduler: (suiteId: string) => Promise<void>
-  saveNotifications: () => Promise<void>
   computeFlakyTests: () => Promise<void>
   loadComparison: () => Promise<void>
   refreshGithubStatus: (projectId?: string | null) => Promise<void>
@@ -236,18 +217,6 @@ interface AppState {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function readProjectNotificationsConfig(project: Project | null): NotificationsFormState {
-  const n = (project?.config_json?.notifications || {}) as ProjectNotificationsConfig
-  return {
-    emailEnabled: Boolean(n.email_enabled),
-    emailRecipients: Array.isArray(n.email_recipients) ? n.email_recipients.join(', ') : '',
-    notifyOnFailed: n.notify_on_failed !== false,
-    notifyOnError: n.notify_on_error !== false,
-    slackEnabled: Boolean(n.slack_enabled),
-    slackWebhookUrl: typeof n.slack_webhook_url === 'string' ? n.slack_webhook_url : '',
-  }
-}
 
 function buildRunComparison(resultsA: TestResult[], resultsB: TestResult[]) {
   const mapA = new Map<string, TestResult>()
@@ -323,10 +292,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Forms
   projectForm: { name: '', git_repo_url: '', description: '', default_branch: 'main', framework: 'pytest' },
   suiteForm: { name: '', tags: '' },
-  notificationsForm: { emailEnabled: false, emailRecipients: '', notifyOnFailed: true, notifyOnError: true, slackEnabled: false, slackWebhookUrl: '' },
-  savingNotifications: false,
-  schedulerDrafts: {},
-  savingSchedulerSuiteId: null,
 
   // Analytics
   flakyTests: [],
@@ -375,8 +340,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   setProjectForm: (fn) => set(s => ({ projectForm: fn(s.projectForm) })),
   setSuiteForm: (fn) => set(s => ({ suiteForm: fn(s.suiteForm) })),
-  setNotificationsForm: (fn) => set(s => ({ notificationsForm: fn(s.notificationsForm) })),
-  setSchedulerDrafts: (fn) => set(s => ({ schedulerDrafts: fn(s.schedulerDrafts) })),
   setCompareRunAId: (id) => set({ compareRunAId: id }),
   setCompareRunBId: (id) => set({ compareRunBId: id }),
 
@@ -590,17 +553,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       } else {
         set(s => ({ selectedRunId: (s.selectedRunId && rs.some(r => r.id === s.selectedRunId)) ? s.selectedRunId : rs[0].id }))
       }
-      // Init scheduler drafts
-      set(prev => {
-        const next = { ...prev.schedulerDrafts }
-        for (const s of ss) {
-          if (!next[s.id]) next[s.id] = { cronExpression: s.cron_expression || '', active: s.active }
-        }
-        return { schedulerDrafts: next }
-      })
-      // Set notifications form for selected project
-      const project = get().projects.find(p => p.id === projectId) || null
-      set({ notificationsForm: readProjectNotificationsConfig(project) })
       // Init comparison run IDs
       const sorted = [...rs].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
       if (sorted.length > 0) {
@@ -713,19 +665,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  deleteSuite: async (suiteId) => {
-    try {
-      await apiService.deleteSuite(suiteId)
-      set(s => ({
-        suites: s.suites.filter(suite => suite.id !== suiteId),
-        selectedSuiteId: s.selectedSuiteId === suiteId ? (s.suites.find(suite => suite.id !== suiteId)?.id ?? null) : s.selectedSuiteId,
-        runs: s.selectedSuiteId === suiteId ? [] : s.runs,
-        selectedRunId: s.selectedSuiteId === suiteId ? null : s.selectedRunId,
-      }))
-    } catch (e) {
-      set({ error: apiService.errorMessage(e) })
-    }
-  },
 
   createRun: async () => {
     set({ error: null, runError: null })
@@ -940,55 +879,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (selectedProjectId) await get().refreshProjectData(selectedProjectId)
     } catch (e) {
       set({ error: apiService.errorMessage(e) })
-    }
-  },
-
-  saveScheduler: async (suiteId) => {
-    const { schedulerDrafts } = get()
-    const draft = schedulerDrafts[suiteId]
-    if (!draft) return
-    try {
-      set({ savingSchedulerSuiteId: suiteId, error: null })
-      const updated = await apiService.updateSuite(suiteId, {
-        cron_expression: draft.cronExpression.trim() || null,
-        active: draft.active,
-      })
-      set(s => ({
-        suites: s.suites.map(suite => suite.id === suiteId ? updated : suite),
-        schedulerDrafts: { ...s.schedulerDrafts, [suiteId]: { cronExpression: updated.cron_expression || '', active: updated.active } },
-      }))
-    } catch (e) {
-      set({ error: apiService.errorMessage(e) })
-    } finally {
-      set({ savingSchedulerSuiteId: null })
-    }
-  },
-
-  saveNotifications: async () => {
-    const { selectedProjectId, projects, notificationsForm } = get()
-    const project = projects.find(p => p.id === selectedProjectId)
-    if (!project) return
-    try {
-      set({ savingNotifications: true, error: null })
-      const payload: ProjectNotificationsConfig = {
-        email_enabled: notificationsForm.emailEnabled,
-        email_recipients: notificationsForm.emailRecipients.split(',').map(v => v.trim()).filter(Boolean),
-        notify_on_failed: notificationsForm.notifyOnFailed,
-        notify_on_error: notificationsForm.notifyOnError,
-        slack_enabled: notificationsForm.slackEnabled,
-        slack_webhook_url: notificationsForm.slackWebhookUrl.trim(),
-      }
-      const updated = await apiService.updateProject(project.id, {
-        config_json: { ...(project.config_json || {}), notifications: payload },
-      })
-      set(s => ({
-        projects: s.projects.map(p => p.id === updated.id ? updated : p),
-        notificationsForm: readProjectNotificationsConfig(updated),
-      }))
-    } catch (e) {
-      set({ error: apiService.errorMessage(e) })
-    } finally {
-      set({ savingNotifications: false })
     }
   },
 

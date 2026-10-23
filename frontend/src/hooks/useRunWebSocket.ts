@@ -19,10 +19,9 @@ export function useRunWebSocket({ runId, enabled }: UseRunWebSocketOptions) {
       return
     }
 
-    const explicitBase = import.meta.env.VITE_WS_BASE_URL as string | undefined
-    const defaultBase = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.hostname}:8000`
-    const base = explicitBase || defaultBase
-    const socket = new WebSocket(`${base}/api/v1/runs/ws/${runId}`)
+    // Same origin as the page: the dev proxy and nginx forward /api/ws/* to the backend.
+    const base = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`
+    const socket = new WebSocket(`${base}/api/ws/runs/${runId}`)
 
     socket.onopen = () => {
       setConnected(true)

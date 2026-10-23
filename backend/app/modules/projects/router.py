@@ -1,5 +1,6 @@
 """Projects: CRUD, the GitHub link and overview, the local checkout link, starter projects."""
 import asyncio
+import re
 import shutil
 import subprocess
 from datetime import datetime
@@ -40,12 +41,9 @@ router = APIRouter(prefix="/api/projects", tags=["Projects"])
 
 # Pydantic Schemas
 class ProjectCreate(BaseModel):
-    key: str
     name: str
     description: Optional[str] = None
-    community_id: str
-    icon: str = "📋"
-    color: str = "blue"
+    git_repo_url: Optional[str] = None
 
 
 class ProjectUpdate(BaseModel):
@@ -72,20 +70,33 @@ async def list_projects(
         Project.is_archived.is_(False)
     ).all()
 
-    return [
-        {
-            "id": str(project.id),
-            "name": project.name,
-            "description": project.description,
-            "git_repo_url": project.github_repo_url or "",
-            "git_provider": "github",
-            "default_branch": "main",
-            "framework": None,
-            "config_json": None,
-            "created_at": project.created_at.isoformat() if project.created_at else None,
-        }
-        for project in projects
-    ]
+    return [_project_response(project) for project in projects]
+
+
+def _project_response(project: Project) -> dict:
+    """A project in the shape the frontend uses (Project in frontend/src/types/domain.ts)."""
+    return {
+        "id": str(project.id),
+        "name": project.name,
+        "description": project.description,
+        "git_repo_url": project.github_repo_url or "",
+        "git_provider": "github",
+        "default_branch": "main",
+        "framework": None,
+        "config_json": None,
+        "created_at": project.created_at.isoformat() if project.created_at else None,
+    }
+
+
+def _unique_project_key(db: Session, name: str) -> str:
+    """An unused project key derived from the name, e.g. "Mobile App" -> MOBILE_APP, then MOBILE_APP_2."""
+    base = re.sub(r"[^A-Z0-9]+", "_", name.upper()).strip("_")[:12] or "PROJECT"
+    key = base
+    suffix = 2
+    while db.query(Project).filter(Project.key == key).first():
+        key = f"{base[:10]}_{suffix}"
+        suffix += 1
+    return key
 
 
 @router.post("/")
@@ -94,32 +105,28 @@ async def create_project(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Create a new project - Only Product Managers"""
-    # Check access
+    """Create a project in the user's organization (product community or admins until phase 04)."""
     check_product_manager_access(current_user)
-    
-    # Check if project key already exists
-    existing = db.query(Project).filter(Project.key == project_data.key.upper()).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="Project key already exists")
-    
+    name = project_data.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="A project name is required.")
+
     project = Project(
-        key=project_data.key.upper(),
-        name=project_data.name,
+        key=_unique_project_key(db, name),
+        name=name,
         description=project_data.description,
-        community_id=project_data.community_id,
+        github_repo_url=(project_data.git_repo_url or "").strip() or None,
+        community_id="general",
         organization_id=current_user.organization_id,
-        icon=project_data.icon,
-        color=project_data.color,
+        icon="📋",
+        color="blue",
         created_by_user_id=current_user.id,
-        lead_user_id=current_user.id
+        lead_user_id=current_user.id,
     )
-    
     db.add(project)
     db.commit()
     db.refresh(project)
-    
-    return {"message": "Project created successfully", "project": project}
+    return _project_response(project)
 
 
 @router.get("/{project_id}")
