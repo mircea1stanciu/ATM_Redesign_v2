@@ -411,6 +411,33 @@ They touch different modules, so their PRs do not conflict (see section 6.4).
   - Decision on Community: keep as learning Q&A, or remove.
 - **UI tests:** a Trainee completes a lesson and a quiz; their progress survives a reload and appears in the Lead's
   mentor view.
+- **Decided while building phase 13:**
+  - **Content stays in the frontend** (`src/features/learning/content.ts`, today's 15 programs, about 90 lessons and
+    460 quiz questions); the server stores what each person did, by lesson and module id (`learning_progress`,
+    migration `0010`). Quizzes are graded in the browser and the result is saved (best score, attempts, passed from
+    7 of 10 on).
+  - **Eight paths** built from the programs (`src/features/learning/paths.ts`): API automation with Bruno, UI with
+    Playwright, Java (Selenium, JUnit 5, REST Assured), mobile with Appium, Python, JavaScript UI frameworks, Karate,
+    performance with k6. Each learner chooses one ("My path"); Home shows it with the next lesson.
+  - **Shuffled quizzes:** the order of the questions and of each question's options changes on every attempt. One
+    generated question offered the right answer twice (the module's first code line); the generator now avoids it.
+  - **Practice tasks:** written by leads (`learning.manage`), handed in by learners with a branch or a pull request
+    link and a note, reviewed by mentors (`learning.mentor`): approve, or ask for changes with feedback. The learner's
+    lead is notified of a hand-in; the learner of the review (new notification kind). Viewers read but do not
+    practise.
+  - **Mentors:** a lead mentors the Trainees and Users assigned to them; a senior the learners who are members of the
+    projects the senior sees; a super admin everyone. The mentor view shows each person's path and progress, lessons,
+    quizzes passed, practice and last activity, and the practice waiting for review.
+  - **Hint library** in the database (`hints`, seeded with the workspace's five standard hints and five more), edited
+    by leads. Lessons show the hints of their topic; the workspace editor takes its hint text from the library (the
+    detection rules stay in the frontend) and links each hint to Learning › Hints.
+  - **AI tutor:** a lesson's "Ask the AI tutor" sends the lesson and the question to the user's AI assistant with a
+    tutor prompt. **Tutor mode** (on by default for Trainees, a switch in Learning › Paths) makes the workspace
+    assistant explain and guide instead of writing complete files unless asked.
+  - **Community is removed:** its page, components, frontend API calls and backend router are gone; learners ask the
+    AI tutor and their mentors instead. Its tables (`forum_*`) are kept until the product owner confirms.
+- **Left for later phases:** badges and streaks, readiness requests and decisions (phase 14), editing paths in the
+  app, and dropping the forum tables.
 
 ### Phase 14: `feature/phase_14_readiness_promotion`
 - **Goal:** leads decide when a trainee or user moves up.

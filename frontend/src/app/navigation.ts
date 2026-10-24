@@ -83,6 +83,12 @@ export const AREA_TABS: Record<string, AreaTab[]> = {
     { to: '/reviews/waiting', label: 'Waiting for me' },
     { to: '/reviews/open', label: 'All open' },
   ],
+  learning: [
+    { to: '/learning/paths', label: 'Paths' },
+    { to: '/learning/practice', label: 'Practice' },
+    { to: '/learning/hints', label: 'Hints' },
+    { to: '/learning/mentor', label: 'Mentor', permissions: ['learning.mentor'] },
+  ],
   deployments: [
     { to: '/deployments/timeline', label: 'Timeline' },
     { to: '/deployments/services', label: 'Services' },

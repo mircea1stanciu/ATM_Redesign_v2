@@ -20,7 +20,7 @@ from app.modules.deployments.router import router as deployments_router
 from app.modules.identity.router import router as identity_router
 from app.modules.identity.service import get_default_organization, seed_dev_admin
 from app.modules.identity.users_router import router as users_router
-from app.modules.learning.community_router import router as community_router
+from app.modules.learning.router import router as learning_router
 from app.modules.notifications.router import router as notifications_router
 from app.modules.notifications.router import socket_router as notifications_socket_router
 from app.modules.projects.router import router as projects_router
@@ -111,7 +111,7 @@ app.include_router(deployments_router)
 app.include_router(notifications_router)
 app.include_router(notifications_socket_router)
 app.include_router(reviews_router)
-app.include_router(community_router, prefix="/api/community", tags=["Learning"])
+app.include_router(learning_router)
 
 
 @app.get("/api/health", tags=["Health"])

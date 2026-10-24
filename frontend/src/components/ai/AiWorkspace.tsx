@@ -1,8 +1,10 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { Bot } from 'lucide-react'
 import { apiService } from '@/services/api'
 import { GENERAL_TIPS, hintsFor } from '@/features/workspace/hints'
+import { learningApi, learningKeys } from '@/features/learning/api'
 import { Hint, SplitPane, buttonStyles } from '@/ui'
 import type { AiChange, AiMessage, AiSettings } from '@/types/domain'
 import AiChatPanel, { type ChatPrompt } from './AiChatPanel'
@@ -180,9 +182,10 @@ export default function AiWorkspace({
   }, [loadFile, onProjectChanged, onFilesChanged])
 
   const active = openFiles.find(f => f.path === activePath)
+  const library = useQuery({ queryKey: learningKeys.hints, queryFn: learningApi.hints, staleTime: 10 * 60_000, enabled: hintsEnabled })
   const hints = useMemo(
-    () => (hintsEnabled && active && !active.review && !active.binary ? hintsFor(active.path, active.content) : []),
-    [hintsEnabled, active],
+    () => (hintsEnabled && active && !active.review && !active.binary ? hintsFor(active.path, active.content, library.data) : []),
+    [hintsEnabled, active, library.data],
   )
   const aiConnected = settings?.configured !== false
 
@@ -212,7 +215,11 @@ export default function AiWorkspace({
         onRejectReview={file => void finishReview(file, 'reject')}
         banner={hints.length > 0 && (
           <div className="space-y-1.5 px-3 py-2" role="region" aria-label="Editor hints">
-            {hints.map(hint => <Hint key={`${active?.path}:${hint.id}`} id={`${active?.path}:${hint.id}`}>{hint.text}</Hint>)}
+            {hints.map(hint => (
+              <Hint key={`${active?.path}:${hint.id}`} id={`${active?.path}:${hint.id}`}>
+                {hint.text} <Link to={`/learning/hints#hint-${hint.id}`} className="font-semibold text-accent hover:underline">Learn more</Link>
+              </Hint>
+            ))}
           </div>
         )}
       />

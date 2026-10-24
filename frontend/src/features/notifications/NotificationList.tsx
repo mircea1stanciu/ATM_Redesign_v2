@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Bell, CheckCircle2, GitPullRequest, MessageSquare, Play, Rocket, UserCheck } from 'lucide-react'
+import { Bell, CheckCircle2, GitPullRequest, GraduationCap, MessageSquare, Play, Rocket, UserCheck } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cn, EmptyState } from '@/ui'
 import type { AppNotification, NotificationKind } from './api'
@@ -12,6 +12,7 @@ const ICONS: Record<NotificationKind, LucideIcon> = {
   run_finished: Play,
   review_request: GitPullRequest,
   review: MessageSquare,
+  practice: GraduationCap,
   promotion: UserCheck,
 }
 

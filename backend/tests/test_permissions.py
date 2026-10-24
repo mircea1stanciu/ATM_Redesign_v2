@@ -157,7 +157,8 @@ def test_each_role_against_representative_endpoints(client, role):
         ("post", f"/api/projects/{project_id}/github/workflows/dispatch", {"workflow_id": "x"}, "run.execute.ci"),
         ("post", f"/api/suites/projects/{project_id}/suites", {"name": ""}, "suite.manage"),
         ("patch", "/api/settings/zephyr", {}, "settings.system"),
-        ("patch", "/api/community/posts/1/moderate", {}, "learning.manage"),
+        ("put", "/api/learning/hints/x", {}, "learning.manage"),
+        ("get", "/api/learning/mentor", None, "learning.mentor"),
         ("get", f"/api/runs/projects/{project_id}", None, "run.view"),
     ]
     for method, path, body, permission in checks:

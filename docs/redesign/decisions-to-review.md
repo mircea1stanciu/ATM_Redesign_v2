@@ -105,3 +105,17 @@ notes of each phase in [06-implementation-plan.md](06-implementation-plan.md).
 | AI review returns at most 10 line comments; off-diff ones are dropped; the reviewer picks | Post AI comments directly; a summary instead of line comments | `ai_review`, `MAX_AI_SUGGESTIONS` |
 | Only authors of PRs opened from ATM are notified of reviews | Map GitHub logins to ATM users for all PRs | `_notify_author` |
 
+## Phase 13: learning paths
+
+| Decision | Alternative | To reverse |
+|---|---|---|
+| **Community is removed** (page, components, API, router); its `forum_*` tables are kept | Keep it as a Q&A tab in Learning | Restore `CommunityPage.tsx`, `components/community/`, `community_router.py`, `schemas.py` from git history; or drop the tables in a migration |
+| Lessons and quizzes stay in the frontend code; the server stores progress by id | Content in the database, edited in the app | `features/learning/content.ts`, `paths.ts` |
+| Eight fixed paths built from the 15 programs | Leads build paths in the app | `PATHS` in `features/learning/paths.ts` |
+| Quizzes are graded in the browser; a quiz passes from 7 of 10 | Server-side grading (questions without answers sent to the browser) | `record_quiz`, `QUIZ_PASS_MARK` |
+| Practice is handed in as a branch or pull request link, reviewed in ATM by a mentor | Practice as a pull request reviewed in Reviews | `submit_practice`, `review_practice` |
+| A lead mentors their assigned people; a senior the learners of their projects | Only leads mentor | `mentees` in `learning/service.py` |
+| Tutor mode is on by default for Trainees (workspace assistant guides instead of writing files) | Off by default | `tutor_mode` in `learning/service.py` |
+| Hints live in the database and are edited by leads; detection rules stay in the frontend | Rules in the database too | `hints` table, `features/workspace/hints.ts` |
+| Viewers read lessons but do not hand in practice | Viewers practise too | `submit_practice` (`code.edit`) |
+

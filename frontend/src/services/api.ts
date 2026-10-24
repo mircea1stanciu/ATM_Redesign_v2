@@ -51,11 +51,6 @@ import type {
   TestSuite,
   TokenResponse,
   UserResponse,
-  ForumPost,
-  ForumPostList,
-  ForumComment,
-  ForumAttachment,
-  ForumReactionResponse,
 } from '@/types/domain'
 
 const AUTH_EXPIRED_EVENT = 'atm:auth-expired'
@@ -1174,120 +1169,6 @@ export const apiService = {
   async updateTaskStatus(taskId: string, status: string): Promise<Task> {
     const response = await api.patch<Task>(`/tasks/${taskId}/status`, { status })
     return response.data
-  },
-
-  // ── Community Forum ────────────────────────────────────────────────────────
-  async listForumPosts(params: {
-    communityId: string
-    search?: string
-    tags?: string[]
-    sort?: 'latest' | 'top'
-    page?: number
-    pageSize?: number
-  }): Promise<ForumPostList> {
-    const response = await api.get<ForumPostList>('/community/posts', {
-      params: {
-        community_id: params.communityId,
-        search: params.search || undefined,
-        tags: params.tags && params.tags.length > 0 ? params.tags.join(',') : undefined,
-        sort: params.sort || 'latest',
-        page: params.page || 1,
-        page_size: params.pageSize || 20,
-      },
-    })
-    return response.data
-  },
-
-  async getAvailableForumTags(communityId: string): Promise<{ tags: Array<{ name: string; count: number }> }> {
-    const response = await api.get<{ tags: Array<{ name: string; count: number }> }>('/community/posts/tags/all', {
-      params: { community_id: communityId },
-    })
-    return response.data
-  },
-
-  async getForumPost(postId: number): Promise<ForumPost> {
-    const response = await api.get<ForumPost>(`/community/posts/${postId}`)
-    return response.data
-  },
-
-  async createForumPost(payload: {
-    community_id: string
-    title: string
-    body: string
-    tags?: string[]
-    attachment_ids?: number[]
-  }): Promise<ForumPost> {
-    const response = await api.post<ForumPost>('/community/posts', payload)
-    return response.data
-  },
-
-  async updateForumPost(
-    postId: number,
-    payload: { title?: string; body?: string; tags?: string[] },
-  ): Promise<ForumPost> {
-    const response = await api.patch<ForumPost>(`/community/posts/${postId}`, payload)
-    return response.data
-  },
-
-  async moderateForumPost(
-    postId: number,
-    payload: { is_pinned?: boolean; is_locked?: boolean },
-  ): Promise<ForumPost> {
-    const response = await api.patch<ForumPost>(`/community/posts/${postId}/moderate`, payload)
-    return response.data
-  },
-
-  async deleteForumPost(postId: number): Promise<void> {
-    await api.delete(`/community/posts/${postId}`)
-  },
-
-  async likeForumPost(postId: number): Promise<ForumReactionResponse> {
-    const response = await api.post<ForumReactionResponse>(`/community/posts/${postId}/like`)
-    return response.data
-  },
-
-  async listForumComments(postId: number): Promise<ForumComment[]> {
-    const response = await api.get<ForumComment[]>(`/community/posts/${postId}/comments`)
-    return response.data
-  },
-
-  async createForumComment(
-    postId: number,
-    payload: { body: string; parent_comment_id?: number | null; attachment_ids?: number[] },
-  ): Promise<ForumComment> {
-    const response = await api.post<ForumComment>(`/community/posts/${postId}/comments`, payload)
-    return response.data
-  },
-
-  async updateForumComment(commentId: number, body: string): Promise<ForumComment> {
-    const response = await api.patch<ForumComment>(`/community/comments/${commentId}`, { body })
-    return response.data
-  },
-
-  async deleteForumComment(commentId: number): Promise<void> {
-    await api.delete(`/community/comments/${commentId}`)
-  },
-
-  async likeForumComment(commentId: number): Promise<ForumReactionResponse> {
-    const response = await api.post<ForumReactionResponse>(`/community/comments/${commentId}/like`)
-    return response.data
-  },
-
-  async uploadForumAttachment(file: File): Promise<ForumAttachment> {
-    const formData = new FormData()
-    formData.append('file', file)
-    const response = await api.post<ForumAttachment>('/community/attachments', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: 120000,
-    })
-    return response.data
-  },
-
-  /** Fetch an attachment through the authenticated client and return an object URL. */
-  async fetchForumAttachmentUrl(url: string): Promise<string> {
-    const path = url.replace(/^\/api/, '')
-    const response = await api.get(path, { responseType: 'blob' })
-    return URL.createObjectURL(response.data as Blob)
   },
 
   // ── User Profile Management ──────────────────────────────────────────────

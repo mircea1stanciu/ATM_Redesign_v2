@@ -5296,7 +5296,8 @@ function buildProfiledModuleQuestionPack(program: Program, module: Module, profi
       options: [
         profile.codingCorrect,
         profile.codingWrong,
-        codePreview,
+        // The module's first code line can be the right answer itself: never offer the same option twice.
+        [profile.codingCorrect, profile.codingWrong].includes(codePreview) ? 'npm run test -- --skip-all' : codePreview,
         'echo "placeholder"',
       ],
       correctIndex: 0,

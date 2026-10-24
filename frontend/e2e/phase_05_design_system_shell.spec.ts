@@ -56,7 +56,7 @@ test('every area and tab loads', async ({ page }) => {
     await expect(page).toHaveURL(new RegExp(`${url}$`))
   }
   await page.goto('/learning')
-  await expect(page).toHaveURL(/\/learning$/)
+  await expect(page).toHaveURL(/\/learning\/paths$/)
   await page.goto('/settings')
   await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()
 
@@ -78,7 +78,7 @@ test('old URLs redirect to the new ones', async ({ page }) => {
     ['/jira-confluence/jira', /\/work\/jira$/],
     ['/jira-confluence/confluence/configuration', /\/work\/confluence$/],
     ['/jira-confluence/confluence/analyzer', /\/work\/confluence-analyzer$/],
-    ['/upskilling', /\/learning$/],
+    ['/upskilling', /\/learning\/paths$/],
     ['/users', /\/admin\/users$/],
     ['/runs', /\/tests\/runs$/],
     ['/analytics', /\/reports\/analytics$/],
@@ -170,7 +170,7 @@ test('side bar collapses to icons and remembers it', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Expand sidebar' })).toBeVisible()
   // Collapsed links keep their names for screen readers.
   await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Learning' }).click()
-  await expect(page).toHaveURL(/\/learning$/)
+  await expect(page).toHaveURL(/\/learning\/paths$/)
   await page.getByRole('button', { name: 'Expand sidebar' }).click()
   await expect(page.getByRole('button', { name: 'Collapse sidebar' })).toBeVisible()
 })
