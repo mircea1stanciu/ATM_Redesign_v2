@@ -15,6 +15,7 @@ from app.core.db import SessionLocal
 from app.core.permissions import ensure
 from app.modules.projects.models import AnalyticsRun, AnalyticsSuite, TestEnvironment
 from app.modules.reporting import allure
+from app.modules.testing import secrets as environment_secrets
 
 manual_run_sockets: dict[str, set[WebSocket]] = {}
 
@@ -24,6 +25,10 @@ manual_run_processes: dict[str, int] = {}
 
 
 cancelled_manual_runs: set[str] = set()
+
+
+# Secret environment values of each running run, masked in its log (phase 17).
+run_secret_values: dict[str, list[str]] = {}
 
 
 # Strong references so fire-and-forget run tasks are not garbage-collected.
@@ -466,6 +471,7 @@ class _ManualRunLogger:
         self.last_flush = self._clock()
 
     async def log(self, text: str, level: str = "stdout") -> None:
+        text = environment_secrets.mask(text, run_secret_values.get(self.run_id, []))
         payload = {"type": level, "data": text, "timestamp": datetime.utcnow().isoformat()}
         self.pending.append(payload)
         _append_manual_run_artifact_log(self.artifact_dir, payload)
@@ -474,6 +480,7 @@ class _ManualRunLogger:
             await asyncio.to_thread(self.flush)
 
     async def finish(self, status: str) -> None:
+        run_secret_values.pop(self.run_id, None)
         await asyncio.to_thread(self.flush)
         await _set_manual_run_status(self.run_id, self.manual_run_id, self.artifact_dir, status)
 
@@ -793,8 +800,10 @@ async def _start_framework_run(
     if artifact_dir.exists():
         shutil.rmtree(artifact_dir, ignore_errors=True)
     try:
+        secret_values = environment_secrets.read(environment) if environment else {}
+        variables = {**(environment.variables or {}), **secret_values} if environment else None
         plan = await asyncio.to_thread(framework_run_service.build_plan, repo_path, target, artifact_dir,
-                                       payload.extra_args, environment.variables if environment else None)
+                                       payload.extra_args, variables)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     _forget_framework_detection(repo_path)
@@ -822,6 +831,7 @@ async def _start_framework_run(
         "command": plan.argv,
         "extra_args": payload.extra_args or "",
     })
+    run_secret_values[run_id] = list(secret_values.values())
     _spawn_run_task(_execute_framework_run_background(run_id, run.id, repo_path, plan))
     return {"status": "scheduled", "run_id": run_id, "task_id": f"local-{run.id}",
             "message": f"Run started: {plan.label}"}

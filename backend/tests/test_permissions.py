@@ -31,7 +31,7 @@ PLAN = {
     "work.view": "111110", "work.start": "111110", "work.assign": "111000", "jira.write": "111100",
     "code.edit": "111110", "code.push": "111110", "pr.create": "111110", "ai.use": "111110",
     "run.view": "111111", "run.execute": "111110", "run.execute.ci": "111100", "suite.manage": "111100",
-    "environment.manage": "111000", "device.manage": "111110",
+    "suite.delete": "110000", "environment.manage": "111000", "device.manage": "111110",
     "report.view": "111111", "report.publish": "111000",
     "pr.view": "111111", "pr.comment": "111110", "pr.review": "111000",
     "deployment.view": "111111", "deployment.configure": "110000",

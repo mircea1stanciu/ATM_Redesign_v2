@@ -14,6 +14,7 @@ from app.modules.projects.checkouts import checkout_path
 from app.modules.projects.models import AllureReport, AnalyticsRun, AnalyticsSuite, TestEnvironment
 from app.modules.projects.service import get_project_or_404
 from app.modules.testing import cron
+from app.modules.testing import secrets as environment_secrets
 from app.modules.testing.runs import AnalyticsRunExecuteRequest, _analytics_run_response, _start_framework_run
 
 router = APIRouter(prefix="/api", tags=["Testing"])
@@ -41,6 +42,7 @@ def suite_response(db: Session, suite: AnalyticsSuite) -> dict:
         "active": suite.active,
         "created_by_user_id": str(suite.created_by_user_id) if suite.created_by_user_id else None,
         "created_at": suite.created_at.isoformat() if suite.created_at else None,
+        "archived_at": suite.archived_at.isoformat() if suite.archived_at else None,
         "last_run": {"id": f"manual-{last.id}", "status": last.status, "trigger": last.trigger,
                      "created_at": last.created_at.isoformat() if last.created_at else None} if last else None,
     }
@@ -84,14 +86,17 @@ def _check_workflow(name: Optional[str]) -> Optional[str]:
 
 
 @router.get("/suites/projects/{project_id}")
-async def list_suites(project_id: int, current_user: User = Depends(require("run.view", project_from="project_id")),
+async def list_suites(project_id: int, archived: bool = False,
+                      current_user: User = Depends(require("run.view", project_from="project_id")),
                       db: Session = Depends(get_db)):
-    """The project's suites; imported Allure results show as a virtual suite for the Analytics view."""
+    """The project's suites (or, with ``archived``, its archived ones); imported Allure results show as a virtual
+    suite for the Analytics view."""
     get_project_or_404(db, project_id)
-    suites = (db.query(AnalyticsSuite).filter(AnalyticsSuite.project_id == project_id)
-              .order_by(AnalyticsSuite.created_at.desc()).all())
+    query = db.query(AnalyticsSuite).filter(AnalyticsSuite.project_id == project_id)
+    query = query.filter(AnalyticsSuite.archived_at.isnot(None) if archived else AnalyticsSuite.archived_at.is_(None))
+    suites = query.order_by(AnalyticsSuite.created_at.desc()).all()
     response = [suite_response(db, suite) for suite in suites]
-    if db.query(AllureReport.id).filter(AllureReport.project_id == project_id).first():
+    if not archived and db.query(AllureReport.id).filter(AllureReport.project_id == project_id).first():
         response.insert(0, {
             "id": f"allure-suite-{project_id}", "project_id": str(project_id), "name": "Allure Reports",
             "tags": ["allure"], "test_type": "functional", "target": None, "environment_id": None,
@@ -189,12 +194,35 @@ async def update_suite(suite_id: int, payload: SuiteUpdate,
     return suite_response(db, suite)
 
 
-@router.delete("/suites/{suite_id}")
-async def delete_suite(suite_id: int, current_user: User = Depends(require("suite.manage", project_from="suite_id")),
-                       db: Session = Depends(get_db)):
-    """Delete the suite and its runs."""
+@router.post("/suites/{suite_id}/archive")
+async def archive_suite(suite_id: int, current_user: User = Depends(require("suite.manage", project_from="suite_id")),
+                        db: Session = Depends(get_db)):
+    """Archive the suite (phase 17): its runs and reports stay, it leaves the lists and its schedule stops."""
     suite = _suite(db, suite_id)
     _ensure_manage(db, current_user, suite)
+    if suite.archived_at is None:
+        suite.archived_at, suite.archived_by_id = datetime.utcnow(), current_user.id
+        db.commit()
+    return suite_response(db, suite)
+
+
+@router.post("/suites/{suite_id}/restore")
+async def restore_suite(suite_id: int, current_user: User = Depends(require("suite.manage", project_from="suite_id")),
+                        db: Session = Depends(get_db)):
+    suite = _suite(db, suite_id)
+    _ensure_manage(db, current_user, suite)
+    suite.archived_at, suite.archived_by_id = None, None
+    db.commit()
+    return suite_response(db, suite)
+
+
+@router.delete("/suites/{suite_id}")
+async def delete_suite(suite_id: int, current_user: User = Depends(require("suite.delete", project_from="suite_id")),
+                       db: Session = Depends(get_db)):
+    """Permanently delete an archived suite and its runs (Leads and Super Admins)."""
+    suite = _suite(db, suite_id)
+    if suite.archived_at is None:
+        raise HTTPException(status_code=400, detail="Archive the suite first; only archived suites are deleted.")
     deleted_runs = db.query(AnalyticsRun).filter(AnalyticsRun.suite_id == suite.id).delete()
     db.delete(suite)
     db.commit()
@@ -228,6 +256,8 @@ class SuiteRunRequest(BaseModel):
 async def start_suite_run(db: Session, user: User, suite: AnalyticsSuite, environment_id: Optional[int],
                           trigger: str = "manual", branch: Optional[str] = None) -> AnalyticsRun:
     """Create a run of the suite and start it in the user's checkout (also used by the scheduler)."""
+    if suite.archived_at is not None:
+        raise HTTPException(status_code=400, detail="This suite is archived. Restore it to run it.")
     if not suite.target:
         raise HTTPException(status_code=400, detail="Choose what the suite runs (its target) first.")
     repo_path = checkout_path(user, suite.project_id)
@@ -258,6 +288,8 @@ async def run_suite(suite_id: int, payload: SuiteRunRequest = SuiteRunRequest(),
                     db: Session = Depends(get_db)):
     """Run a suite here (in the user's checkout) or on GitHub Actions (its workflow)."""
     suite = _suite(db, suite_id)
+    if suite.archived_at is not None:
+        raise HTTPException(status_code=400, detail="This suite is archived. Restore it to run it.")
     environment_id = payload.environment_id if payload.environment_id is not None else suite.environment_id
     if payload.where == "actions":
         from app.modules.testing.router import WorkflowDispatchRequest, dispatch_project_github_workflow
@@ -282,27 +314,43 @@ def environment_response(environment: TestEnvironment) -> dict:
         "project_id": str(environment.project_id),
         "name": environment.name,
         "variables": environment.variables or {},
+        # Only the names: secret values never leave the server (phase 17).
+        "secret_names": sorted(environment_secrets.read(environment)),
         "bruno_environment": environment.bruno_environment,
     }
 
 
 class EnvironmentPayload(BaseModel):
     name: str = Field(min_length=1, max_length=100)
-    # Plain settings such as BASE_URL. Secrets do not belong here: the values are shown to everyone in the project.
+    # Plain settings such as BASE_URL, shown to everyone in the project.
     variables: dict[str, str] = Field(default_factory=dict, max_length=100)
+    # Secret variables (passwords, tokens): a value sets one, an empty value or null removes it, names left out stay.
+    secrets: dict[str, Optional[str]] = Field(default_factory=dict, max_length=100)
     bruno_environment: Optional[str] = Field(default=None, max_length=100)
+
+
+def _check_variable(key: str, value: Optional[str]) -> None:
+    if not VARIABLE_NAME.match(key):
+        raise HTTPException(status_code=400, detail=f"'{key}' is not a valid variable name (letters, digits, _).")
+    if value is not None and len(value) > 2000:
+        raise HTTPException(status_code=400, detail=f"The value of {key} is too long.")
 
 
 def _clean_environment(payload: EnvironmentPayload) -> tuple[str, dict[str, str], Optional[str]]:
     name = payload.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="An environment needs a name.")
-    for key, value in payload.variables.items():
-        if not VARIABLE_NAME.match(key):
-            raise HTTPException(status_code=400, detail=f"'{key}' is not a valid variable name (letters, digits, _).")
-        if len(value) > 2000:
-            raise HTTPException(status_code=400, detail=f"The value of {key} is too long.")
+    for key, value in [*payload.variables.items(), *payload.secrets.items()]:
+        _check_variable(key, value)
     return name, dict(payload.variables), (payload.bruno_environment or "").strip() or None
+
+
+def _save_secrets(environment: TestEnvironment, variables: dict[str, str], changes: dict[str, Optional[str]]) -> None:
+    secrets = environment_secrets.apply_changes(environment_secrets.read(environment), changes)
+    both = sorted(set(secrets) & set(variables))
+    if both:
+        raise HTTPException(status_code=400, detail=f"{', '.join(both)} is both a variable and a secret.")
+    environment_secrets.write(environment, secrets)
 
 
 @router.get("/projects/{project_id}/environments")
@@ -324,6 +372,7 @@ async def create_environment(project_id: int, payload: EnvironmentPayload,
     if db.query(TestEnvironment).filter(TestEnvironment.project_id == project_id, TestEnvironment.name == name).first():
         raise HTTPException(status_code=400, detail=f"The project already has an environment called '{name}'.")
     environment = TestEnvironment(project_id=project_id, name=name, variables=variables, bruno_environment=bruno)
+    _save_secrets(environment, variables, payload.secrets)
     db.add(environment)
     db.commit()
     db.refresh(environment)
@@ -348,6 +397,7 @@ async def update_environment(project_id: int, environment_id: int, payload: Envi
                                              TestEnvironment.id != environment.id).first()
     if clash:
         raise HTTPException(status_code=400, detail=f"The project already has an environment called '{name}'.")
+    _save_secrets(environment, variables, payload.secrets)
     environment.name, environment.variables, environment.bruno_environment = name, variables, bruno
     db.commit()
     db.refresh(environment)
