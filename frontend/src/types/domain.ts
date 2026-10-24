@@ -932,6 +932,8 @@ export interface TestSuite {
   ci_workflow?: string | null
   created_by_user_id?: string | null
   last_run?: { id: string; status: RunStatus; trigger: string; created_at: string | null } | null
+  /** Archived suites keep their runs and reports and can be restored (phase 17). */
+  archived_at?: string | null
 }
 
 export interface TestEnvironment {
@@ -939,6 +941,8 @@ export interface TestEnvironment {
   project_id: string
   name: string
   variables: Record<string, string>
+  /** Names of the secret variables; their values never reach the browser. */
+  secret_names?: string[]
   bruno_environment: string | null
 }
 

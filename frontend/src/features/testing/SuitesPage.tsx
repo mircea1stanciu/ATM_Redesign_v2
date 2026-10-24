@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CalendarClock, Layers, Pencil, Play, Plus, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, CalendarClock, Layers, Pencil, Play, Plus, Trash2 } from 'lucide-react'
 import { useAppStore } from '@/store/useAppStore'
 import { apiService } from '@/services/api'
 import { hasPermission, usePermission } from '@/hooks/usePermission'
 import {
-  Button, Card, ConfirmDialog, EmptyState, ErrorState, IconButton, Skeleton, StatusPill, TestTypeChip, useToast,
+  Button, Card, ConfirmDialog, EmptyState, ErrorState, IconButton, Skeleton, StatusPill, Tabs, TestTypeChip, useTabParam, useToast,
 } from '@/ui'
 import type { TestSuite } from '@/types/domain'
 import { describeSchedule, testingApi, testingKeys } from './api'
@@ -29,27 +29,37 @@ export default function SuitesPage() {
   const queryClient = useQueryClient()
   const [editing, setEditing] = useState<TestSuite | 'new' | null>(null)
   const [running, setRunning] = useState<TestSuite | null>(null)
+  const [archiving, setArchiving] = useState<TestSuite | null>(null)
   const [deleting, setDeleting] = useState<TestSuite | null>(null)
+  const show = useTabParam('show', ['active', 'archived'] as const)
+  const canDelete = usePermission('suite.delete')
 
   const suites = useQuery({
-    queryKey: testingKeys.suites(projectId ?? ''),
-    queryFn: () => testingApi.suites(projectId!),
+    queryKey: show === 'archived' ? testingKeys.archivedSuites(projectId ?? '') : testingKeys.suites(projectId ?? ''),
+    queryFn: () => testingApi.suites(projectId!, show === 'archived'),
     enabled: Boolean(projectId),
     // Scheduled runs start in the background: keep the last results fresh.
-    refetchInterval: 5000,
+    refetchInterval: show === 'archived' ? false : 5000,
   })
   const environments = useQuery({
     queryKey: testingKeys.environments(projectId ?? ''),
     queryFn: () => testingApi.environments(projectId!),
     enabled: Boolean(projectId),
   })
+  const refresh = () => void queryClient.invalidateQueries({ queryKey: testingKeys.suites(projectId!) })
+  const archive = useMutation({
+    mutationFn: (suite: TestSuite) => testingApi.archiveSuite(suite.id),
+    onSuccess: (_, suite) => { refresh(); toast({ title: `Archived ${suite.name}`, tone: 'success' }); setArchiving(null) },
+    onError: error => toast({ title: 'Not archived', description: apiService.errorMessage(error), tone: 'danger' }),
+  })
+  const restore = useMutation({
+    mutationFn: (suite: TestSuite) => testingApi.restoreSuite(suite.id),
+    onSuccess: (_, suite) => { refresh(); toast({ title: `Restored ${suite.name}`, tone: 'success' }) },
+    onError: error => toast({ title: 'Not restored', description: apiService.errorMessage(error), tone: 'danger' }),
+  })
   const remove = useMutation({
     mutationFn: (suite: TestSuite) => testingApi.deleteSuite(suite.id),
-    onSuccess: (_, suite) => {
-      void queryClient.invalidateQueries({ queryKey: testingKeys.suites(projectId!) })
-      toast({ title: `Deleted ${suite.name}`, tone: 'success' })
-      setDeleting(null)
-    },
+    onSuccess: (_, suite) => { refresh(); toast({ title: `Deleted ${suite.name} permanently`, tone: 'success' }); setDeleting(null) },
     onError: error => toast({ title: 'Not deleted', description: apiService.errorMessage(error), tone: 'danger' }),
   })
 
@@ -67,14 +77,37 @@ export default function SuitesPage() {
         <p className="text-[13px] text-fg-muted">A suite is a test type, a target in the repository, an environment and an optional schedule.</p>
         {canCreate && <Button variant="primary" icon={<Plus size={14} />} onClick={() => setEditing('new')}>New suite</Button>}
       </div>
+      <Tabs param="show" label="Suites shown" items={[{ to: 'active', label: 'Active' }, { to: 'archived', label: 'Archived' }]} />
 
       <Card>
         {suites.isPending ? <div className="space-y-2 p-4"><Skeleton className="h-10" /><Skeleton className="h-10" /></div>
           : suites.isError ? <div className="p-4"><ErrorState title="Could not load the suites">{apiService.errorMessage(suites.error)}</ErrorState></div>
-            : suites.data.length === 0 ? (
-              <EmptyState icon={Layers} title="No suites yet">
-                Create a suite for each kind of test you run: smoke, regression, API, UI, mobile or performance.
-              </EmptyState>
+            : suites.data.length === 0 ? (show === 'archived'
+              ? <EmptyState icon={Archive} title="No archived suites">Archived suites keep their runs and reports and can be restored.</EmptyState>
+              : (
+                <EmptyState icon={Layers} title="No suites yet">
+                  Create a suite for each kind of test you run: smoke, regression, API, UI, mobile or performance.
+                </EmptyState>
+              )
+            ) : show === 'archived' ? (
+              <ul className="divide-y divide-line" aria-label="Archived suites">
+                {suites.data.map(suite => (
+                  <li key={suite.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-[13px]">
+                    <div className="min-w-0 flex-1">
+                      <span className="font-semibold text-fg">{suite.name}</span>
+                      <p className="text-xs text-fg-muted">Archived {suite.archived_at ? new Date(`${suite.archived_at}Z`).toLocaleString() : ''}</p>
+                    </div>
+                    {mayManage(suite) && (
+                      <Button size="sm" icon={<ArchiveRestore size={13} />} loading={restore.isPending && restore.variables?.id === suite.id}
+                        onClick={() => restore.mutate(suite)} aria-label={`Restore ${suite.name}`}>Restore</Button>
+                    )}
+                    {canDelete && (
+                      <Button size="sm" variant="danger" icon={<Trash2 size={13} />} onClick={() => setDeleting(suite)}
+                        aria-label={`Delete ${suite.name} permanently`}>Delete permanently</Button>
+                    )}
+                  </li>
+                ))}
+              </ul>
             ) : (
               <ul className="divide-y divide-line" aria-label="Suites">
                 {suites.data.map(suite => (
@@ -105,7 +138,7 @@ export default function SuitesPage() {
                     {mayManage(suite) && (
                       <>
                         <IconButton size="sm" label={`Edit ${suite.name}`} icon={<Pencil size={13} />} onClick={() => setEditing(suite)} />
-                        <IconButton size="sm" label={`Delete ${suite.name}`} icon={<Trash2 size={13} />} onClick={() => setDeleting(suite)} />
+                        <IconButton size="sm" label={`Archive ${suite.name}`} icon={<Archive size={13} />} onClick={() => setArchiving(suite)} />
                       </>
                     )}
                   </li>
@@ -120,11 +153,20 @@ export default function SuitesPage() {
       )}
       {running && <RunDialog open onOpenChange={open => { if (!open) setRunning(null) }} initialSuiteId={running.id} />}
       <ConfirmDialog
+        open={archiving !== null}
+        onOpenChange={open => { if (!open) setArchiving(null) }}
+        title={`Archive ${archiving?.name ?? 'suite'}?`}
+        description="Its runs and reports stay. It leaves this list and its schedule stops; you can restore it from Archived."
+        confirmLabel="Archive suite"
+        loading={archive.isPending}
+        onConfirm={() => archiving && archive.mutate(archiving)}
+      />
+      <ConfirmDialog
         open={deleting !== null}
         onOpenChange={open => { if (!open) setDeleting(null) }}
-        title={`Delete ${deleting?.name ?? 'suite'}?`}
-        description="The suite and its runs are removed. The tests in the repository stay."
-        confirmLabel="Delete suite"
+        title={`Delete ${deleting?.name ?? 'suite'} permanently?`}
+        description="The suite and all its runs and reports are removed for good. The tests in the repository stay."
+        confirmLabel="Delete permanently"
         destructive
         loading={remove.isPending}
         onConfirm={() => deleting && remove.mutate(deleting)}

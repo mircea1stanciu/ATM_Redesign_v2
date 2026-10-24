@@ -23,9 +23,12 @@ const STATUS_LETTER: Record<string, string> = { added: 'A', modified: 'M', delet
 export default function ChangedTestsPanel({
   projectId,
   detection,
+  environmentId = null,
 }: {
   projectId: string
   detection: FrameworkDetection | null
+  /** The project environment the changed tests run with (phase 17). */
+  environmentId?: number | null
 }) {
   const createBrunoSubsetRun = useAppStore(s => s.createBrunoSubsetRun)
   const createFrameworkRun = useAppStore(s => s.createFrameworkRun)
@@ -101,7 +104,7 @@ export default function ChangedTestsPanel({
   const runTarget = async (target: { targetId: string; label: string }) => {
     setStarting(target.targetId)
     try {
-      await createFrameworkRun({ target: target.targetId, label: `Changed · ${target.label}`, extraArgs: '' })
+      await createFrameworkRun({ target: target.targetId, label: `Changed · ${target.label}`, extraArgs: '', environmentId })
     } finally {
       setStarting(null)
     }

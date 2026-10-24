@@ -14,14 +14,22 @@ export interface SuitePayload {
 export interface EnvironmentPayload {
   name: string
   variables: Record<string, string>
+  /** Secret variables: a value sets one, '' removes it, names left out keep their value (phase 17). */
+  secrets?: Record<string, string>
   bruno_environment?: string | null
 }
 
 /** Suites, environments and suite runs (backend app/modules/testing/suites_router.py). */
 export const testingApi = {
-  async suites(projectId: string): Promise<TestSuite[]> {
-    const suites = (await api.get<TestSuite[]>(`/suites/projects/${projectId}`)).data
+  async suites(projectId: string, archived = false): Promise<TestSuite[]> {
+    const suites = (await api.get<TestSuite[]>(`/suites/projects/${projectId}`, { params: archived ? { archived: true } : {} })).data
     return suites.filter(suite => !suite.id.startsWith('allure-suite-'))
+  },
+  async archiveSuite(suiteId: string): Promise<TestSuite> {
+    return (await api.post(`/suites/${suiteId}/archive`)).data
+  },
+  async restoreSuite(suiteId: string): Promise<TestSuite> {
+    return (await api.post(`/suites/${suiteId}/restore`)).data
   },
   async createSuite(projectId: string, payload: SuitePayload & { name: string }): Promise<TestSuite> {
     return (await api.post(`/suites/projects/${projectId}/suites`, payload)).data
@@ -29,6 +37,7 @@ export const testingApi = {
   async updateSuite(suiteId: string, payload: SuitePayload): Promise<TestSuite> {
     return (await api.patch(`/suites/${suiteId}`, payload)).data
   },
+  /** Permanently: an archived suite and its runs (Leads and Super Admins). */
   async deleteSuite(suiteId: string): Promise<{ deleted_runs: number }> {
     return (await api.delete(`/suites/${suiteId}`)).data
   },
@@ -52,6 +61,7 @@ export const testingApi = {
 
 export const testingKeys = {
   suites: (projectId: string) => ['testing', projectId, 'suites'] as const,
+  archivedSuites: (projectId: string) => ['testing', projectId, 'suites', 'archived'] as const,
   environments: (projectId: string) => ['testing', projectId, 'environments'] as const,
   frameworks: (projectId: string) => ['workspace', projectId, 'frameworks'] as const,
 }

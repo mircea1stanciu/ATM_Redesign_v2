@@ -5,7 +5,7 @@ import { useAppStore } from '@/store/useAppStore'
 import { apiService } from '@/services/api'
 import { usePermission } from '@/hooks/usePermission'
 import {
-  Button, Card, ConfirmDialog, Dialog, EmptyState, ErrorState, Hint, IconButton, Input, Skeleton, useToast,
+  Button, Card, ConfirmDialog, Dialog, EmptyState, ErrorState, IconButton, Input, Skeleton, useToast,
 } from '@/ui'
 import type { TestEnvironment } from '@/types/domain'
 import { testingApi, testingKeys } from './api'
@@ -26,11 +26,15 @@ function EnvironmentDialog({ open, onOpenChange, projectId, environment }: {
     const entries = Object.entries(environment?.variables ?? { BASE_URL: '' })
     return entries.map(([key, value]) => ({ key, value }))
   })
+  // Secrets (phase 17): saved values are never sent back; '' marks one to remove, a value replaces it.
+  const [secretChanges, setSecretChanges] = useState<Record<string, string>>({})
+  const [newSecrets, setNewSecrets] = useState<Row[]>([])
   const save = useMutation({
     mutationFn: () => {
       const payload = {
         name: name.trim(),
         variables: Object.fromEntries(rows.filter(r => r.key.trim()).map(r => [r.key.trim(), r.value])),
+        secrets: { ...secretChanges, ...Object.fromEntries(newSecrets.filter(r => r.key.trim() && r.value).map(r => [r.key.trim(), r.value])) },
         bruno_environment: bruno.trim() || null,
       }
       return environment
@@ -68,7 +72,36 @@ function EnvironmentDialog({ open, onOpenChange, projectId, environment }: {
           ))}
           <Button size="sm" icon={<Plus size={13} />} onClick={() => setRows(list => [...list, { key: '', value: '' }])}>Add variable</Button>
         </fieldset>
-        <Hint id="environment-secrets">Everyone in the project sees these values: keep passwords and tokens in your runner's own secret store.</Hint>
+        <p className="text-xs text-fg-muted">Everyone in the project sees the variables above. Put passwords and tokens in secret variables.</p>
+        <fieldset className="space-y-2">
+          <legend className="mb-1 text-xs font-medium text-fg-muted">Secret variables (encrypted, never shown again, hidden in run logs)</legend>
+          {(environment?.secret_names ?? []).map(secret => {
+            const removed = secretChanges[secret] === ''
+            return (
+              <div key={secret} className="flex items-center gap-2">
+                <span className={`w-40 font-mono text-xs ${removed ? 'text-fg-muted line-through' : 'text-fg'}`}>{secret}</span>
+                <input type="password" aria-label={`New value for ${secret}`} disabled={removed} value={removed ? '' : secretChanges[secret] ?? ''}
+                  onChange={e => setSecretChanges(c => ({ ...c, [secret]: e.target.value }))} placeholder="•••••• (unchanged)"
+                  className="h-9 min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 text-[13px] text-fg disabled:opacity-50" />
+                <IconButton size="sm" label={removed ? `Keep ${secret}` : `Remove ${secret}`} icon={<X size={13} />}
+                  onClick={() => setSecretChanges(c => { const next = { ...c }; if (removed) delete next[secret]; else next[secret] = ''; return next })} />
+              </div>
+            )
+          })}
+          {newSecrets.map((row, index) => (
+            <div key={index} className="flex gap-2">
+              <input aria-label={`Secret ${index + 1} name`} value={row.key} placeholder="API_TOKEN"
+                onChange={e => setNewSecrets(list => list.map((r, i) => i === index ? { ...r, key: e.target.value } : r))}
+                className="h-9 w-40 rounded-lg border border-line bg-surface px-2 font-mono text-xs text-fg" />
+              <input type="password" aria-label={`Secret ${index + 1} value`} value={row.value}
+                onChange={e => setNewSecrets(list => list.map((r, i) => i === index ? { ...r, value: e.target.value } : r))}
+                className="h-9 min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 text-[13px] text-fg" />
+              <IconButton size="sm" label={`Remove new secret ${index + 1}`} icon={<X size={13} />}
+                onClick={() => setNewSecrets(list => list.filter((_, i) => i !== index))} />
+            </div>
+          ))}
+          <Button size="sm" icon={<Plus size={13} />} onClick={() => setNewSecrets(list => [...list, { key: '', value: '' }])}>Add secret</Button>
+        </fieldset>
         <Input label="Bruno environment (optional)" value={bruno} onChange={e => setBruno(e.target.value)} placeholder="uat"
           help="For Bruno collections: the name of the environment file to use." />
         {save.isError && <ErrorState title="Not saved">{apiService.errorMessage(save.error)}</ErrorState>}
@@ -117,7 +150,7 @@ export default function EnvironmentsPage() {
                 <div className="min-w-0 flex-1">
                   <p className="font-semibold text-fg">{environment.name}</p>
                   <p className="mt-0.5 truncate font-mono text-xs text-fg-muted">
-                    {Object.entries(environment.variables).map(([k, v]) => `${k}=${v}`).join('  ') || 'No variables'}
+                    {[...Object.entries(environment.variables).map(([k, v]) => `${k}=${v}`), ...(environment.secret_names ?? []).map(k => `${k}=••••`)].join('  ') || 'No variables'}
                   </p>
                 </div>
                 {canManage && (
