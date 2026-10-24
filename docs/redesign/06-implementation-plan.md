@@ -376,6 +376,29 @@ They touch different modules, so their PRs do not conflict (see section 6.4).
   - AI review suggestions.
 - **UI tests:** against a mocked GitHub. A Senior approves a PR, a User sees no Approve button, and a comment on a
   line is sent with the right position.
+- **Decided while building phase 12:**
+  - GitHub stays the source of truth: lists, files, comments, reviews and checks are read live with the signed-in
+    user's own GitHub token for the project (so a Viewer needs a token too). ATM only records the pull requests opened
+    from ATM (`pull_requests`: who opened them) and the reviews submitted through ATM (`pr_reviews`: who, which
+    event, how many line comments and how many came from the AI), migration `0009`.
+  - **Waiting for me:** open pull requests where my GitHub login is a requested reviewer, or, for pull requests
+    opened from ATM, where I am one of its reviewers (the project's Seniors and lead, and the author's lead, as in
+    phase 11) and have not reviewed it in ATM yet. **All open:** every open pull request of my projects.
+  - **Line comments** use GitHub's `line` and `side` (RIGHT for the new version, LEFT for removed lines), checked
+    against the diff before sending: GitHub only accepts comments on lines shown in the diff. Comments collect as
+    "pending" and go out together with the review (Comment, Approve or Request changes).
+  - The diff is drawn from GitHub's patch (side by side or inline, the same layout setting as the workspace diff)
+    rather than with the CodeMirror merge view, because comments can only be placed on lines of the patch.
+  - Users and Trainees (`pr.comment`) write line comments and Comment reviews; Approve and Request changes need
+    `pr.review` (Super Admin, Lead, Senior). Approving one's own pull request is disabled (GitHub refuses it).
+  - **AI review** (`pr.review` and `ai.use`): the user's AI assistant gets the numbered diff and answers with up to 10
+    line comments as JSON; suggestions not on a line of the diff are dropped. The reviewer ticks which ones to add to
+    the review; nothing is posted until the review is submitted.
+  - The PR author is notified in ATM (new kind "Reviews of my pull requests") when the pull request was opened from
+    ATM. Review requests from phase 11 now open the pull request in ATM.
+- **Left for later phases:** replying to a comment thread, suggested changes (code suggestions), merging from ATM,
+  the "2 waiting for you" badge on the side bar, and notifying authors of pull requests opened outside ATM (needs a
+  GitHub login ↔ ATM user mapping).
 
 ### Phase 13: `feature/phase_13_learning_paths`
 - **Goal:** guide manual testers.

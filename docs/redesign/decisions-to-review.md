@@ -93,3 +93,15 @@ notes of each phase in [06-implementation-plan.md](06-implementation-plan.md).
 | Setting a project's Teams channel needs `deployment.configure` (Super Admin, Lead) | `project.configure` (Seniors too) | `update_project` in `projects/router.py` |
 | An unknown service answers 401 like a bad signature | 404 "unknown service" (easier to set up, reveals names) | `verify` |
 
+## Phase 12: code review
+
+| Decision | Alternative | To reverse |
+|---|---|---|
+| Pull requests are read live from GitHub with each person's own token (Viewers need one too) | A shared read token or a cached copy in ATM | `reviews/github.py` (`repo_for`) |
+| "Waiting for me" = requested reviewer on GitHub, or a reviewer in ATM of a PR opened from ATM that I have not reviewed | Only GitHub's requested reviewers | `_waiting` in `reviews/router.py` |
+| The diff is drawn from GitHub's patch, not with the workspace's CodeMirror merge view | Fetch both file versions and use the merge view with a comment gutter | `PatchView.tsx` |
+| Line comments are pending until the review is submitted (one GitHub review) | Post each comment at once | `PullRequestPage.tsx`, `submit_review` |
+| Users and Trainees may write line comments and "Comment" reviews | Conversation comments only | `submit_review` (event COMMENT needs `pr.comment`) |
+| AI review returns at most 10 line comments; off-diff ones are dropped; the reviewer picks | Post AI comments directly; a summary instead of line comments | `ai_review`, `MAX_AI_SUGGESTIONS` |
+| Only authors of PRs opened from ATM are notified of reviews | Map GitHub logins to ATM users for all PRs | `_notify_author` |
+
