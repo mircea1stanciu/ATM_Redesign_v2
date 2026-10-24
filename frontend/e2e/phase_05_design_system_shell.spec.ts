@@ -42,7 +42,7 @@ for (const [role, links] of Object.entries(NAVIGATION) as Array<[Role, string[]]
 test('every area and tab loads', async ({ page }) => {
   await login(page, 'super_admin')
   const screens: Array<[string, string]> = [
-    ['/work/jira', 'Work'], ['/work/confluence', 'Work'], ['/work/confluence-analyzer', 'Work'],
+    ['/work/inbox', 'Work'], ['/work/board', 'Work'], ['/work/jira', 'Work'], ['/work/confluence', 'Work'], ['/work/confluence-analyzer', 'Work'],
     ['/work/workspace', 'Work'], ['/work/repository', 'Work'],
     ['/tests/runs', 'Tests'], ['/tests/project', 'Tests'], ['/tests/libraries', 'Tests'],
     ['/reports/overview', 'Reports'], ['/reports/analytics', 'Reports'],

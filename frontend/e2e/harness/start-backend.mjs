@@ -37,6 +37,9 @@ mkdirSync(join(seedTree, 'scripts'), { recursive: true })
 writeFileSync(join(seedTree, 'README.md'), '# E2E sample\n')
 writeFileSync(join(seedTree, 'scripts', 'hello.sh'), '#!/usr/bin/env bash\necho "hello from ATM e2e"\n')
 chmodSync(join(seedTree, 'scripts', 'hello.sh'), 0o755)
+// A test file that shares words with the Jira story E2E-1, so "Start work" has something to suggest.
+mkdirSync(join(seedTree, 'tests', 'ui'), { recursive: true })
+writeFileSync(join(seedTree, 'tests', 'ui', 'login_error.spec.ts'), "// Login error message\n")
 git(['init', '--initial-branch=main'], seedTree)
 git(['add', '.'], seedTree)
 git(['commit', '-m', 'Initial sample'], seedTree)
@@ -44,6 +47,10 @@ git(['push', bareRepo, 'main'], seedTree)
 const checkout = join(workDir, 'checkout')
 git(['clone', bareRepo, checkout])
 git(['remote', 'set-url', 'origin', repoUrl], checkout)
+// The senior's own checkout: the Work tests create branches there without touching the shared one.
+const seniorCheckout = join(workDir, 'checkout-senior')
+git(['clone', bareRepo, seniorCheckout])
+git(['remote', 'set-url', 'origin', repoUrl], seniorCheckout)
 
 const env = {
   ...process.env,
@@ -54,6 +61,8 @@ const env = {
   PYTHONUNBUFFERED: '1',
   E2E_REPO_URL: repoUrl,
   E2E_CHECKOUT_DIR: checkout,
+  E2E_SENIOR_CHECKOUT_DIR: seniorCheckout,
+  E2E_FAKE_URL: `http://127.0.0.1:${fakePort}`,
 }
 
 mkdirSync(dirname(sessionsFile), { recursive: true })
