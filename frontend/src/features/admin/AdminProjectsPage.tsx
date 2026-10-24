@@ -7,6 +7,7 @@ import { apiService } from '@/services/api'
 import { usePermission } from '@/hooks/usePermission'
 import { Badge, Button, Card, Checkbox, ConfirmDialog, Dialog, EmptyState, IconButton, Input, Textarea, useToast } from '@/ui'
 import type { Project } from '@/types/domain'
+import ServiceAccountSection from './ServiceAccountSection'
 
 /** Admin › Projects: create and delete projects, and choose each project's Jira project and Confluence space. */
 export default function AdminProjectsPage() {
@@ -20,6 +21,7 @@ export default function AdminProjectsPage() {
   const error = useAppStore(s => s.error)
   const canDelete = usePermission('project.delete')
   const canConfigureDeployments = usePermission('deployment.configure')
+  const canSetServiceAccount = usePermission('project.service_account')
   const toast = useToast()
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
@@ -191,6 +193,7 @@ export default function AdminProjectsPage() {
               )}
             </div>
           )}
+          {canSetServiceAccount && editing && <ServiceAccountSection projectId={editing.id} />}
           {saveError && <p role="alert" className="text-[13px] text-danger">{saveError}</p>}
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
