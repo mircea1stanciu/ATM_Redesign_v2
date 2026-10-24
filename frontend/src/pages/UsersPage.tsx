@@ -5,7 +5,10 @@ import {
   CheckCircle2, Edit2, Loader2, Search, Shield, UserCheck,
   UserCog, Users, X, Eye, AlertCircle, Trash2, Filter, Plus, GraduationCap,
 } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiService } from '@/services/api'
+import { queryKeys } from '@/lib/queryKeys'
+import { ConfirmDialog, ErrorState, useToast } from '@/ui'
 import type { UserUpdatePayload } from '@/services/api'
 import { useAppStore } from '@/store/useAppStore'
 import { usePermission } from '@/hooks/usePermission'
@@ -64,9 +67,14 @@ export default function UsersPage() {
   const currentUser = useAppStore(s => s.user)
   const projects = useAppStore(s => s.projects)
   const canManage = usePermission('user.manage')
+  const toast = useToast()
   const canAssignProjects = usePermission('project.members.manage')
-  const [users, setUsers] = useState<UserResponse[]>([])
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
+  const usersQuery = useQuery({ queryKey: queryKeys.users, queryFn: () => apiService.listUsers() })
+  const users = usersQuery.data ?? []
+  const loading = usersQuery.isPending
+  const setUsers = (update: (prev: UserResponse[]) => UserResponse[]) =>
+    queryClient.setQueryData<UserResponse[]>(queryKeys.users, prev => update(prev ?? []))
   const [search, setSearch] = useState(searchParams.get('q') || '')
   const [filterRole, setFilterRole] = useState<UserRole | ''>(initialRole)
   const [filterUnassigned, setFilterUnassigned] = useState(
@@ -104,19 +112,8 @@ export default function UsersPage() {
 
   const canDeleteUser = (u: UserResponse) => u.id !== currentUser?.id && canEditUser(u)
 
-  const fetchUsers = async () => {
-    setLoading(true)
-    try {
-      const data = await apiService.listUsers()
-      setUsers(data)
-    } catch (e) {
-      setError(apiService.errorMessage(e))
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => { void fetchUsers() }, [])
+  const fetchUsers = () => queryClient.invalidateQueries({ queryKey: queryKeys.users })
+  const [confirmDelete, setConfirmDelete] = useState<UserResponse | null>(null)
 
   useEffect(() => {
     const next = new URLSearchParams()
@@ -189,20 +186,17 @@ export default function UsersPage() {
 
   const handleDelete = async (u: UserResponse) => {
     if (!canDeleteUser(u)) return
-
-    const displayName = u.full_name || u.email
-    const confirmed = window.confirm(`Delete user "${displayName}"? This action cannot be undone.`)
-    if (!confirmed) return
-
     setDeletingId(u.id)
     setError(null)
     try {
       await apiService.deleteUser(u.id)
       setUsers(prev => prev.filter(item => item.id !== u.id))
+      toast({ title: `Deleted ${u.full_name || u.email}`, tone: 'success' })
     } catch (e) {
       setError(apiService.errorMessage(e))
     } finally {
       setDeletingId(null)
+      setConfirmDelete(null)
     }
   }
 
@@ -486,8 +480,8 @@ export default function UsersPage() {
       {/* Header */}
       <div className="flex shrink-0 items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white">User Management</h1>
-          <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">Roles, scope tags, leads and projects</p>
+          <h2 className="section-title">Users</h2>
+          <p className="mt-0.5 text-[13px] text-fg-muted">Roles, scope tags, leads and projects</p>
         </div>
         <div className="flex items-center gap-3">
           {canManage && (
@@ -507,6 +501,10 @@ export default function UsersPage() {
           </div>
         </div>
       </div>
+
+      {usersQuery.isError && (
+        <ErrorState title="Could not load the users">{apiService.errorMessage(usersQuery.error)}</ErrorState>
+      )}
 
       {error && (
         <div className="flex shrink-0 items-center gap-2 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-500/20 px-3 py-2.5 text-sm text-red-700 dark:text-red-300">
@@ -537,6 +535,8 @@ export default function UsersPage() {
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               className="form-input !pl-8 !py-2"
+              data-list-search
+              aria-label="Search users"
               placeholder="Search name, email, role, assigned lead, status…"
               value={search}
               onChange={e => setSearch(e.target.value)}
@@ -721,7 +721,7 @@ export default function UsersPage() {
 
                     {canDeleteUser(u) && (
                       <button
-                        onClick={() => void handleDelete(u)}
+                        onClick={() => setConfirmDelete(u)}
                         disabled={deletingId === u.id}
                         className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-red-200 dark:border-red-800 bg-white dark:bg-gray-700 px-2.5 py-1.5 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
                         title="Delete user"
@@ -847,6 +847,16 @@ export default function UsersPage() {
           </div>
         )}
       </AnimatePresence>
+      <ConfirmDialog
+        open={confirmDelete !== null}
+        onOpenChange={open => { if (!open) setConfirmDelete(null) }}
+        title={`Delete ${confirmDelete?.full_name || confirmDelete?.email || 'user'}?`}
+        description="The account and its personal settings are removed. This cannot be undone."
+        confirmLabel="Delete user"
+        destructive
+        loading={deletingId !== null}
+        onConfirm={() => { if (confirmDelete) void handleDelete(confirmDelete) }}
+      />
     </div>
   )
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, NavLink } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import {
   BookOpen,
   CheckCircle2,
@@ -30,33 +30,6 @@ interface ConfluenceSettingsView {
 }
 
 const CONFLUENCE_RELEASE_CONFIG_SPLIT_STORAGE_KEY = 'projects.confluence.releaseConfig.leftPanelWidth'
-
-function ConfluenceSubnav() {
-  return (
-    <div className="mb-4 flex items-center gap-2 overflow-x-auto rounded-xl border border-gray-200/80 bg-white p-2 dark:border-gray-700/70 dark:bg-gray-800/90">
-      <NavLink
-        to="/jira-confluence/confluence/configuration"
-        className={({ isActive }) => `rounded-lg px-3 py-1.5 text-sm font-medium transition ${
-          isActive
-            ? 'bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300'
-            : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700/60'
-        }`}
-      >
-        Release Page Configuration
-      </NavLink>
-      <NavLink
-        to="/jira-confluence/confluence/analyzer"
-        className={({ isActive }) => `rounded-lg px-3 py-1.5 text-sm font-medium transition ${
-          isActive
-            ? 'bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300'
-            : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700/60'
-        }`}
-      >
-        Release Management Analyzer
-      </NavLink>
-    </div>
-  )
-}
 
 export default function ConfluenceReleaseManagementTab() {
   const user = useAppStore(s => s.user)
@@ -332,7 +305,6 @@ export default function ConfluenceReleaseManagementTab() {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <ConfluenceSubnav />
 
       {settingsLoading ? (
         <div className="flex h-full items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400">

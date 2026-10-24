@@ -1,0 +1,84 @@
+import {
+  BarChart3, ClipboardList, GitPullRequest, GraduationCap, Home, PlayCircle, Rocket, Settings, Shield,
+} from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import { hasPermission } from '@/hooks/usePermission'
+import type { UserResponse } from '@/types/domain'
+
+export interface Area {
+  id: string
+  label: string
+  to: string
+  icon: LucideIcon
+  /** The area is shown when the user has any of these; none = every signed-in user. */
+  permissions?: string[]
+  /** Key pressed after `g` to jump here. */
+  shortcut?: string
+  description: string
+}
+
+/** The seven areas (docs/redesign/05-design.md, sections 5.3 and 5.4). */
+export const AREAS: Area[] = [
+  { id: 'home', label: 'Home', to: '/', icon: Home, shortcut: 'h', description: 'Your start page' },
+  { id: 'work', label: 'Work', to: '/work', icon: ClipboardList, permissions: ['work.view'], shortcut: 'w',
+    description: 'Jira stories, Confluence pages, the workspace and the repository' },
+  { id: 'tests', label: 'Tests', to: '/tests', icon: PlayCircle, permissions: ['run.view'], shortcut: 't',
+    description: 'Runs, the project overview and libraries' },
+  { id: 'reports', label: 'Reports', to: '/reports', icon: BarChart3, permissions: ['report.view'], shortcut: 'r',
+    description: 'Results, trends and Allure reports' },
+  { id: 'reviews', label: 'Reviews', to: '/reviews', icon: GitPullRequest, permissions: ['pr.view'], shortcut: 'v',
+    description: 'Pull requests waiting for review' },
+  { id: 'deployments', label: 'Deploys', to: '/deployments', icon: Rocket, permissions: ['deployment.view'],
+    shortcut: 'd', description: 'Deployments to check' },
+  { id: 'learning', label: 'Learning', to: '/learning', icon: GraduationCap, permissions: ['learning.use'],
+    shortcut: 'l', description: 'Paths, lessons and practice' },
+]
+
+export const SECONDARY_AREAS: Area[] = [
+  { id: 'admin', label: 'Admin', to: '/admin', icon: Shield, permissions: ['user.view', 'project.create'],
+    description: 'Users and projects' },
+  { id: 'settings', label: 'Settings', to: '/settings', icon: Settings,
+    description: 'Profile, connections and preferences' },
+]
+
+export function canOpen(user: UserResponse | null | undefined, permissions?: string[]): boolean {
+  return !permissions || permissions.some(permission => hasPermission(user, permission))
+}
+
+export function visibleAreas(user: UserResponse | null | undefined, areas: Area[]): Area[] {
+  return areas.filter(area => canOpen(user, area.permissions))
+}
+
+export interface AreaTab {
+  to: string
+  label: string
+  permissions?: string[]
+}
+
+/** The tabs of each area; every tab is a URL. Used by the area layouts and the command palette. */
+export const AREA_TABS: Record<string, AreaTab[]> = {
+  work: [
+    { to: '/work/jira', label: 'Jira' },
+    { to: '/work/confluence', label: 'Confluence releases' },
+    { to: '/work/confluence-analyzer', label: 'Release analyzer' },
+    { to: '/work/workspace', label: 'Workspace' },
+    { to: '/work/repository', label: 'Repository' },
+  ],
+  tests: [
+    { to: '/tests/runs', label: 'Runs' },
+    { to: '/tests/project', label: 'Project' },
+    { to: '/tests/libraries', label: 'Libraries' },
+  ],
+  reports: [
+    { to: '/reports/overview', label: 'Overview' },
+    { to: '/reports/analytics', label: 'Analytics' },
+  ],
+  admin: [
+    { to: '/admin/users', label: 'Users', permissions: ['user.view'] },
+    { to: '/admin/projects', label: 'Projects', permissions: ['project.create'] },
+  ],
+}
+
+export function visibleTabs(user: UserResponse | null | undefined, areaId: string): AreaTab[] {
+  return (AREA_TABS[areaId] ?? []).filter(tab => canOpen(user, tab.permissions))
+}

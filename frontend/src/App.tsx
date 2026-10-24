@@ -1,16 +1,17 @@
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { AnimatePresence } from 'framer-motion'
 import { useAppStore } from '@/store/useAppStore'
 import { apiService, CONNECTION_STATUS_CHANGED_EVENT } from '@/services/api'
-import { ROUTE_PERMISSIONS } from '@/types/domain'
-import { hasPermission } from '@/hooks/usePermission'
-import AppLayout from '@/components/layout/AppLayout'
+import { canOpen } from '@/app/navigation'
+import AppShell from '@/app/shell/AppShell'
+import { Button, Skeleton } from '@/ui'
 import LoginPage from '@/pages/LoginPage'
-import DashboardPage from '@/pages/DashboardPage'
+import HomePage from '@/features/home/HomePage'
+import {
+  AdminIndex, AdminLayout, DeploymentsPage, ReportsLayout, ReviewsPage, TestsLayout, WorkLayout,
+} from '@/features/areas/areas'
 
-const JiraAndConfluencePage = lazy(() => import('@/pages/JiraAndConfluencePage'))
-const ProjectsLayout = lazy(() => import('@/pages/projects/ProjectsLayout'))
+const DashboardPage = lazy(() => import('@/pages/DashboardPage'))
 const OverviewTab = lazy(() => import('@/pages/projects/OverviewTab'))
 const ConfluenceReleaseManagementTab = lazy(() => import('@/pages/projects/ConfluenceReleaseManagementTab'))
 const ConfluenceReleaseManagementAnalyzerTab = lazy(() => import('@/pages/projects/ConfluenceReleaseManagementAnalyzerTab'))
@@ -23,6 +24,7 @@ const AnalyticsPage = lazy(() => import('@/pages/AnalyticsPage'))
 const UpskillingPage = lazy(() => import('@/pages/UpskillingPage'))
 const UsersPage = lazy(() => import('@/pages/UsersPage'))
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'))
+const AdminProjectsPage = lazy(() => import('@/features/admin/AdminProjectsPage'))
 
 const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000
 const INACTIVITY_WARNING_MS = 60 * 1000
@@ -35,7 +37,8 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
-function RoleGuard({ path, children }: { path: string; children: React.ReactNode }) {
+/** Opens the screen when the user has any of the permissions; otherwise goes Home. */
+function RequirePermission({ any, children }: { any: string[]; children: React.ReactNode }) {
   const user = useAppStore(s => s.user)
 
   useEffect(() => {
@@ -45,9 +48,44 @@ function RoleGuard({ path, children }: { path: string; children: React.ReactNode
   }, [user])
 
   if (!user) return <>{children}</>
-  const permission = ROUTE_PERMISSIONS[path]
-  if (permission && !hasPermission(user, permission)) return <Navigate to="/" replace />
+  if (!canOpen(user, any)) return <Navigate to="/" replace />
   return <>{children}</>
+}
+
+/** A moved screen: sends its old URL to the new one and keeps the query string (for example ?tab=assistant). */
+function Moved({ to }: { to: string }) {
+  const { search } = useLocation()
+  return <Navigate to={`${to}${search}`} replace />
+}
+
+const MOVED: Array<[string, string]> = [
+  ['projects', '/tests/project'],
+  ['projects/repository', '/work/repository'],
+  ['projects/ai', '/work/workspace'],
+  ['projects/runs', '/tests/runs'],
+  ['projects/library', '/tests/libraries'],
+  ['projects/analytics', '/reports/analytics'],
+  ['projects/requirements', '/work/jira'],
+  ['projects/confluence/*', '/work/confluence'],
+  ['jira-confluence', '/work/jira'],
+  ['jira-confluence/jira', '/work/jira'],
+  ['jira-confluence/confluence', '/work/confluence'],
+  ['jira-confluence/confluence/configuration', '/work/confluence'],
+  ['jira-confluence/confluence/analyzer', '/work/confluence-analyzer'],
+  ['jira-projects', '/work/jira'],
+  ['runs', '/tests/runs'],
+  ['analytics', '/reports/analytics'],
+  ['upskilling', '/learning'],
+  ['users', '/admin/users'],
+]
+
+function PageFallback() {
+  return (
+    <div className="space-y-3" aria-label="Loading">
+      <Skeleton className="h-8 w-48" />
+      <Skeleton className="h-40" />
+    </div>
+  )
 }
 
 function InitLoader({ children }: { children: React.ReactNode }) {
@@ -60,10 +98,8 @@ function InitLoader({ children }: { children: React.ReactNode }) {
     if (token) void loadInitialData()
   }, [token, loadInitialData])
 
-  // Registered once here (outside the animated/keyed <Routes> tree, which
-  // remounts AppLayout on every navigation) so connection status only
-  // refreshes on login (loadInitialData above) or when Settings reports a
-  // connection change — never merely from switching pages.
+  // Connection status refreshes on login (loadInitialData above) or when Settings reports a connection change,
+  // never merely from switching pages.
   useEffect(() => {
     const onConnectionChanged = (event: Event) => {
       const kind = (event as CustomEvent<{ kind?: 'github' | 'jira' | 'confluence' }>).detail?.kind
@@ -87,7 +123,6 @@ function LoginGuard() {
 }
 
 export default function App() {
-  const location = useLocation()
   const navigate = useNavigate()
   const token = useAppStore(s => s.token)
   const logout = useAppStore(s => s.logout)
@@ -195,70 +230,61 @@ export default function App() {
   return (
     <InitLoader>
       {showInactivityWarning && token && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/55 p-4">
-          <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Session expiring soon</h2>
-            <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50 p-4">
+          <div role="alertdialog" aria-labelledby="session-expiring" className="w-full max-w-md rounded-xl border border-line bg-surface p-6 shadow-float">
+            <h2 id="session-expiring" className="text-[15px] font-semibold text-fg">Session expiring soon</h2>
+            <p className="mt-2 text-[13px] text-fg-muted">
               You have been inactive. Your session will expire in {warningSecondsLeft}s.
             </p>
-            <div className="mt-5 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={forceLogoutToLogin}
-                className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
-              >
-                Logout now
-              </button>
-              <button
-                type="button"
-                onClick={() => setSessionRefreshKey(k => k + 1)}
-                className="rounded-md bg-yellow-600 px-4 py-2 text-sm font-medium text-white hover:bg-yellow-700"
-              >
-                Stay signed in
-              </button>
+            <div className="mt-5 flex justify-end gap-2">
+              <Button variant="ghost" onClick={forceLogoutToLogin}>Logout now</Button>
+              <Button variant="primary" onClick={() => setSessionRefreshKey(k => k + 1)}>Stay signed in</Button>
             </div>
           </div>
         </div>
       )}
-      <AnimatePresence mode="wait">
-        <Suspense fallback={<div className="p-6 text-sm text-gray-500">Loading…</div>}>
-        <Routes location={location} key={location.pathname}>
+      <Suspense fallback={<PageFallback />}>
+        <Routes>
           <Route path="/login" element={<LoginGuard />} />
-          <Route element={<AuthGuard><AppLayout /></AuthGuard>}>
-            <Route index element={<DashboardPage />} />
-            <Route path="projects" element={<RoleGuard path="/projects"><ProjectsLayout /></RoleGuard>}>
-              <Route index element={<OverviewTab />} />
-              <Route path="confluence/*" element={<Navigate to="/jira-confluence/confluence/configuration" replace />} />
-              <Route path="requirements" element={<Navigate to="/jira-confluence/jira" replace />} />
-              <Route path="repository" element={<RepositoryTab />} />
-              <Route path="ai" element={<AiImplementationTab />} />
-              <Route path="runs" element={<RunsPage />} />
-              <Route path="library" element={<LibraryTab />} />
-              <Route path="analytics" element={<AnalyticsPage />} />
-            </Route>
-            <Route path="jira-confluence" element={<RoleGuard path="/jira-confluence"><JiraAndConfluencePage /></RoleGuard>}>
+          <Route element={<AuthGuard><AppShell /></AuthGuard>}>
+            <Route index element={<HomePage />} />
+            <Route path="work" element={<RequirePermission any={['work.view']}><WorkLayout /></RequirePermission>}>
               <Route index element={<Navigate to="jira" replace />} />
               <Route path="jira" element={<RequirementsTab />} />
-              <Route path="confluence" element={<Navigate to="configuration" replace />} />
-              <Route path="confluence/configuration" element={<ConfluenceReleaseManagementTab />} />
-              <Route path="confluence/analyzer" element={<ConfluenceReleaseManagementAnalyzerTab />} />
+              <Route path="confluence" element={<ConfluenceReleaseManagementTab />} />
+              <Route path="confluence-analyzer" element={<ConfluenceReleaseManagementAnalyzerTab />} />
+              <Route path="workspace" element={<AiImplementationTab />} />
+              <Route path="repository" element={<RepositoryTab />} />
             </Route>
-            <Route path="upskilling" element={<RoleGuard path="/upskilling"><UpskillingPage /></RoleGuard>} />
+            <Route path="tests" element={<RequirePermission any={['run.view']}><TestsLayout /></RequirePermission>}>
+              <Route index element={<Navigate to="runs" replace />} />
+              <Route path="runs" element={<RunsPage />} />
+              <Route path="project" element={<OverviewTab />} />
+              <Route path="libraries" element={<LibraryTab />} />
+            </Route>
+            <Route path="reports" element={<RequirePermission any={['report.view']}><ReportsLayout /></RequirePermission>}>
+              <Route index element={<Navigate to="overview" replace />} />
+              <Route path="overview" element={<DashboardPage />} />
+              <Route path="analytics" element={<AnalyticsPage />} />
+            </Route>
+            <Route path="reviews" element={<RequirePermission any={['pr.view']}><ReviewsPage /></RequirePermission>} />
+            <Route path="deployments" element={<RequirePermission any={['deployment.view']}><DeploymentsPage /></RequirePermission>} />
+            <Route path="learning" element={<RequirePermission any={['learning.use']}><UpskillingPage /></RequirePermission>} />
             {/* Community is hidden until phase 13 decides whether Q&A stays inside Learning; /community now
                 falls through to Home. Its code stays in pages/CommunityPage.tsx and components/community/. */}
-            {/* Legacy route redirects into the unified Projects hub */}
-            <Route path="jira-projects" element={<Navigate to="/jira-confluence/jira" replace />} />
-            <Route path="runs" element={<Navigate to="/projects/runs" replace />} />
-            <Route path="analytics" element={<Navigate to="/projects/analytics" replace />} />
-            <Route path="users"     element={<RoleGuard path="/users"><UsersPage /></RoleGuard>} />
-            <Route path="settings"  element={<RoleGuard path="/settings"><SettingsPage /></RoleGuard>} />
-            <Route path="settings/:section" element={<RoleGuard path="/settings"><SettingsPage /></RoleGuard>} />
-            <Route path="settings/mcp/:mcp" element={<RoleGuard path="/settings"><SettingsPage /></RoleGuard>} />
+            <Route path="admin" element={<RequirePermission any={['user.view', 'project.create']}><AdminLayout /></RequirePermission>}>
+              <Route index element={<AdminIndex />} />
+              <Route path="users" element={<RequirePermission any={['user.view']}><UsersPage /></RequirePermission>} />
+              <Route path="projects" element={<RequirePermission any={['project.create']}><AdminProjectsPage /></RequirePermission>} />
+            </Route>
+            <Route path="settings" element={<SettingsPage />} />
+            <Route path="settings/:section" element={<SettingsPage />} />
+            <Route path="settings/mcp/:mcp" element={<SettingsPage />} />
+            {MOVED.map(([from, to]) => <Route key={from} path={from} element={<Moved to={to} />} />)}
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-        </Suspense>
-      </AnimatePresence>
+      </Suspense>
     </InitLoader>
   )
 }

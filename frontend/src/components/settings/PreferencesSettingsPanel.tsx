@@ -3,6 +3,7 @@ import {
   AlertCircle, CheckCircle2, Loader2, Palette, Zap, Bell
 } from 'lucide-react'
 import { useAppStore } from '@/store/useAppStore'
+import { useTheme } from '@/app/theme'
 import { apiService } from '@/services/api'
 
 export function PreferencesSettingsPanel() {
@@ -69,6 +70,7 @@ export function PreferencesSettingsPanel() {
     try {
       await apiService.updateTheme(newTheme)
       setTheme(newTheme)
+      if (newTheme === 'light' || newTheme === 'dark' || newTheme === 'system') useTheme.getState().setPreference(newTheme)
       setSuccess('Theme preference updated')
       setTimeout(() => setSuccess(null), 3000)
     } catch (err) {
