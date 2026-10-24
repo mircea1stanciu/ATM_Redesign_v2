@@ -403,6 +403,20 @@ def add_link(db: Session, item: WorkItem, target_type: str, target_ref: str, lab
     return link
 
 
+def link_pushed_files(db: Session, project_id: int, branch: str, paths: list[str]) -> int:
+    """The test files a push changed trace to the work item of the branch; returns how many were linked."""
+    item = db.query(WorkItem).filter(WorkItem.project_id == project_id, WorkItem.branch == branch).first()
+    if not item:
+        return 0
+    before = len(item.links)
+    for path in paths:
+        if _is_test_file(path):
+            add_link(db, item, "test_file", path)
+    db.commit()
+    db.refresh(item)
+    return len(item.links) - before
+
+
 def link_pull_request(db: Session, project_id: int, branch: str, url: str, title: str) -> Optional[WorkItem]:
     """A pull request opened from a work item's branch traces to the item and moves it to "in review"."""
     item = db.query(WorkItem).filter(WorkItem.project_id == project_id, WorkItem.branch == branch).first()

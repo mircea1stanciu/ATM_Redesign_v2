@@ -8,7 +8,8 @@ import { Button, Skeleton } from '@/ui'
 import LoginPage from '@/pages/LoginPage'
 import HomePage from '@/features/home/HomePage'
 import {
-  AdminIndex, AdminLayout, DeploymentsPage, ReportsLayout, ReviewsPage, TestsLayout, WorkLayout,
+  AdminIndex, AdminLayout, DeploymentsPage, ReportsLayout, RepositoryRedirect, ReviewsPage, ScriptsPage, TestsLayout,
+  WorkLayout,
 } from '@/features/areas/areas'
 
 const DashboardPage = lazy(() => import('@/pages/DashboardPage'))
@@ -16,9 +17,8 @@ const OverviewTab = lazy(() => import('@/pages/projects/OverviewTab'))
 const ConfluenceReleaseManagementTab = lazy(() => import('@/pages/projects/ConfluenceReleaseManagementTab'))
 const ConfluenceReleaseManagementAnalyzerTab = lazy(() => import('@/pages/projects/ConfluenceReleaseManagementAnalyzerTab'))
 const RequirementsTab = lazy(() => import('@/pages/projects/RequirementsTab'))
-const RepositoryTab = lazy(() => import('@/pages/projects/RepositoryTab'))
 const RunsPage = lazy(() => import('@/pages/RunsPage'))
-const AiImplementationTab = lazy(() => import('@/pages/projects/AiImplementationTab'))
+const WorkspacePage = lazy(() => import('@/features/workspace/WorkspacePage'))
 const LibraryTab = lazy(() => import('@/pages/projects/LibraryTab'))
 const AnalyticsPage = lazy(() => import('@/pages/AnalyticsPage'))
 const UpskillingPage = lazy(() => import('@/pages/UpskillingPage'))
@@ -57,12 +57,13 @@ function RequirePermission({ any, children }: { any: string[]; children: React.R
 /** A moved screen: sends its old URL to the new one and keeps the query string (for example ?tab=assistant). */
 function Moved({ to }: { to: string }) {
   const { search } = useLocation()
-  return <Navigate to={`${to}${search}`} replace />
+  const extra = search.replace(/^\?/, '')
+  return <Navigate to={extra ? `${to}${to.includes('?') ? '&' : '?'}${extra}` : to} replace />
 }
 
 const MOVED: Array<[string, string]> = [
   ['projects', '/tests/project'],
-  ['projects/repository', '/work/repository'],
+  ['projects/repository', '/work/workspace?view=three-panel'],
   ['projects/ai', '/work/workspace'],
   ['projects/runs', '/tests/runs'],
   ['projects/library', '/tests/libraries'],
@@ -257,13 +258,14 @@ export default function App() {
               <Route path="jira" element={<RequirementsTab />} />
               <Route path="confluence" element={<ConfluenceReleaseManagementTab />} />
               <Route path="confluence-analyzer" element={<ConfluenceReleaseManagementAnalyzerTab />} />
-              <Route path="workspace" element={<AiImplementationTab />} />
-              <Route path="repository" element={<RepositoryTab />} />
+              <Route path="workspace" element={<WorkspacePage />} />
+              <Route path="repository" element={<RepositoryRedirect />} />
             </Route>
             <Route path="tests" element={<RequirePermission any={['run.view']}><TestsLayout /></RequirePermission>}>
               <Route index element={<Navigate to="runs" replace />} />
               <Route path="runs" element={<RunsPage />} />
               <Route path="project" element={<OverviewTab />} />
+              <Route path="scripts" element={<ScriptsPage />} />
               <Route path="libraries" element={<LibraryTab />} />
             </Route>
             <Route path="reports" element={<RequirePermission any={['report.view']}><ReportsLayout /></RequirePermission>}>

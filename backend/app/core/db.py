@@ -1,11 +1,26 @@
 """The single database engine, session factory and declarative Base of the app."""
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from app.core.config import settings
 
-_connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
-engine = create_engine(settings.database_url, connect_args=_connect_args, pool_pre_ping=True)
+_SQLITE = settings.database_url.startswith("sqlite")
+# SQLite waits up to 30 s for another writer instead of failing at once with "database is locked".
+_connect_args = {"check_same_thread": False, "timeout": 30} if _SQLITE else {}
+# Requests keep their connection while they wait for GitHub, Jira or a test-framework scan, so the pool is larger than
+# SQLAlchemy's default (5 + 10 overflow); ATM_DB_POOL_SIZE / ATM_DB_MAX_OVERFLOW tune it.
+engine = create_engine(settings.database_url, connect_args=_connect_args, pool_pre_ping=True,
+                       pool_size=settings.ATM_DB_POOL_SIZE, max_overflow=settings.ATM_DB_MAX_OVERFLOW)
+
+if _SQLITE:
+    @event.listens_for(engine, "connect")
+    def _sqlite_pragmas(dbapi_connection, _record):
+        # WAL lets requests read while a run writes its results; one writer at a time still applies.
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.close()
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 

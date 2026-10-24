@@ -8,7 +8,8 @@ sample project and assigned to the lead; the viewer is a member of the sample pr
 
 When the harness passes E2E_FAKE_URL, the sample project's Jira project and Confluence space are E2E, the lead, the
 senior and the viewer have the fake Jira/Confluence base URLs (the others inherit the lead's); everyone but the super admin
-has Jira and Confluence tokens. E2E_SENIOR_CHECKOUT_DIR is the senior's own checkout, for the Work tests.
+has Jira and Confluence tokens. E2E_SENIOR_CHECKOUT_DIR is the senior's own checkout, for the Work tests, and
+E2E_TRAINEE_CHECKOUT_DIR the trainee's (with a GitHub token), for the workspace tests.
 
 When the harness passes E2E_REPO_URL and E2E_CHECKOUT_DIR, the sample project points at that repository (served by
 the fake GitHub) and the super admin and automation user have the checkout linked and a GitHub token for it.
@@ -125,6 +126,11 @@ def seed(sessions_path: str) -> None:
         senior_checkout = os.getenv("E2E_SENIOR_CHECKOUT_DIR")
         if senior_checkout:
             save_linked_path(db, users[UserRole.AUTOMATION_SENIOR], project.id, senior_checkout)
+        trainee_checkout = os.getenv("E2E_TRAINEE_CHECKOUT_DIR")
+        if trainee_checkout:
+            trainee = users[UserRole.AUTOMATION_TRAINEE]
+            save_linked_path(db, trainee, project.id, trainee_checkout)
+            set_project_github_token(db, trainee, project.id, SAMPLE_GITHUB_TOKEN)
 
         repo_url, checkout = os.getenv("E2E_REPO_URL"), os.getenv("E2E_CHECKOUT_DIR")
         if repo_url and checkout:

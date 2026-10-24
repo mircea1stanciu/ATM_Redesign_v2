@@ -1,5 +1,6 @@
-import { Navigate } from 'react-router-dom'
-import { GitPullRequest, Rocket } from 'lucide-react'
+import { Navigate, useSearchParams } from 'react-router-dom'
+import { GitPullRequest, Rocket, Terminal } from 'lucide-react'
+import LocalScriptsPanel from '@/pages/projects/LocalScriptsPanel'
 import { useAppStore } from '@/store/useAppStore'
 import ProjectOpenInIde from '@/components/ai/ProjectOpenInIde'
 import { visibleTabs } from '@/app/navigation'
@@ -12,18 +13,40 @@ export function WorkLayout() {
     <AreaLayout
       areaId="work"
       title="Work"
-      description="Stories and requirement pages, the board, the workspace and the repository."
+      description="Stories and requirement pages, the board and the workspace."
       actions={project && <ProjectOpenInIde key={project.id} projectId={project.id} projectName={project.name} />}
     />
   )
 }
 
 export function TestsLayout() {
-  return <AreaLayout areaId="tests" title="Tests" description="Runs, the project's test setup and libraries." />
+  return <AreaLayout areaId="tests" title="Tests" description="Runs, the project's test setup, scripts and libraries." />
 }
 
 export function ReportsLayout() {
   return <AreaLayout areaId="reports" title="Reports" description="Results, trends and Allure reports." />
+}
+
+// Before phase 07 the Repository tab had its own views; they are workspace views now, Scripts moved to Tests.
+const REPOSITORY_VIEWS: Record<string, string> = {
+  parallel: '/work/workspace?view=three-panel',
+  compare: '/work/workspace?view=compare',
+  editor: '/work/workspace?view=editor',
+  publish: '/work/workspace?view=editor',
+  structure: '/work/workspace?view=three-panel',
+  analyzer: '/work/workspace?view=analysis',
+  scripts: '/tests/scripts',
+}
+
+export function RepositoryRedirect() {
+  const [params] = useSearchParams()
+  return <Navigate to={REPOSITORY_VIEWS[params.get('view') ?? ''] ?? '/work/workspace?view=three-panel'} replace />
+}
+
+export function ScriptsPage() {
+  const projectId = useAppStore(s => s.selectedProjectId)
+  if (!projectId) return <EmptyState icon={Terminal} title="Choose a project">Pick a project in the top bar.</EmptyState>
+  return <div className="h-full overflow-hidden rounded-xl border border-line bg-surface p-3"><LocalScriptsPanel projectId={projectId} /></div>
 }
 
 export function AdminLayout() {

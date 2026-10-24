@@ -137,15 +137,42 @@ async def create_analytics_suite(
     db.add(suite)
     db.commit()
     db.refresh(suite)
+    return _suite_response(suite)
+
+
+def _suite_response(suite: AnalyticsSuite) -> dict:
     return {
         "id": str(suite.id),
-        "project_id": str(project_id),
+        "project_id": str(suite.project_id),
         "name": suite.name,
         "tags": suite.tags or [],
         "cron_expression": suite.cron_expression,
         "active": suite.active,
         "created_at": suite.created_at.isoformat() if suite.created_at else None,
     }
+
+
+DEFAULT_SUITE_NAME = "Default Suite"
+
+
+@runs_router.post("/suites/projects/{project_id}/default-suite")
+async def get_or_create_default_suite(
+    project_id: int,
+    current_user=Depends(require("run.execute", project_from="project_id")),
+    db: Session = Depends(get_db),
+):
+    """The suite ad-hoc runs are filed under: the project's first suite, or a new "Default Suite". Anyone who may run
+    tests may use it (creating other suites needs suite.manage)."""
+    get_project_or_404(db, project_id)
+    suite = (db.query(AnalyticsSuite).filter(AnalyticsSuite.project_id == project_id)
+             .order_by(AnalyticsSuite.id).first())
+    if suite is None:
+        suite = AnalyticsSuite(project_id=project_id, name=DEFAULT_SUITE_NAME, tags=[], active=True,
+                               created_by_user_id=current_user.id)
+        db.add(suite)
+        db.commit()
+        db.refresh(suite)
+    return _suite_response(suite)
 
 
 @runs_router.get("/runs/projects/{project_id}")

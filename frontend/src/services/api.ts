@@ -229,6 +229,11 @@ export const apiService = {
     return response.data
   },
 
+  async defaultSuite(projectId: string): Promise<TestSuite> {
+    const response = await api.post<TestSuite>(`/suites/projects/${projectId}/default-suite`)
+    return response.data
+  },
+
   async createSuite(projectId: string, payload: { name: string; tags?: string[] }): Promise<TestSuite> {
     const response = await api.post<TestSuite>(`/suites/projects/${projectId}/suites`, {
       active: true,

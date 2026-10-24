@@ -21,9 +21,9 @@ export interface Area {
 export const AREAS: Area[] = [
   { id: 'home', label: 'Home', to: '/', icon: Home, shortcut: 'h', description: 'Your start page' },
   { id: 'work', label: 'Work', to: '/work', icon: ClipboardList, permissions: ['work.view'], shortcut: 'w',
-    description: 'Jira stories and Confluence pages, the board, the workspace and the repository' },
+    description: 'Jira stories and Confluence pages, the board and the workspace' },
   { id: 'tests', label: 'Tests', to: '/tests', icon: PlayCircle, permissions: ['run.view'], shortcut: 't',
-    description: 'Runs, the project overview and libraries' },
+    description: 'Runs, the project overview, scripts and libraries' },
   { id: 'reports', label: 'Reports', to: '/reports', icon: BarChart3, permissions: ['report.view'], shortcut: 'r',
     description: 'Results, trends and Allure reports' },
   { id: 'reviews', label: 'Reviews', to: '/reviews', icon: GitPullRequest, permissions: ['pr.view'], shortcut: 'v',
@@ -64,11 +64,11 @@ export const AREA_TABS: Record<string, AreaTab[]> = {
     { to: '/work/confluence', label: 'Confluence releases' },
     { to: '/work/confluence-analyzer', label: 'Release analyzer' },
     { to: '/work/workspace', label: 'Workspace' },
-    { to: '/work/repository', label: 'Repository' },
   ],
   tests: [
     { to: '/tests/runs', label: 'Runs' },
     { to: '/tests/project', label: 'Project' },
+    { to: '/tests/scripts', label: 'Scripts' },
     { to: '/tests/libraries', label: 'Libraries' },
   ],
   reports: [

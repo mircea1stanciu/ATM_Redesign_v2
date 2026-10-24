@@ -136,7 +136,7 @@ def _append_manual_run_logs(manual_run_id: int, payloads: list[dict]) -> None:
         db.close()
 
 
-async def _set_manual_run_status(run_id: str, manual_run_id: int, artifact_dir: Path, status: str) -> None:
+def _save_manual_run_status(manual_run_id: int, status: str) -> None:
     db = SessionLocal()
     try:
         run = db.query(AnalyticsRun).filter(AnalyticsRun.id == manual_run_id).first()
@@ -147,8 +147,13 @@ async def _set_manual_run_status(run_id: str, manual_run_id: int, artifact_dir: 
             db.commit()
     finally:
         db.close()
+
+
+async def _set_manual_run_status(run_id: str, manual_run_id: int, artifact_dir: Path, status: str) -> None:
+    # Database writes run in a thread: waiting for SQLite's write lock must not block the event loop.
+    await asyncio.to_thread(_save_manual_run_status, manual_run_id, status)
     payload = {"type": "status", "status": status, "timestamp": datetime.utcnow().isoformat()}
-    _append_manual_run_log(manual_run_id, payload)
+    await asyncio.to_thread(_append_manual_run_log, manual_run_id, payload)
     _append_manual_run_artifact_log(artifact_dir, payload)
     metadata_path = artifact_dir / "metadata.json"
     if metadata_path.is_file():
@@ -159,8 +164,28 @@ async def _set_manual_run_status(run_id: str, manual_run_id: int, artifact_dir: 
     await _broadcast_manual_run_message(run_id, payload)
 
 
+ARTIFACTS_FOLDER = ".automationtestmanager"
+
+
 def _manual_run_artifact_dir(repo_path: Path, run_id: str) -> Path:
-    return repo_path / ".automationtestmanager" / "runs" / run_id
+    _exclude_from_git(repo_path, f"{ARTIFACTS_FOLDER}/")
+    return repo_path / ARTIFACTS_FOLDER / "runs" / run_id
+
+
+def _exclude_from_git(repo_path: Path, pattern: str) -> None:
+    """Keep ATM's run artifacts out of commits: list them in the checkout's own .git/info/exclude (never in a
+    tracked file), so 'Commit & push' does not pick them up even when the repository has no .gitignore for them."""
+    git_dir = repo_path / ".git"
+    if not git_dir.is_dir():
+        return
+    exclude = git_dir / "info" / "exclude"
+    try:
+        lines = exclude.read_text(encoding="utf-8").splitlines() if exclude.exists() else []
+        if pattern not in lines:
+            exclude.parent.mkdir(parents=True, exist_ok=True)
+            exclude.write_text("\n".join([*lines, pattern]) + "\n", encoding="utf-8")
+    except OSError:
+        pass  # A read-only checkout still runs; the files just show as untracked.
 
 
 def _write_manual_run_metadata(artifact_dir: Path, metadata: dict) -> None:
@@ -256,7 +281,7 @@ async def _execute_manual_run_background(
 
     async def log(text: str, level: str = "stdout") -> None:
         payload = {"type": level, "data": text, "timestamp": datetime.utcnow().isoformat()}
-        _append_manual_run_log(manual_run_id, payload)
+        await asyncio.to_thread(_append_manual_run_log, manual_run_id, payload)
         _append_manual_run_artifact_log(artifact_dir, payload)
         await _broadcast_manual_run_message(run_id, payload)
 
@@ -490,10 +515,10 @@ class _ManualRunLogger:
         _append_manual_run_artifact_log(self.artifact_dir, payload)
         await _broadcast_manual_run_message(self.run_id, payload)
         if len(self.pending) >= _APPIUM_LOG_FLUSH_LINES or self._clock() - self.last_flush >= _APPIUM_LOG_FLUSH_SECONDS:
-            self.flush()
+            await asyncio.to_thread(self.flush)
 
     async def finish(self, status: str) -> None:
-        self.flush()
+        await asyncio.to_thread(self.flush)
         await _set_manual_run_status(self.run_id, self.manual_run_id, self.artifact_dir, status)
 
 

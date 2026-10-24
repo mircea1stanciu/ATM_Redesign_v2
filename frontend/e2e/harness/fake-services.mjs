@@ -4,6 +4,7 @@
 //   /api/v3/...                 GitHub REST: repository, branches (read from the bare repository), pull requests
 //   /jira/rest/api/{2,3}/...    Jira: myself, projects, issue search and detail, comments, links, transitions
 //   /confluence/rest/api/...    Confluence: current user, spaces, page search and detail
+//   /models/...                 GitHub Models (the "GitHub Copilot" AI provider): catalog and chat completions
 //   /__e2e/requests             what ATM sent (tests inspect it); /__e2e/health for the harness
 import { execFileSync, spawn } from 'node:child_process'
 import { createServer } from 'node:http'
@@ -225,14 +226,38 @@ function confluence(req, res, url) {
   return json(res, 404, { message: 'Not Found' })
 }
 
+// The AI proposes one change: an assertion for the sample pytest test.
+const AI_ANSWER = [
+  'The test has no assertion yet, so it can never fail. I added one.',
+  '',
+  '```file:tests/test_login_error.py',
+  'def test_login_error_message():',
+  "    message = 'Wrong email or password'",
+  "    assert message.startswith('Wrong')",
+  '```',
+].join('\n')
+const aiRequests = []
+
+async function models(req, res, url) {
+  const path = url.pathname.replace(/^\/models/, '')
+  if (path === '/catalog/models') return json(res, 200, [{ id: 'openai/gpt-4.1', name: 'GPT-4.1', supported_output_modalities: ['text'] }])
+  if (path === '/inference/chat/completions' && req.method === 'POST') {
+    const body = JSON.parse((await readBody(req)) || '{}')
+    aiRequests.push({ messages: body.messages?.length ?? 0, last: body.messages?.at(-1)?.content ?? '' })
+    return json(res, 200, { choices: [{ message: { role: 'assistant', content: AI_ANSWER } }] })
+  }
+  return json(res, 404, { message: 'Not Found' })
+}
+
 createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${port}`)
   if (url.pathname === '/__e2e/health') return json(res, 200, { ok: true })
-  if (url.pathname === '/__e2e/requests') return json(res, 200, { requests, pullRequests, jiraWrites })
+  if (url.pathname === '/__e2e/requests') return json(res, 200, { requests, pullRequests, jiraWrites, aiRequests })
   requests.push({ method: req.method, path: url.pathname, authorization: Boolean(req.headers.authorization) })
   if (/^\/[^/]+\/[^/]+\.git\//.test(url.pathname)) return gitHttpBackend(req, res, url)
   if (url.pathname.startsWith('/api/v3/')) return github(req, res, url)
   if (url.pathname.startsWith('/jira/')) return jira(req, res, url)
   if (url.pathname.startsWith('/confluence/')) return confluence(req, res, url)
+  if (url.pathname.startsWith('/models/')) return models(req, res, url)
   json(res, 404, { message: 'Not Found' })
 }).listen(port, '127.0.0.1', () => console.log(`fake services on http://127.0.0.1:${port}`))

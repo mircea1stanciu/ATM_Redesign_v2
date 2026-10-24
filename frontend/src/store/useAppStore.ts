@@ -71,7 +71,8 @@ async function resolveRunSuiteId(
     suiteId = (await apiService.listSuites(projectId)).find(isOwnSuite)?.id || null
   }
   if (!suiteId) {
-    const autoSuite = await apiService.createSuite(projectId, { name: 'Default Suite', tags: [] })
+    // Needs only run.execute: trainees may run tests without managing suites.
+    const autoSuite = await apiService.defaultSuite(projectId)
     onCreated(autoSuite)
     suiteId = autoSuite.id
   }

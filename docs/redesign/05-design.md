@@ -152,6 +152,8 @@ A personal start page that changes with the role:
 - **Layout.** The explorer, the editor and the assistant can each be resized and collapsed.
 - **Without AI.** The assistant panel shows hints and a link to connect a provider.
 - **Bottom action bar.** Run, commit and push, open a PR, and the result of the last run, always visible.
+- **Views.** Editor, 3-Panel (GitHub, branch and local copy side by side), Compare, Analysis and Runs; the view is in
+  the URL.
 
 ### Tests and runs
 

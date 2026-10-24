@@ -1,11 +1,11 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from 'react'
 import { AtSign, FileCode2, GitCompare, Loader2, RotateCcw, Save, X } from 'lucide-react'
 import { apiService } from '@/services/api'
-import type { ReviewData } from './DiffReview'
+import type { ReviewData } from '@/ui/DiffReview'
 
 // CodeMirror is loaded with the first open file, not with the page.
-const CodeEditor = lazy(() => import('./CodeEditor'))
-const DiffReview = lazy(() => import('./DiffReview'))
+const CodeEditor = lazy(() => import('@/ui/CodeEditor'))
+const DiffReview = lazy(() => import('@/ui/DiffReview'))
 
 export interface OpenFile {
   path: string
@@ -35,6 +35,7 @@ export default function FileTabsEditor({
   onReference,
   onAcceptReview,
   onRejectReview,
+  banner,
 }: {
   projectId: string
   files: OpenFile[]
@@ -47,6 +48,8 @@ export default function FileTabsEditor({
   onReference: (path: string) => void
   onAcceptReview: (file: OpenFile, content: string) => void
   onRejectReview: (file: OpenFile) => void
+  /** Shown above the editor of a file being edited (the standard hints). */
+  banner?: ReactNode
 }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -131,6 +134,7 @@ export default function FileTabsEditor({
           )}
         </div>
       )}
+      {file && !file.review && banner && <div className="shrink-0 border-b border-line">{banner}</div>}
 
       <div className="min-h-0 flex-1 overflow-hidden">
         {!file ? (

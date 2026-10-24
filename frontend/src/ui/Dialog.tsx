@@ -20,7 +20,7 @@ export function Dialog({ open, onOpenChange, title, description, children, foote
         <RadixDialog.Content
           className={cn(
             'fixed left-1/2 top-1/2 z-50 flex max-h-[90vh] w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2',
-            'flex-col rounded-xl border border-line bg-surface shadow-float data-[state=open]:animate-scale-in',
+            'flex-col rounded-xl border border-line bg-surface shadow-float data-[state=open]:animate-fade-in',
             className,
           )}
         >

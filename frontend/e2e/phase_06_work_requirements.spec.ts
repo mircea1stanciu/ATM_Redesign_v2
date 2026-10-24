@@ -67,7 +67,7 @@ test('start work: tests, branch, workspace with the story attached, Jira comment
   await expect(dialog.getByRole('checkbox', { name: 'Comment on E2E-1 in Jira that work started' })).toBeChecked()
   await dialog.getByRole('button', { name: 'Start work' }).click()
 
-  await expect(page).toHaveURL(/\/work\/workspace\?tab=assistant&item=\d+$/)
+  await expect(page).toHaveURL(/\/work\/workspace\?view=editor&item=\d+$/, { timeout: 20_000 })
   const story = page.getByRole('region', { name: 'Attached story' })
   await expect(story).toContainText('Story E2E-1 · Login shows an error for a wrong password')
   await expect(story).toContainText(BRANCH)

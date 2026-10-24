@@ -30,7 +30,7 @@ export function CommandPalette({ open, onOpenChange, groups, placeholder = 'Sear
       onOpenChange={onOpenChange}
       label="Command palette"
       overlayClassName="fixed inset-0 z-[65] bg-black/40"
-      contentClassName="fixed left-1/2 top-[15vh] z-[66] w-[calc(100vw-2rem)] max-w-xl -translate-x-1/2 overflow-hidden rounded-xl border border-line bg-surface shadow-float animate-scale-in"
+      contentClassName="fixed left-1/2 top-[15vh] z-[66] w-[calc(100vw-2rem)] max-w-xl -translate-x-1/2 overflow-hidden rounded-xl border border-line bg-surface shadow-float animate-fade-in"
     >
       <div className="flex items-center gap-2 border-b border-line px-3">
         <Search size={16} className="shrink-0 text-fg-muted" aria-hidden />

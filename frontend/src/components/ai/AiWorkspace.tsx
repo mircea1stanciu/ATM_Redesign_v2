@@ -1,24 +1,30 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { Bot } from 'lucide-react'
 import { apiService } from '@/services/api'
+import { GENERAL_TIPS, hintsFor } from '@/features/workspace/hints'
+import { Hint, SplitPane, buttonStyles } from '@/ui'
 import type { AiChange, AiMessage, AiSettings } from '@/types/domain'
 import AiChatPanel, { type ChatPrompt } from './AiChatPanel'
 import BranchPicker from './BranchPicker'
 import FileTabsEditor, { reviewKey, type OpenFile } from './FileTabsEditor'
 import ProjectExplorer from './ProjectExplorer'
 
-const SIZES_KEY = 'atm.aiWorkspace.sizes'
-const MIN_EXPLORER = 180
-const MIN_CHAT = 340
+const PANES_KEY = 'atm.workspace.panes'
 // Same rule as the backend (ai_project_service._SENSITIVE_NAME): these files are never sent to the AI.
 const SENSITIVE_NAME = /(^\.env(\..*)?$|\.(pem|key|p12|pfx|jks|keystore|der|crt|cer)$|^id_(rsa|dsa|ecdsa|ed25519)|^\.npmrc$|^\.netrc$|^credentials(\.json)?$|^settings-security\.xml$)/i
 
-function savedSizes(): { explorer: number; chat: number } {
-  try {
-    const data = JSON.parse(localStorage.getItem(SIZES_KEY) || '{}')
-    return { explorer: Number(data.explorer) || 260, chat: Number(data.chat) || 460 }
-  } catch {
-    return { explorer: 260, chat: 460 }
-  }
+function NoAiHelp({ hints }: { hints: string[] }) {
+  return (
+    <div className="mb-3 space-y-2 rounded-xl border border-line bg-surface p-3 text-[13px]">
+      <p className="flex items-center gap-2 font-semibold text-fg"><Bot size={14} aria-hidden /> No AI assistant connected</p>
+      <p className="text-xs text-fg-muted">The workspace works without AI. Connect a provider to get proposed changes you can review.</p>
+      <Link to="/settings/mcp/ai" className={buttonStyles('secondary', 'sm')}>Connect a provider</Link>
+      <ul className="list-disc space-y-1 pl-4 text-xs text-fg-muted" aria-label="Tips">
+        {hints.map(hint => <li key={hint}>{hint}</li>)}
+      </ul>
+    </div>
+  )
 }
 
 /** VS Code-like workspace: project explorer, file editor with tabs and the assistant chat on the side. */
@@ -33,6 +39,10 @@ export default function AiWorkspace({
   onProjectChanged,
   onSettingsChange,
   workItemId = null,
+  showExplorer = true,
+  showAssistant = true,
+  hintsEnabled = true,
+  onFilesChanged,
 }: {
   projectId: string
   settings: AiSettings | null
@@ -45,6 +55,12 @@ export default function AiWorkspace({
   onSettingsChange: (settings: AiSettings) => void
   /** The story being worked on (Work › Start work); the assistant gets it as context. */
   workItemId?: number | null
+  showExplorer?: boolean
+  showAssistant?: boolean
+  /** Standard hints above the editor (Workspace › Hints). */
+  hintsEnabled?: boolean
+  /** Files changed on disk (saved, applied by the assistant, another branch checked out). */
+  onFilesChanged?: () => void
 }) {
   const [openFiles, setOpenFiles] = useState<OpenFile[]>([])
   const [activePath, setActivePath] = useState<string | null>(null)
@@ -52,14 +68,8 @@ export default function AiWorkspace({
   const [treeKey, setTreeKey] = useState(0)
   const [chatRefresh, setChatRefresh] = useState(0)
   const [reviewError, setReviewError] = useState<string | null>(null)
-  const [sizes, setSizes] = useState(savedSizes)
-  const containerRef = useRef<HTMLDivElement | null>(null)
   const openRef = useRef(openFiles)
   openRef.current = openFiles
-
-  useEffect(() => {
-    localStorage.setItem(SIZES_KEY, JSON.stringify(sizes))
-  }, [sizes])
 
   const patchFile = useCallback((path: string, patch: Partial<OpenFile>) => {
     setOpenFiles(list => list.map(f => (f.path === path ? { ...f, ...patch } : f)))
@@ -108,7 +118,8 @@ export default function AiWorkspace({
     setTreeKey(k => k + 1)
     openRef.current.filter(f => !f.review && f.content === f.original).forEach(f => void loadFile(f.path))
     onProjectChanged()
-  }, [loadFile, onProjectChanged])
+    onFilesChanged?.()
+  }, [loadFile, onProjectChanged, onFilesChanged])
 
   // Old ↔ new review of a change proposed by the assistant, in its own editor tab.
   const reviewChange = useCallback(async (conversationId: string, message: AiMessage, change: AiChange) => {
@@ -145,12 +156,13 @@ export default function AiWorkspace({
         setTreeKey(k => k + 1)
         openRef.current.filter(f => f.path === review.path && f.content === f.original).forEach(f => void loadFile(f.path))
         onProjectChanged()
+        onFilesChanged?.()
       }
     } catch (e) {
       patchFile(file.path, { review: { ...review, busy: false } })
       setReviewError(e instanceof Error && !('isAxiosError' in e) ? e.message : apiService.errorMessage(e))
     }
-  }, [projectId, patchFile, closeFile, loadFile, onProjectChanged])
+  }, [projectId, patchFile, closeFile, loadFile, onProjectChanged, onFilesChanged])
 
   const confirmBranchSwitch = useCallback((branch: string) => {
     const unsaved = openRef.current.filter(f => !f.binary && f.content !== f.original)
@@ -164,70 +176,52 @@ export default function AiWorkspace({
     setOpenFiles(list => list.filter(f => !f.review))
     openRef.current.filter(f => !f.review).forEach(f => void loadFile(f.path))
     onProjectChanged()
-  }, [loadFile, onProjectChanged])
+    onFilesChanged?.()
+  }, [loadFile, onProjectChanged, onFilesChanged])
 
-  const startDrag = (side: 'explorer' | 'chat') => (event: ReactPointerEvent<HTMLDivElement>) => {
-    event.preventDefault()
-    const box = containerRef.current?.getBoundingClientRect()
-    if (!box) return
-    const move = (e: PointerEvent) => {
-      setSizes(current => {
-        const maxExplorer = box.width - current.chat - 240
-        const maxChat = box.width - current.explorer - 240
-        return side === 'explorer'
-          ? { ...current, explorer: Math.round(Math.max(MIN_EXPLORER, Math.min(maxExplorer, e.clientX - box.left))) }
-          : { ...current, chat: Math.round(Math.max(MIN_CHAT, Math.min(maxChat, box.right - e.clientX))) }
-      })
-    }
-    const up = () => {
-      window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', up)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-    }
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', up)
-  }
-
-  const splitter = (side: 'explorer' | 'chat') => (
-    <div onPointerDown={startDrag(side)} role="separator" aria-orientation="vertical"
-      className="group hidden w-2 shrink-0 cursor-col-resize items-center justify-center lg:flex" title="Drag to resize">
-      <div className="h-10 w-0.5 rounded bg-gray-200 group-hover:bg-blue-400 dark:bg-gray-700" />
-    </div>
+  const active = openFiles.find(f => f.path === activePath)
+  const hints = useMemo(
+    () => (hintsEnabled && active && !active.review && !active.binary ? hintsFor(active.path, active.content) : []),
+    [hintsEnabled, active],
   )
+  const aiConnected = settings?.configured !== false
 
-  return (
-    <div ref={containerRef} className="flex h-full min-h-0 flex-col gap-3 lg:flex-row lg:gap-0">
-      <div className="h-64 shrink-0 lg:h-auto" style={{ flexBasis: sizes.explorer }}>
-        <ProjectExplorer projectId={projectId} reloadKey={treeKey} activePath={activePath} onOpenFile={openFile}
-          header={<BranchPicker projectId={projectId} canEdit={canEdit} onSwitched={branchSwitched} confirmSwitch={confirmBranchSwitch} />} />
-      </div>
-      {splitter('explorer')}
-      <div className="relative h-[28rem] min-w-0 flex-1 lg:h-auto">
-        {reviewError && (
-          <div className="absolute inset-x-3 bottom-3 z-10 flex items-start justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 shadow dark:border-red-900 dark:bg-red-900/40 dark:text-red-200">
-            <span className="break-words">{reviewError}</span>
-            <button onClick={() => setReviewError(null)} className="font-semibold">×</button>
+  const explorer = (
+    <ProjectExplorer projectId={projectId} reloadKey={treeKey} activePath={activePath} onOpenFile={openFile}
+      header={<BranchPicker projectId={projectId} canEdit={canEdit} onSwitched={branchSwitched} confirmSwitch={confirmBranchSwitch} />} />
+  )
+  const editor = (
+    <div className="relative h-[28rem] lg:h-full">
+      {reviewError && (
+        <div role="alert" className="absolute inset-x-3 bottom-3 z-10 flex items-start justify-between gap-2 rounded-lg border border-danger/30 bg-surface px-3 py-2 text-xs text-danger shadow-float">
+          <span className="break-words">{reviewError}</span>
+          <button onClick={() => setReviewError(null)} aria-label="Dismiss" className="font-semibold">×</button>
+        </div>
+      )}
+      <FileTabsEditor
+        projectId={projectId}
+        files={openFiles}
+        activePath={activePath}
+        canEdit={canEdit}
+        onActivate={setActivePath}
+        onClose={closeFile}
+        onChange={patchFile}
+        onSaved={() => { setTreeKey(k => k + 1); onFilesChanged?.() }}
+        onReference={path => addReference(path.replace(/^review:/, ''))}
+        onAcceptReview={(file, content) => void finishReview(file, 'accept', content)}
+        onRejectReview={file => void finishReview(file, 'reject')}
+        banner={hints.length > 0 && (
+          <div className="space-y-1.5 px-3 py-2" role="region" aria-label="Editor hints">
+            {hints.map(hint => <Hint key={`${active?.path}:${hint.id}`} id={`${active?.path}:${hint.id}`}>{hint.text}</Hint>)}
           </div>
         )}
-        <FileTabsEditor
-          projectId={projectId}
-          files={openFiles}
-          activePath={activePath}
-          canEdit={canEdit}
-          onActivate={setActivePath}
-          onClose={closeFile}
-          onChange={patchFile}
-          onSaved={() => setTreeKey(k => k + 1)}
-          onReference={path => addReference(path.replace(/^review:/, ''))}
-          onAcceptReview={(file, content) => void finishReview(file, 'accept', content)}
-          onRejectReview={file => void finishReview(file, 'reject')}
-        />
-      </div>
-      {splitter('chat')}
-      <div className="h-[36rem] shrink-0 lg:h-auto" style={{ flexBasis: sizes.chat }}>
+      />
+    </div>
+  )
+  const assistant = (
+    <div className="flex h-[36rem] flex-col lg:h-full">
+      {!aiConnected && <NoAiHelp hints={hints.length ? hints.map(h => h.text) : GENERAL_TIPS} />}
+      <div className="min-h-0 flex-1">
         <AiChatPanel
           projectId={projectId}
           settings={settings}
@@ -246,5 +240,16 @@ export default function AiWorkspace({
         />
       </div>
     </div>
+  )
+
+  return (
+    <SplitPane
+      storageKey={PANES_KEY}
+      panes={[
+        { id: 'explorer', label: 'Explorer', initial: 260, min: 180, collapsed: !showExplorer, content: explorer },
+        { id: 'editor', label: 'Editor', content: editor },
+        { id: 'assistant', label: 'Assistant', initial: 460, min: 340, collapsed: !showAssistant, content: assistant },
+      ]}
+    />
   )
 }

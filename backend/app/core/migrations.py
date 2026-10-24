@@ -1,6 +1,6 @@
 """Bring the database to the latest Alembic revision; the only way the schema changes."""
 import logging
-import shutil
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 
@@ -32,7 +32,9 @@ def _backup_sqlite_file() -> None:
     if not path.exists() or path.stat().st_size == 0:
         return
     backup = path.with_name(f"{path.name}.before-migration-{datetime.now():%Y%m%d-%H%M%S}")
-    shutil.copy2(path, backup)
+    # SQLite's backup API: a consistent copy that includes what is still in the -wal file.
+    with sqlite3.connect(path) as source, sqlite3.connect(backup) as target:
+        source.backup(target)
     logger.info("Backed up %s to %s before migrating", path, backup)
 
 
