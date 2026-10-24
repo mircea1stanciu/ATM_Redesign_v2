@@ -27,6 +27,7 @@ from app.modules.testing.devices_router import router as devices_router
 from app.modules.testing.router import router as testing_router
 from app.modules.testing.router import runs_router
 from app.modules.testing.runs import resume_orphaned_manual_runs
+from app.modules.work.router import router as work_router
 from app.modules.work.tasks_router import router as tasks_router
 from app.modules.work.test_manager_router import router as test_manager_router
 from app.modules.work.zephyr_planner_router import router as zephyr_planner_router
@@ -92,6 +93,7 @@ app.include_router(devices_router, prefix="/api/devices", tags=["Devices"])
 app.include_router(test_manager_router, prefix="/api/test-manager", tags=["Work"])
 app.include_router(tasks_router, prefix="/api/tasks", tags=["Work"])
 app.include_router(zephyr_planner_router, prefix="/api/zephyr-planner", tags=["Work"])
+app.include_router(work_router)
 app.include_router(community_router, prefix="/api/community", tags=["Learning"])
 
 

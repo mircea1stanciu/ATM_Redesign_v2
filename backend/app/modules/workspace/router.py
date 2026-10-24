@@ -19,6 +19,7 @@ from app.modules.projects.service import (
     local_status,
     project_github_token,
 )
+from app.modules.work.service import link_pull_request
 
 router = APIRouter(prefix="/api/projects", tags=["Workspace"])
 
@@ -440,8 +441,12 @@ async def create_project_pull_request(
 
     if resp.status_code in (200, 201):
         pr = resp.json()
-        return {"number": pr.get("number", 0), "url": pr.get("html_url", ""), "state": pr.get("state", "open"),
-                "title": pr.get("title", title), "head": head, "base": base}
+        url = pr.get("html_url", "")
+        # A pull request from a work item's branch traces to the item and moves it to "in review".
+        item = link_pull_request(db, project_id, head, url, pr.get("title", title)) if url else None
+        return {"number": pr.get("number", 0), "url": url, "state": pr.get("state", "open"),
+                "title": pr.get("title", title), "head": head, "base": base,
+                "work_item": {"id": item.id, "external_key": item.external_key} if item else None}
     if resp.status_code == 401:
         raise HTTPException(status_code=400, detail="GitHub token invalid or expired for this project.")
     if resp.status_code == 422:

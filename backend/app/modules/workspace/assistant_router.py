@@ -19,6 +19,8 @@ from app.modules.projects.checkouts import require_checkout
 from app.modules.projects.models import AnalyticsRun, AnalyticsSuite
 from app.modules.projects.service import get_project_or_404
 from app.modules.settings.connections import get_json, set_json
+from app.modules.work.models import WorkItem
+from app.modules.work.service import story_prompt
 from app.services import ai_project_service as project_ai
 from app.services import ai_provider_service as providers
 from app.services import rbi_gateway_service as rbi_gateway
@@ -493,6 +495,8 @@ class ChatMessageRequest(BaseModel):
     content: str = Field(default="", max_length=MAX_MESSAGE_CHARS)
     attachments: list[str] = Field(default_factory=list, max_length=project_ai.MAX_ATTACHED_FILES)
     run_id: str | None = None
+    # A work item of this project: the story (title, description, acceptance criteria) goes to the model.
+    work_item_id: int | None = None
 
 
 def _run_summary(db: Session, project_id: int, run_id: str) -> tuple[str, dict]:
@@ -556,10 +560,18 @@ async def send_ai_message(
     if payload.run_id:
         summary, run_info = _run_summary(db, project_id, payload.run_id)
         model_content = (model_content or "This test run failed. Find the cause and fix it.") + "\n\n" + summary
+    story_info = None
+    if payload.work_item_id is not None:
+        item = db.query(WorkItem).filter(WorkItem.id == payload.work_item_id,
+                                         WorkItem.project_id == project_id).first()
+        if not item:
+            raise HTTPException(status_code=404, detail="Work item not found in this project.")
+        model_content = f"{model_content}\n\n--- Story context ---\n{story_prompt(item)}"
+        story_info = {"id": item.id, "key": item.external_key, "title": item.title}
 
     user_message = project_ai.new_message(
         "user", payload.content.strip() or "Analyse this run and fix the failure.", model_content=model_content,
-        attachments={"files": attachments, "run": run_info})
+        attachments={"files": attachments, "run": run_info, "work_item": story_info})
     conversation["messages"].append(user_message)
     if conversation.get("title") in (None, "", "New conversation"):
         conversation["title"] = (payload.content.strip() or f"Fix run {payload.run_id}")[:80]
