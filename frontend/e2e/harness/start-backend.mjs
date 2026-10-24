@@ -2,7 +2,7 @@
 // whose repository lives in the fake GitHub (fake-services.mjs), and a free port.
 // Playwright runs this as a webServer (see playwright.config.ts) and stops it when the run ends.
 import { execFileSync, spawn } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -43,7 +43,16 @@ writeFileSync(join(seedTree, 'tests', 'ui', 'login_error.spec.ts'), "// Login er
 // A pytest test without an assertion: the workspace hint asks for one, and "Run changed tests" runs it.
 writeFileSync(join(seedTree, 'tests', 'test_login_error.py'), "def test_login_error_message():\n    message = 'Wrong email or password'\n")
 writeFileSync(join(seedTree, 'pytest.ini'), '[pytest]\n')
-writeFileSync(join(seedTree, '.gitignore'), '.venv/\n.pytest_cache/\n__pycache__/\n')
+writeFileSync(join(seedTree, '.gitignore'), '.venv/\n.pytest_cache/\n__pycache__/\nnode_modules/\ntest-results/\n')
+// A Playwright project (tests without a browser) and a Bruno collection, for the Allure report tests.
+writeFileSync(join(seedTree, 'package.json'), JSON.stringify({ name: 'e2e-sample', private: true, devDependencies: { '@playwright/test': '*' } }, null, 2))
+writeFileSync(join(seedTree, 'playwright.config.ts'), "import { defineConfig } from '@playwright/test'\nexport default defineConfig({ testDir: 'pw' })\n")
+mkdirSync(join(seedTree, 'pw'), { recursive: true })
+writeFileSync(join(seedTree, 'pw', 'cart.spec.ts'), "import { test, expect } from '@playwright/test'\n\ntest('adds an item to the cart', () => {\n  expect(['book'].length).toBe(1)\n})\n\ntest('totals the cart', () => {\n  expect(2 + 3).toBe(5)\n})\n")
+mkdirSync(join(seedTree, 'bruno-api', 'environments'), { recursive: true })
+writeFileSync(join(seedTree, 'bruno-api', 'bruno.json'), JSON.stringify({ version: '1', name: 'E2E API', type: 'collection' }))
+writeFileSync(join(seedTree, 'bruno-api', 'environments', 'uat.bru'), 'vars {\n  baseUrl: http://uat.e2e.test\n}\n')
+writeFileSync(join(seedTree, 'bruno-api', 'health.bru'), 'meta {\n  name: Health\n  type: http\n}\n\nget {\n  url: {{baseUrl}}/health\n}\n')
 // A k6 script, so a performance suite can be created and run (k6 itself is the stand-in below).
 mkdirSync(join(seedTree, 'perf'), { recursive: true })
 writeFileSync(join(seedTree, 'perf', 'load.js'), "import http from 'k6/http'\nexport default function () { http.get(__ENV.BASE_URL) }\n")
@@ -54,6 +63,8 @@ git(['push', bareRepo, 'main'], seedTree)
 const checkout = join(workDir, 'checkout')
 git(['clone', bareRepo, checkout])
 git(['remote', 'set-url', 'origin', repoUrl], checkout)
+// The Playwright sample uses the frontend's own @playwright/test.
+symlinkSync(resolve(here, '../../node_modules'), join(checkout, 'node_modules'))
 // The senior's own checkout: the Work tests create branches there without touching the shared one.
 const seniorCheckout = join(workDir, 'checkout-senior')
 git(['clone', bareRepo, seniorCheckout])
@@ -91,9 +102,24 @@ console.log('     http_req_duration..............: avg=85.4ms p(95)=142.7ms')
 `)
 chmodSync(join(binDir, 'k6'), 0o755)
 
+// A stand-in for the Bruno CLI: it writes the JUnit and JSON reports Bruno would, for the requests of the collection.
+writeFileSync(join(binDir, 'bru'), `#!/usr/bin/env node
+const fs = require('fs')
+const args = process.argv.slice(2)
+const junit = args[args.indexOf('--reporter-junit') + 1]
+const json = args[args.indexOf('--reporter-json') + 1]
+const requests = fs.readdirSync('.').filter(f => f.endsWith('.bru'))
+const cases = requests.map(f => '<testcase name="' + f.replace('.bru', '') + '" classname="E2E API" time="0.05"/>').join('')
+fs.writeFileSync(junit, '<?xml version="1.0"?><testsuites><testsuite name="E2E API" tests="' + requests.length + '" failures="0">' + cases + '</testsuite></testsuites>')
+fs.writeFileSync(json, JSON.stringify([{ results: requests.map(f => ({ test: { filename: f }, response: { status: 200 }, testResults: [] })) }]))
+for (const f of requests) console.log('   ✓ ' + f + ' (200)')
+`)
+chmodSync(join(binDir, 'bru'), 0o755)
+
 const env = {
   ...process.env,
-  PATH: `${binDir}:${process.env.PATH}`,
+  // node_modules/.bin brings the Allure command line (allure-commandline) and Playwright.
+  PATH: `${binDir}:${resolve(here, '../../node_modules/.bin')}:${process.env.PATH}`,
   // Suite schedules are checked every 2 s, so "schedule a suite and see it start" does not wait half a minute.
   ATM_SCHEDULER_INTERVAL_SECONDS: '2',
   ATM_DATABASE_PATH: join(workDir, 'e2e.db'),
