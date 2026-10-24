@@ -161,3 +161,12 @@ own judgement calls at the end of this file.
 | Archived suites are skipped by schedules and deployment checks (the check says why) | Archiving also removes the schedule | `scheduler.run_due_suites`, `start_checks` |
 | "Changed tests" applies the project environment to framework targets; Bruno requests keep their Bruno environment | Map the project environment to a Bruno environment | `ChangedTestsPanel.tsx` |
 
+## Phase 18: service account for scheduled runs (from the review)
+
+| Decision | Alternative | To reverse |
+|---|---|---|
+| Scheduled runs with a service account always use the latest default branch | The branch the owner had checked out | `service_account.sync` |
+| Nobody is notified when a service account run finishes | Notify the schedule's owner | `_notify_starter` in `deployments/service.py` (set `started_by_id` to the owner) |
+| Deployment checks keep running as the tester the lead picked | Use the service account for checks too | `start_checks` in `deployments/service.py` |
+| Only a token that can clone the repository is saved | Save it and report the error later | `set_service_account` |
+

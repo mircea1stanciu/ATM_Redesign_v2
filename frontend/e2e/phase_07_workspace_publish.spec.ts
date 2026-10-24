@@ -14,7 +14,7 @@ test.beforeEach(({ page }) => {
 
 const FILE = 'tests/test_login_error.py'
 const BRANCH = `feature/e2e-trainee-${Date.now()}`
-const GIT_TIMEOUT = 30_000
+const GIT_TIMEOUT = 60_000 // branch, commit and push wait for git on a station busy with every other spec
 
 async function sampleProjectId(request: APIRequestContext): Promise<string> {
   const projects = await (await request.get('/api/projects/', { headers: authHeaders('automation_trainee') })).json()
@@ -77,7 +77,7 @@ test('run changed tests: the changed pytest file runs and passes', async ({ page
 })
 
 test('new branch, commit & push to the repository, open a pull request', async ({ page, request }) => {
-  test.setTimeout(90_000) // git steps (branch, commit, push) on a busy station
+  test.setTimeout(150_000) // git steps (branch, commit, push) on a busy station
   const projectId = await sampleProjectId(request)
   await login(page, 'automation_trainee')
   await page.goto('/work/workspace')

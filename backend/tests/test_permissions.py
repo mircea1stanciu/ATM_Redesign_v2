@@ -28,6 +28,7 @@ ROLES = ["super_admin", "automation_lead", "automation_senior", "automation_user
 PLAN = {
     "project.view": "111111", "project.create": "110000", "project.delete": "110000",
     "project.configure": "111000", "project.members.manage": "110000",
+    "project.service_account": "110000",
     "work.view": "111110", "work.start": "111110", "work.assign": "111000", "jira.write": "111100",
     "code.edit": "111110", "code.push": "111110", "pr.create": "111110", "ai.use": "111110",
     "run.view": "111111", "run.execute": "111110", "run.execute.ci": "111100", "suite.manage": "111100",

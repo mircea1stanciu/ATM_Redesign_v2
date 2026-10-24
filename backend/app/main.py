@@ -36,6 +36,7 @@ from app.modules.testing.router import router as testing_router
 from app.modules.testing.router import runs_router
 from app.modules.testing.runs import resume_orphaned_manual_runs
 from app.modules.testing.scheduler import scheduler_loop
+from app.modules.testing.service_account_router import router as service_account_router
 from app.modules.testing.suites_router import router as suites_router
 from app.modules.work.router import router as work_router
 from app.modules.work.tasks_router import router as tasks_router
@@ -98,6 +99,7 @@ app.include_router(workspace_router)
 app.include_router(testing_router)
 app.include_router(reporting_router)
 app.include_router(suites_router)
+app.include_router(service_account_router)
 app.include_router(reports_router)
 app.include_router(runs_router)
 app.include_router(assistant_router)

@@ -31,6 +31,7 @@ PERMISSIONS: dict[str, frozenset[UserRole]] = {
     "project.delete": frozenset({SA, LEAD}),
     "project.configure": frozenset({SA, LEAD, SENIOR}),
     "project.members.manage": frozenset({SA, LEAD}),
+    "project.service_account": frozenset({SA, LEAD}),  # phase 18: the project's account for scheduled runs
     # Work items (Jira and Confluence)
     "work.view": BUILDERS,  # phase 15: viewers see Home, Tests, Reports, Reviews and Deploys only
     "work.start": BUILDERS,
