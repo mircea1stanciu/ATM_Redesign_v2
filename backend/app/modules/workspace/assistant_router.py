@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.core.deps import get_current_user
 from app.core.permissions import require
+from app.modules.learning import service as learning
 from app.modules.projects.checkouts import require_checkout
 from app.modules.projects.models import AnalyticsRun, AnalyticsSuite
 from app.modules.projects.service import get_project_or_404
@@ -581,6 +582,8 @@ async def send_ai_message(
     system, included = await asyncio.to_thread(
         project_ai.build_system_prompt, repo, analysis, _context_files(conversation, attachments),
         providers.PROVIDERS[config.provider]["context_chars"])
+    if learning.tutor_mode(db, current_user):
+        system = f"{system}\n\n{learning.TUTOR_RULES}"
     history = project_ai.history_for_model(conversation["messages"])
 
     async def events():

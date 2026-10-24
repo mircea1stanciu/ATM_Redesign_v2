@@ -41,6 +41,7 @@ def import_all_models() -> None:
     from app.modules.deployments import models as _deployments  # noqa: F401
     from app.modules.identity import models as _identity  # noqa: F401
     from app.modules.learning import models as _learning  # noqa: F401
+    from app.modules.learning import progress_models as _learning_progress  # noqa: F401
     from app.modules.notifications import models as _notifications  # noqa: F401
     from app.modules.projects import models as _projects  # noqa: F401
     from app.modules.reviews import models as _reviews  # noqa: F401
