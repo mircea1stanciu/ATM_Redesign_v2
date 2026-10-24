@@ -148,6 +148,23 @@ Decisions kept as they are need no work and are not repeated here.
   - "Download report (zip)" in ATM: the same archive that is attached in Confluence. (#18)
 - **UI tests:** install Allure (fake download); a permanent link works, is revoked by a Lead, and stops working; an
   automatic publication after a run; the zip download; a Lead deletes a report.
+- **Decided while building phase 19:**
+  - One new permission, `report.manage` (Super Admin, Lead), covers deleting reports, revoking share links and
+    installing Allure.
+  - Allure comes from Maven Central (`ATM_MAVEN_BASE_URL`): the latest release from `maven-metadata.xml`, checked
+    against the published SHA-1, unpacked into ATM's tools folder (`tools/allure/dist`). ATM does not install Java;
+    the Reports list says when Java (or Allure) is missing, and leads get an "Install Allure" button there.
+  - Share links (`report_share_links`, migration `0016`) are random tokens served under `/api/reports/shared/…` with
+    the same sandbox as signed links (the security middleware now leaves both alone). They count views. Revoking
+    deletes the link; deleting the report deletes its links.
+  - Deleting a report removes its files; the run and its results stay, and the list shows "Deleted".
+  - "Auto-publish" is a switch per suite on Tests › Suites (those who publish reports). It remembers who switched it
+    on and the ATM address they used, and publishes each passed or failed run that has a report with their
+    Confluence token; a failure is recorded like any failed publication. It stops if that person may no longer
+    publish.
+  - "Download report (zip)" is the same archive as the Confluence attachment.
+  - The UI tests run a suite of their own with Allure from the frontend's npm package, so "Install Allure" is covered
+    by a backend test against a fake Maven Central.
 
 ### Phase 20: `feature/phase_20_reviews_notifications`
 - **Delivers:**

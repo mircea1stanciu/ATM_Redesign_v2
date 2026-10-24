@@ -64,6 +64,7 @@ mark, ✓ still applies only to projects the user can see.
 | **Reporting** | | | | | | |
 | `report.view` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `report.publish` (to Confluence) | ✓ | ✓ | ✓ | | | |
+| `report.manage` (delete reports, revoke share links, install Allure) | ✓ | ✓ | | | | |
 | **Reviews** | | | | | | |
 | `pr.view` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `pr.comment` | ✓ | ✓ | ✓ | ✓ | ✓ | |
