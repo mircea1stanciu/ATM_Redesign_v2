@@ -34,14 +34,6 @@ export const ROLE_COLORS: Record<UserRole, string> = {
   viewer: 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400',
 }
 
-/** Permission needed to open each area. Absence = every signed-in user. */
-export const ROUTE_PERMISSIONS: Record<string, string> = {
-  '/projects': 'project.view',
-  '/jira-confluence': 'work.view',
-  '/upskilling': 'learning.use',
-  '/users': 'user.view',
-}
-
 export type RunStatus =
   | 'pending'
   | 'running'

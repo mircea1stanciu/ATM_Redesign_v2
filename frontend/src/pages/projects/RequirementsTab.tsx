@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, ClipboardList, Link2, Loader2, RefreshCcw, RotateCcw, Save, Search, ServerCrash, FolderOpen, Settings, Users, Wand2 } from 'lucide-react'
+import { useTabParam } from '@/ui'
 import { apiService, CONNECTION_STATUS_CHANGED_EVENT } from '@/services/api'
 import TaskManagementPanel from './TaskManagementPanel'
 import ZephyrAutomationPlannerPanel from './ZephyrAutomationPlannerPanel'
@@ -8,7 +9,8 @@ import ZephyrAutomationPlannerPanel from './ZephyrAutomationPlannerPanel'
 const JIRA_STATUS_SPLIT_STORAGE_KEY = 'projects.jira.status.leftPanelWidth'
 const JIRA_PRIORITY_OPTIONS = ['Highest', 'High', 'Medium', 'Low', 'Lowest']
 
-type SubTab = 'planner' | 'status' | 'tasks'
+const SUB_TABS = ['planner', 'status', 'tasks'] as const
+type SubTab = typeof SUB_TABS[number]
 
 type StoryItem = {
   key: string
@@ -45,7 +47,13 @@ interface CreateTicketFormState {
 }
 
 export default function RequirementsTab() {
-  const [subTab, setSubTab] = useState<SubTab>('planner')
+  // The sub-tab is in the URL (?view=…), so refresh and shared links keep the place.
+  const subTab = useTabParam('view', SUB_TABS)
+  const [, setSearchParams] = useSearchParams()
+  const setSubTab = useCallback(
+    (next: SubTab) => setSearchParams(p => { p.set('view', next); return p }, { replace: true }),
+    [setSearchParams],
+  )
 
   const [baseUrl, setBaseUrl] = useState('')
   const [tokenSet, setTokenSet] = useState(false)

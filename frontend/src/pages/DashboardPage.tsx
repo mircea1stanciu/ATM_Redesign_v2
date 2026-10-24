@@ -136,7 +136,7 @@ export default function DashboardPage() {
               <div className="flex h-full flex-col items-center justify-center text-center px-4 py-8">
                 <Activity size={28} className="mb-3 text-gray-300 dark:text-gray-600" />
                 <p className="text-sm text-gray-500 dark:text-gray-400">No runs yet.</p>
-                <button onClick={() => navigate('/runs')}
+                <button onClick={() => navigate('/tests/runs')}
                   className="mt-2 text-xs text-blue-600 dark:text-blue-400 hover:underline font-medium">
                   Create your first run →
                 </button>
@@ -155,7 +155,7 @@ export default function DashboardPage() {
                 {filteredRuns.slice(0, 20).map(run => (
                   <button
                     key={run.id}
-                    onClick={() => { useAppStore.getState().setSelectedRunId(run.id); navigate('/runs') }}
+                    onClick={() => { useAppStore.getState().setSelectedRunId(run.id); navigate('/tests/runs') }}
                     className="flex w-full items-center justify-between px-4 py-3 text-left transition hover:bg-gray-50 dark:hover:bg-gray-700/30"
                   >
                     <div className="flex min-w-0 items-center gap-2.5">

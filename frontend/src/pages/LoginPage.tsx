@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { apiService } from '@/services/api'
+import { useTheme } from '@/app/theme'
 import { useAppStore } from '@/store/useAppStore'
 
 type AuthMode = 'login' | 'register'
@@ -21,20 +22,8 @@ export default function LoginPage() {
   const [fullName, setFullName] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [isDark, setIsDark] = useState(() =>
-    document.documentElement.classList.contains('dark') ||
-    localStorage.getItem('theme') === 'dark' ||
-    (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches)
-  )
-
-  const toggleDark = () => {
-    setIsDark(d => {
-      const next = !d
-      document.documentElement.classList.toggle('dark', next)
-      localStorage.setItem('theme', next ? 'dark' : 'light')
-      return next
-    })
-  }
+  const isDark = useTheme(state => state.resolved === 'dark')
+  const toggleDark = useTheme(state => state.toggle)
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()

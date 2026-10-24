@@ -23,25 +23,26 @@ const ROLES: Array<{ role: Role; label: string; seesUsers: boolean; managesUsers
 for (const { role, label, seesUsers, managesUsers, createsProjects } of ROLES) {
   test(`${label}: navigation and actions`, async ({ page }) => {
     await login(page, role)
-    const nav = page.getByRole('navigation').first()
-    for (const area of ['Dashboard', 'Projects', 'Jira and Confluence', 'Upskilling', 'Settings']) {
-      await expect(nav.getByRole('link', { name: area, exact: true })).toBeVisible()
-    }
-    await expect(nav.getByRole('link', { name: 'Users', exact: true })).toHaveCount(seesUsers ? 1 : 0)
+    const nav = page.getByRole('navigation', { name: 'Main' })
+    await expect(nav.getByRole('link', { name: 'Admin', exact: true })).toHaveCount(seesUsers ? 1 : 0)
     await page.getByRole('button', { name: 'Account menu' }).click()
-    await expect(page.getByText(label, { exact: true }).first()).toBeVisible()
+    // The account menu shows the role, and the scope tag for seniors, users and trainees.
+    await expect(page.getByRole('menu').getByText(new RegExp(`^${label}( · (Shared|Project based))?$`))).toBeVisible()
 
+    await page.keyboard.press('Escape')
     // Every seeded role sees the sample project: lead of it, shared, or a member.
-    await page.goto('/projects')
-    await expect(page.getByText('E2E Sample Project').first()).toBeVisible()
-    await expect(page.getByRole('button', { name: 'New Project' })).toHaveCount(createsProjects ? 1 : 0)
+    await expect(page.getByRole('button', { name: 'Switch project (current: E2E Sample Project)' })).toBeVisible()
 
-    await page.goto('/users')
+    await page.goto('/admin/projects')
+    if (createsProjects) await expect(page.getByRole('button', { name: 'New project' })).toBeVisible()
+    else await expect(page).not.toHaveURL(/\/admin\/projects/)
+
+    await page.goto('/admin/users')
     if (!seesUsers) {
       await expect(page).toHaveURL(/\/$/)
       return
     }
-    await expect(page.getByRole('heading', { name: 'User Management' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Users', exact: true })).toBeVisible()
     await expect(page.getByText('e2e_viewer@e2e.test')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Add User' })).toHaveCount(managesUsers ? 1 : 0)
     if (!managesUsers) await expect(page.getByRole('button', { name: /^Edit / })).toHaveCount(0)
@@ -59,7 +60,7 @@ test('a Lead changes a User into a Senior', async ({ page, request }) => {
   const user = await created.json()
 
   await login(page, 'automation_lead')
-  await page.goto('/users')
+  await page.goto('/admin/users')
   // Leads may change their own people only; the super admin is not theirs.
   await expect(page.getByRole('button', { name: 'Edit E2E Super Admin' })).toHaveCount(0)
   await page.getByRole('button', { name: `Edit ${name}` }).click()

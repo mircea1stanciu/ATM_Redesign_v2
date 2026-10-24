@@ -97,8 +97,8 @@ classes such as `bg-blue-600`.
 ### Side bar
 
 - It can be collapsed to icons, and the state is remembered.
-- Items the role cannot use are not shown. For example, a Viewer sees Home, Tests, Reports, Reviews and Deploys,
-  read-only.
+- Items the role cannot use are not shown. For example, a Viewer sees every area except Admin, read-only; Admin
+  shows for Super Admin, Lead and (read-only) Senior.
 - An area with something waiting shows a small badge, for example Reviews with "2 waiting for you".
 
 ## 5.4 Areas and screens

@@ -11,13 +11,13 @@ test.beforeEach(({ page }) => {
 
 test('Community is no longer in the navigation and its URL goes Home', async ({ page }) => {
   await login(page, 'super_admin')
-  const nav = page.getByRole('navigation').first()
-  await expect(nav.getByRole('link', { name: 'Projects', exact: true })).toBeVisible()
+  const nav = page.getByRole('navigation', { name: 'Main' })
+  await expect(nav.getByRole('link', { name: 'Learning', exact: true })).toBeVisible()
   await expect(nav.getByRole('link', { name: 'Community', exact: true })).toHaveCount(0)
 
   await page.goto('/community')
   await expect(page).toHaveURL(/\/$/)
-  await expect(page.getByRole('heading', { name: 'Pass Rate Trend' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /^Good (morning|afternoon|evening)/ })).toBeVisible()
 })
 
 test('Settings no longer offers the mock privacy, data and billing sections', async ({ page }) => {

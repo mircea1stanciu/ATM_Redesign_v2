@@ -140,6 +140,36 @@ They touch different modules, so their PRs do not conflict (see section 6.4).
   - URL-driven tabs.
 - **UI tests:** navigation per role, command palette, theme switch, keyboard navigation, every area loads, and old
   URLs redirect to the new ones.
+- **Decided while building phase 05:**
+  - Where today's screens live now (old URLs redirect and keep their query string):
+
+    | Area | Tabs | Screen before |
+    |---|---|---|
+    | Home `/` | – | new, per role |
+    | Work `/work` | Jira, Confluence releases, Release analyzer, Workspace, Repository | Jira and Confluence; Projects › AI and Repository |
+    | Tests `/tests` | Runs, Project, Libraries | Projects › Test Runs, Overview, Library |
+    | Reports `/reports` | Overview, Analytics | Dashboard; Projects › Analytics |
+    | Reviews `/reviews`, Deploys `/deployments` | – | new, empty states until phases 12 and 11 |
+    | Learning `/learning` | – | Upskilling |
+    | Admin `/admin` | Users, Projects | Users; project create/delete from the Projects header |
+
+  - The side bar follows the `*.view` permissions of the matrix, so a Viewer also sees Work and Learning, read-only.
+    Admin shows for `user.view` or `project.create`, so a Senior sees the user list read-only.
+  - Parts of Home that depend on later phases (work items, reviews, trainees' progress) show an empty state saying
+    what will be there and where to go meanwhile.
+  - Today's screens get the new look through the tokens and the shared classes (`btn-*`, `form-input`, `card`); their
+    inner layout stays until each area is reworked (phases 06–14). New code uses only `src/ui/` and token classes.
+  - Fonts are bundled (`@fontsource`) instead of loaded from Google Fonts: no third-party request, and they work
+    offline.
+  - The route tree is no longer re-mounted on every navigation, so the shell keeps its state between pages.
+  - TanStack Query serves Home and Admin › Users; the other screens move to it as they are reworked.
+  - Sub-tabs of Work › Repository and Work › Jira are in the URL (`?view=…`).
+- **Left for later phases:**
+  - Kit components without a user yet: Table/DataList (phase 08), SplitPane and CodeEditor/DiffView moved into the
+    kit (phase 07).
+  - Notifications are UI only (phase 11). Hints are dismissed per browser; the "hints on/off" preference comes with
+    Learning (phase 13).
+  - Today's pages stay in `src/pages/`; they move into `src/features/<area>/` as each area is reworked.
 
 ### Phase 06: `feature/phase_06_work_requirements`
 - **Goal:** work from Jira and Confluence.

@@ -1,0 +1,47 @@
+/*
+ * Design tokens (docs/redesign/05-design.md, section 5.2). Values are RGB channels so Tailwind can add opacity
+ * (bg-accent/10). Components use the Tailwind names from tailwind.config.js, never raw colour classes.
+ */
+:root {
+  --bg: 247 248 250;
+  --surface: 255 255 255;
+  --surface-2: 240 242 245;
+  --border: 227 230 235;
+  --text: 27 31 36;
+  --text-muted: 91 101 115;
+  --brand: 245 158 11;
+  --brand-fg: 27 31 36;
+  --accent: 37 99 235;
+  --success: 22 163 74;
+  --danger: 220 38 38;
+  --warning: 217 119 6;
+  --info: 8 145 178;
+  --shadow-float: 0 8px 28px rgb(15 23 42 / 0.14), 0 2px 6px rgb(15 23 42 / 0.08);
+  color-scheme: light;
+}
+
+.dark {
+  --bg: 13 17 23;
+  --surface: 22 27 34;
+  --surface-2: 28 33 41;
+  --border: 42 49 60;
+  --text: 230 237 243;
+  --text-muted: 141 150 160;
+  --brand: 245 165 36;
+  --brand-fg: 13 17 23;
+  --accent: 76 141 255;
+  --success: 63 185 80;
+  --danger: 248 81 73;
+  --warning: 210 153 34;
+  --info: 57 197 207;
+  --shadow-float: 0 8px 28px rgb(0 0 0 / 0.5), 0 2px 6px rgb(0 0 0 / 0.3);
+  color-scheme: dark;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -345,7 +345,7 @@ export default function StarterProjectCard({ projectId, projectName }: { project
         <p className="mt-1 truncate font-mono text-xs text-gray-500 dark:text-gray-400" title={local.path}>{local.path}</p>
         <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
           Branch {local.current_branch}{local.dirty ? ' · uncommitted changes' : ''} ·{' '}
-          <Link to="/projects/repository" className="font-medium text-blue-600 hover:underline dark:text-blue-400">Manage</Link>
+          <Link to="/work/repository" className="font-medium text-blue-600 hover:underline dark:text-blue-400">Manage</Link>
         </p>
       </section>
     )
@@ -384,7 +384,7 @@ export default function StarterProjectCard({ projectId, projectName }: { project
                 {local?.current_branch && <>Branch {local.current_branch}{local.dirty ? ' · uncommitted changes' : ''} · </>}
                 {(scaffold.remotes?.length ?? 0) > 0 ? <>Pushed to {scaffold.remotes?.join(', ')} · </> : <>Local only (not in Git yet) · </>}
                 Created {new Date(scaffold.created_at.endsWith('Z') ? scaffold.created_at : `${scaffold.created_at}Z`).toLocaleString()} ·{' '}
-                <Link to="/projects/repository" className="font-medium text-blue-600 hover:underline dark:text-blue-400">Open files</Link>
+                <Link to="/work/repository" className="font-medium text-blue-600 hover:underline dark:text-blue-400">Open files</Link>
               </p>
             </div>
             <div className="flex items-center gap-2">

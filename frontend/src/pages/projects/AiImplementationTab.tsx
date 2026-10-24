@@ -150,8 +150,8 @@ export default function AiImplementationTab() {
               The assistant works on the project's local copy. Import or link one first, or create a starter project from the Overview page.
             </p>
             <div className="flex gap-2">
-              <Link to="/projects/repository" className="btn-primary px-3 py-1.5 text-xs">Local and GIT project Management</Link>
-              <Link to="/projects" className="btn-secondary px-3 py-1.5 text-xs">Overview</Link>
+              <Link to="/work/repository" className="btn-primary px-3 py-1.5 text-xs">Repository</Link>
+              <Link to="/tests/project" className="btn-secondary px-3 py-1.5 text-xs">Project overview</Link>
             </div>
           </div>
         ) : tab === 'analysis' ? (

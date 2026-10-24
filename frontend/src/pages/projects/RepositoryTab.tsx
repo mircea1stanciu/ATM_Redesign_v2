@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   ChevronRight, Columns3, File, FileCode2, Folder, FolderGit2, FolderOpen, GitCompare, GitPullRequest, Loader2, Terminal, Zap,
 } from 'lucide-react'
+import { useTabParam } from '@/ui'
 import { useAppStore } from '@/store/useAppStore'
 import { apiService } from '@/services/api'
 import type { GitHubTreeItem } from '@/types/domain'
@@ -11,11 +13,18 @@ import LocalFileEditor from './LocalFileEditor'
 import LocalScriptsPanel from './LocalScriptsPanel'
 import PublishPanel from './PublishPanel'
 
-type SubTab = 'parallel' | 'compare' | 'editor' | 'scripts' | 'publish' | 'structure' | 'analyzer'
+const SUB_TABS = ['parallel', 'compare', 'editor', 'scripts', 'publish', 'structure', 'analyzer'] as const
+type SubTab = typeof SUB_TABS[number]
 
 export default function RepositoryTab() {
   const selectedProjectId = useAppStore(s => s.selectedProjectId)
-  const [subTab, setSubTab] = useState<SubTab>('parallel')
+  // The sub-tab is in the URL (?view=…), so refresh and shared links keep the place.
+  const subTab = useTabParam('view', SUB_TABS)
+  const [, setSearchParams] = useSearchParams()
+  const setSubTab = useCallback(
+    (next: SubTab) => setSearchParams(p => { p.set('view', next); return p }, { replace: true }),
+    [setSearchParams],
+  )
 
   // Repo tree state
   const [repoTree, setRepoTree] = useState<GitHubTreeItem[]>([])

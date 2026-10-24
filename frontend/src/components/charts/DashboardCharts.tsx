@@ -120,7 +120,7 @@ export default function DashboardCharts({ runTrendData, runs }: { runTrendData: 
                     <XAxis dataKey="runLabel" stroke={axisColor} tick={{ fontSize: 10 }} />
                     <YAxis domain={[0, 100]} stroke={axisColor} tick={{ fontSize: 10 }} unit="%" />
                     <Tooltip
-                      contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border-color)', borderRadius: 12, fontSize: 11, color: 'var(--text-primary)' }}
+                      contentStyle={{ background: 'rgb(var(--surface))', border: '1px solid rgb(var(--border))', borderRadius: 12, fontSize: 11, color: 'rgb(var(--text))' }}
                       formatter={(v: number) => [`${v}%`, 'Pass Rate']}
                       labelFormatter={runLabelFormatter}
                     />
@@ -175,7 +175,7 @@ export default function DashboardCharts({ runTrendData, runs }: { runTrendData: 
                   <XAxis dataKey="runLabel" stroke={axisColor} tick={{ fontSize: 10 }} />
                   <YAxis stroke={axisColor} tick={{ fontSize: 10 }} unit="s" />
                   <Tooltip
-                    contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border-color)', borderRadius: 12, fontSize: 11, color: 'var(--text-primary)' }}
+                    contentStyle={{ background: 'rgb(var(--surface))', border: '1px solid rgb(var(--border))', borderRadius: 12, fontSize: 11, color: 'rgb(var(--text))' }}
                     formatter={v => {
                       const n = typeof v === 'number' ? v : Number(v)
                       return [Number.isNaN(n) ? '-' : `${n}s`, 'Duration']
@@ -254,7 +254,7 @@ export default function DashboardCharts({ runTrendData, runs }: { runTrendData: 
                     {chartData.map((item, index) => <Cell key={item.name} fill={PIE_COLORS[index % PIE_COLORS.length]} />)}
                   </Pie>
                   <Tooltip
-                    contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border-color)', borderRadius: 12, fontSize: 11, color: 'var(--text-primary)' }}
+                    contentStyle={{ background: 'rgb(var(--surface))', border: '1px solid rgb(var(--border))', borderRadius: 12, fontSize: 11, color: 'rgb(var(--text))' }}
                     formatter={(value: number) => [value, chartName]}
                   />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
@@ -265,7 +265,7 @@ export default function DashboardCharts({ runTrendData, runs }: { runTrendData: 
                   <XAxis dataKey="name" stroke={axisColor} tick={{ fontSize: 10 }} angle={-24} textAnchor="end" interval={0} />
                   <YAxis stroke={axisColor} tick={{ fontSize: 10 }} />
                   <Tooltip
-                    contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border-color)', borderRadius: 12, fontSize: 11, color: 'var(--text-primary)' }}
+                    contentStyle={{ background: 'rgb(var(--surface))', border: '1px solid rgb(var(--border))', borderRadius: 12, fontSize: 11, color: 'rgb(var(--text))' }}
                     formatter={(value: number) => [value, chartName]}
                   />
                   <Bar dataKey="value" name={chartName} fill="#2563eb" radius={[4, 4, 0, 0]} />
