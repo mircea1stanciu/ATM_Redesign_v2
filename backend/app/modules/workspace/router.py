@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.permissions import check_trainee_push, require
+from app.modules.notifications.service import notify, reviewers
 from app.modules.projects.checkouts import checkout_path, require_checkout, save_linked_path, service_project
 from app.modules.projects.models import BranchOwner
 from app.modules.projects.service import (
@@ -458,6 +459,10 @@ async def create_project_pull_request(
         url = pr.get("html_url", "")
         # A pull request from a work item's branch traces to the item and moves it to "in review".
         item = link_pull_request(db, project_id, head, url, pr.get("title", title)) if url else None
+        author = current_user.full_name or current_user.username
+        notify(db, reviewers(db, project_id, current_user), "review_request",
+               f"{author} asks for a review: {pr.get('title', title)}",
+               f"{project.name} · {head} → {base}", url or None, project_id=project_id)
         return {"number": pr.get("number", 0), "url": url, "state": pr.get("state", "open"),
                 "title": pr.get("title", title), "head": head, "base": base,
                 "work_item": {"id": item.id, "external_key": item.external_key} if item else None}

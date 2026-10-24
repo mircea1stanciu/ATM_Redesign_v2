@@ -235,7 +235,7 @@ async def start_suite_run(db: Session, user: User, suite: AnalyticsSuite, enviro
         raise HTTPException(status_code=400, detail="No local checkout linked for this project.")
     _environment(db, suite.project_id, environment_id)
     run = AnalyticsRun(suite_id=suite.id, branch=branch, triggered_by=user.email if trigger == "manual" else trigger,
-                       name=suite.name, trigger=trigger)
+                       name=suite.name, trigger=trigger, started_by_id=user.id)
     db.add(run)
     db.commit()
     db.refresh(run)

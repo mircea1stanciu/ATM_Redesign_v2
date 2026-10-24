@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.core.crypto import encrypt
 from app.core.db import get_db
 from app.core.permissions import ensure, require, visible_project_ids
 from app.modules.projects.checkouts import (
@@ -54,6 +55,8 @@ class ProjectUpdate(BaseModel):
     jira_project_key: Optional[str] = None
     confluence_space_key: Optional[str] = None
     confluence_parent_page_id: Optional[str] = None
+    # Write-only: answers say only whether one is set. "" removes it.
+    teams_webhook: Optional[str] = None
 
 
 # Project Endpoints
@@ -80,6 +83,7 @@ def _project_response(project: Project) -> dict:
         "jira_project_key": project.jira_project_key,
         "confluence_space_key": project.confluence_space_key,
         "confluence_parent_page_id": project.confluence_parent_page_id,
+        "teams_webhook_set": bool(project.teams_webhook),
         "git_provider": "github",
         "default_branch": "main",
         "framework": None,
@@ -169,6 +173,13 @@ async def update_project(
         raise HTTPException(status_code=400, detail="The Confluence parent page is its numeric page id.")
     if changes.get("jira_project_key"):
         changes["jira_project_key"] = changes["jira_project_key"].upper()
+    if "teams_webhook" in changes:
+        # Where deployments are announced: part of configuring deployments (leads).
+        ensure(db, current_user, "deployment.configure", project_id)
+        url = (changes["teams_webhook"] or "").strip()
+        if url and not url.startswith(("https://", "http://")):
+            raise HTTPException(status_code=400, detail="The Teams webhook is the URL of a Teams workflow webhook.")
+        changes["teams_webhook"] = encrypt(url) if url else None
     for field, value in changes.items():
         setattr(project, field, value)
 

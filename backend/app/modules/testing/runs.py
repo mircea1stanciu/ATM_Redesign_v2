@@ -166,6 +166,10 @@ async def _set_manual_run_status(run_id: str, manual_run_id: int, artifact_dir: 
         metadata["finished_at"] = datetime.utcnow().isoformat() if status not in ("pending", "running") else None
         _write_manual_run_metadata(artifact_dir, metadata)
     await _broadcast_manual_run_message(run_id, payload)
+    if status not in ("pending", "running"):
+        from app.modules.deployments.service import on_run_finished
+
+        await on_run_finished(manual_run_id, status)
 
 
 ARTIFACTS_FOLDER = ".automationtestmanager"

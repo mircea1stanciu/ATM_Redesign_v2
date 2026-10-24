@@ -6,6 +6,7 @@
 //   /confluence/rest/api/...    Confluence: current user, spaces, page search and detail; report pages (create,
 //                               update, attachments)
 //   /models/...                 GitHub Models (the "GitHub Copilot" AI provider): catalog and chat completions
+//   /teams/hook                 a Microsoft Teams workflow webhook (deployment cards)
 //   /__e2e/requests             what ATM sent (tests inspect it); /__e2e/health for the harness
 import { execFileSync, spawn } from 'node:child_process'
 import { createServer } from 'node:http'
@@ -24,6 +25,8 @@ const pullRequests = []
 const jiraWrites = []
 // Report pages ATM created or updated in Confluence, and the attachments it uploaded.
 const confluenceWrites = []
+// Cards posted to the Teams workflow webhook (/teams/hook).
+const teamsPosts = []
 const reportPages = {}
 
 // The E2E Jira project: two stories and a bug (the inbox lists stories by default).
@@ -278,15 +281,24 @@ async function models(req, res, url) {
   return json(res, 404, { message: 'Not Found' })
 }
 
+// Microsoft Teams workflow webhook: records the Adaptive Card's title and link.
+async function teams(req, res) {
+  if (req.method !== 'POST') return json(res, 405, { message: 'Method Not Allowed' })
+  const card = JSON.parse(await readBody(req)).attachments[0].content
+  teamsPosts.push({ title: card.body[0].text, text: card.body[1]?.text ?? '', link: card.actions?.[0]?.url ?? null })
+  return json(res, 202, {})
+}
+
 createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${port}`)
   if (url.pathname === '/__e2e/health') return json(res, 200, { ok: true })
-  if (url.pathname === '/__e2e/requests') return json(res, 200, { requests, pullRequests, jiraWrites, aiRequests, confluenceWrites })
+  if (url.pathname === '/__e2e/requests') return json(res, 200, { requests, pullRequests, jiraWrites, aiRequests, confluenceWrites, teamsPosts })
   requests.push({ method: req.method, path: url.pathname, authorization: Boolean(req.headers.authorization) })
   if (/^\/[^/]+\/[^/]+\.git\//.test(url.pathname)) return gitHttpBackend(req, res, url)
   if (url.pathname.startsWith('/api/v3/')) return github(req, res, url)
   if (url.pathname.startsWith('/jira/')) return jira(req, res, url)
   if (url.pathname.startsWith('/confluence/')) return confluence(req, res, url)
   if (url.pathname.startsWith('/models/')) return models(req, res, url)
+  if (url.pathname === '/teams/hook') return teams(req, res)
   json(res, 404, { message: 'Not Found' })
 }).listen(port, '127.0.0.1', () => console.log(`fake services on http://127.0.0.1:${port}`))

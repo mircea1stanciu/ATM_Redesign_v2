@@ -1,6 +1,6 @@
 import { Navigate, useSearchParams } from 'react-router-dom'
 import { useState } from 'react'
-import { GitPullRequest, Play, Rocket, Terminal } from 'lucide-react'
+import { GitPullRequest, Play, Terminal } from 'lucide-react'
 import { usePermission } from '@/hooks/usePermission'
 import RunDialog from '@/features/testing/RunDialog'
 import LocalScriptsPanel from '@/pages/projects/LocalScriptsPanel'
@@ -85,15 +85,6 @@ export function ReviewsPage() {
   )
 }
 
-export function DeploymentsPage() {
-  return (
-    <div className="flex flex-col gap-4">
-      <PageHeader title="Deploys" description="Deployments per environment, so you know when to test." />
-      <Card>
-        <EmptyState icon={Rocket} title="No deployments yet">
-          Deployments will show here once your lead connects the deployment notifications of your projects.
-        </EmptyState>
-      </Card>
-    </div>
-  )
+export function DeploymentsLayout() {
+  return <AreaLayout areaId="deployments" title="Deploys" description="Deployments per environment, so you know when to test." />
 }

@@ -150,6 +150,8 @@ export interface Project {
   confluence_space_key?: string | null
   /** Test report pages are published under this Confluence page. */
   confluence_parent_page_id?: string | null
+  /** A Teams channel webhook is set (the URL itself is never sent back). */
+  teams_webhook_set?: boolean
   git_provider: string
   default_branch: string
   framework: string | null

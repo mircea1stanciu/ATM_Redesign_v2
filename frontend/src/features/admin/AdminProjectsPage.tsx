@@ -5,7 +5,7 @@ import { FolderGit2, Github, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useAppStore } from '@/store/useAppStore'
 import { apiService } from '@/services/api'
 import { usePermission } from '@/hooks/usePermission'
-import { Badge, Button, Card, ConfirmDialog, Dialog, EmptyState, IconButton, Input, Textarea, useToast } from '@/ui'
+import { Badge, Button, Card, Checkbox, ConfirmDialog, Dialog, EmptyState, IconButton, Input, Textarea, useToast } from '@/ui'
 import type { Project } from '@/types/domain'
 
 /** Admin › Projects: create and delete projects, and choose each project's Jira project and Confluence space. */
@@ -19,6 +19,7 @@ export default function AdminProjectsPage() {
   const deleteProject = useAppStore(s => s.deleteProject)
   const error = useAppStore(s => s.error)
   const canDelete = usePermission('project.delete')
+  const canConfigureDeployments = usePermission('deployment.configure')
   const toast = useToast()
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
@@ -32,6 +33,8 @@ export default function AdminProjectsPage() {
   const [jiraKey, setJiraKey] = useState('')
   const [spaceKey, setSpaceKey] = useState('')
   const [parentPage, setParentPage] = useState('')
+  const [teamsUrl, setTeamsUrl] = useState('')
+  const [removeTeams, setRemoveTeams] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
@@ -40,6 +43,8 @@ export default function AdminProjectsPage() {
     setJiraKey(project.jira_project_key ?? '')
     setSpaceKey(project.confluence_space_key ?? '')
     setParentPage(project.confluence_parent_page_id ?? '')
+    setTeamsUrl('')
+    setRemoveTeams(false)
     setSaveError(null)
   }
 
@@ -51,6 +56,8 @@ export default function AdminProjectsPage() {
     try {
       const updated = await apiService.updateProject(editing.id, {
         jira_project_key: jiraKey, confluence_space_key: spaceKey, confluence_parent_page_id: parentPage,
+        // Write-only: sent when replaced or removed.
+        ...(teamsUrl.trim() ? { teams_webhook: teamsUrl.trim() } : removeTeams ? { teams_webhook: '' } : {}),
       })
       useAppStore.setState(state => ({
         projects: state.projects.map(p => p.id === updated.id ? { ...p, ...updated } : p),
@@ -174,6 +181,16 @@ export default function AdminProjectsPage() {
           <Input label="Confluence parent page id (test reports)" placeholder="123456" value={parentPage}
             onChange={e => setParentPage(e.target.value)} inputMode="numeric"
             help="Test report pages are published under this page (its number is in the page's URL)." />
+          {canConfigureDeployments && (
+            <div className="space-y-2">
+              <Input label="Microsoft Teams webhook (deployments)" type="url" value={teamsUrl} onChange={e => setTeamsUrl(e.target.value)}
+                placeholder={editing?.teams_webhook_set ? 'Set: enter a new URL to replace it' : 'https://…'}
+                help="Deployments and their checks are posted to this channel. Create it in Teams: Workflows › Post to a channel when a webhook request is received." />
+              {editing?.teams_webhook_set && !teamsUrl && (
+                <Checkbox label="Stop posting to Teams" checked={removeTeams} onChange={e => setRemoveTeams(e.target.checked)} />
+              )}
+            </div>
+          )}
           {saveError && <p role="alert" className="text-[13px] text-danger">{saveError}</p>}
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>

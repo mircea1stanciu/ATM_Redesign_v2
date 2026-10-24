@@ -340,6 +340,32 @@ They touch different modules, so their PRs do not conflict (see section 6.4).
   - Notifications for deployments, finished runs, review requests and promotions.
   - Environment checks agreed in open topic T2. Email or Teams per open topic T3.
 - **UI tests:** post a signed webhook; the tester of that project sees the notification and opens the deployment.
+- **Decided while building phase 11** (T2 and T3 were still open; these are the suggested defaults, listed in
+  [decisions-to-review.md](decisions-to-review.md)):
+  - **Webhook.** CI/CD posts `{"service", "version", "environment", "source", "commit", "url", "notes",
+    "deployed_at", "delivery_id"}` to `POST /api/deployments/webhook`, signed with the service's secret:
+    `X-ATM-Timestamp` (unix seconds, at most 5 minutes old) and `X-ATM-Signature: sha256=<HMAC-SHA256 of
+    "<timestamp>.<body>">`. An unknown service answers like a bad signature (401). A repeated `delivery_id` is
+    recorded once. Each service has its own secret, shown once when created or renewed, stored encrypted.
+  - **Service map** (Deploys › Services, `deployment.configure`): services (backend or frontend), the projects that
+    test each, and per project an optional smoke suite with the tester it runs as. A lead changes a service only
+    when every project testing it is in their scope.
+  - **Environment check (T2).** After a deployment, each mapped project with a smoke suite runs it on its environment
+    with the deployment's environment name (case-insensitive), in the chosen tester's checkout, like a schedule
+    (`trigger = deployment`). No environment of that name: the check is "skipped" with the reason.
+  - **Who is notified:** the members and the lead of each project that tests the service, who test (Lead, Senior,
+    User, Trainee); not Viewers, and not shared-scope Seniors who are not members. Once per person per deployment.
+  - **Notifications (T3: in-app first, then Teams).** Stored per user; pushed live over `/api/ws/notifications`
+    (same token handshake as the run log socket); a toast and the bell's count. Kinds: deployment, environment
+    check, my run finished, review request (a PR opened from ATM: the project's Seniors and lead, and the author's
+    lead), role change. Each kind and each project can be muted (/notifications). Deployments and checks are also
+    posted to a project's Teams channel through a Teams workflow webhook (Admin › Projects, leads, encrypted).
+  - Runs remember who started them (`started_by_id`); a schedule or a check counts as started by the person it runs
+    as. A check's run is announced as the check, not as a finished run.
+  - `Project` is now a typed model, and `app.modules.projects.models` left the mypy baseline.
+- **Left for later phases:** e-mail, personal Teams messages, review requests from the Reviews area (phase 12),
+  promotion decisions with a note (phase 14), the Home card "New deployments to check", and an audit log of webhook
+  calls.
 
 ### Phase 12: `feature/phase_12_code_review`
 - **Goal:** seniors review pull requests in ATM.

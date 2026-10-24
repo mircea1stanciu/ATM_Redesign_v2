@@ -38,8 +38,10 @@ def get_db():
 
 def import_all_models() -> None:
     """Register every module's tables on Base.metadata (used by schema creation and Alembic)."""
+    from app.modules.deployments import models as _deployments  # noqa: F401
     from app.modules.identity import models as _identity  # noqa: F401
     from app.modules.learning import models as _learning  # noqa: F401
+    from app.modules.notifications import models as _notifications  # noqa: F401
     from app.modules.projects import models as _projects  # noqa: F401
     from app.modules.settings import models as _settings  # noqa: F401
     from app.modules.work import models as _work  # noqa: F401
