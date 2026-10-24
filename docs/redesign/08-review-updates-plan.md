@@ -122,6 +122,19 @@ Decisions kept as they are need no work and are not repeated here.
   longer depend on the person who set the schedule); without a service account a schedule keeps running as its
   owner. Runs show "ATM scheduler" as who started them. (#11)
 - **UI tests:** a Lead sets up the service account; a schedule runs in the shared checkout after its owner lost access.
+- **Decided while building phase 18:**
+  - The service account is a GitHub token on the project (`projects.service_github_token`, encrypted, migration
+    `0015`), set in Admin › Projects by those with the new permission `project.service_account` (Super Admin, Lead).
+    Saving clones the repository first, so only a token that works is kept.
+  - Its checkout lives in `ARTIFACTS_DIR/service-checkouts/project-<id>`. Before each scheduled run ATM brings it to the
+    latest commit of the default branch (`reset --hard` and `clean -fd`: ignored files such as dependencies and run
+    artifacts stay).
+  - With a service account, schedules run as ATM: no person started them (`started_by_id` empty, "by a schedule"), so
+    nobody gets a "run finished" notification; the owner's access no longer matters. Without one, nothing changes.
+  - A failed sync is shown in Admin › Projects ("Last sync failed") and the schedule is skipped that minute.
+  - Setting and removing the service account are audited. The ad-hoc "Default Suite" no longer picks an archived suite
+    (a phase 17 gap found here).
+  - The UI test uses a project of its own, so the other specs' schedules keep running as their owners.
 
 ### Phase 19: `feature/phase_19_reports`
 - **Delivers:**

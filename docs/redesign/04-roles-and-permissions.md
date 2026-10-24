@@ -42,6 +42,7 @@ mark, ✓ still applies only to projects the user can see.
 | `project.delete` | ✓ | ✓ | | | | |
 | `project.configure` (GitHub, Jira, Confluence links) | ✓ | ✓ | ✓ (own) | | | |
 | `project.members.manage` | ✓ | ✓ | | | | |
+| `project.service_account` (the ATM account that runs schedules) | ✓ | ✓ | | | | |
 | **Work items (Jira and Confluence)** | | | | | | |
 | `work.view` | ✓ | ✓ | ✓ | ✓ | ✓ | |
 | `work.start` (create work item and branch) | ✓ | ✓ | ✓ | ✓ | ✓ | |
