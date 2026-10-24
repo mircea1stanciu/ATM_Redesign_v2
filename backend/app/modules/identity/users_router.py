@@ -22,10 +22,17 @@ from app.core.permissions import (
 )
 from app.modules.identity.models import Organization, User, UserRole
 from app.modules.identity.service import get_default_organization
+from app.modules.notifications.service import notify
 from app.modules.projects.models import Project, ProjectMember
 
 logger = logging.getLogger("atm.users")
 router = APIRouter(prefix="/api", tags=["Users"])
+# As the frontend names them (ROLE_LABELS in src/types/domain.ts).
+ROLE_NAMES = {
+    UserRole.SUPER_ADMIN: "Super Admin", UserRole.AUTOMATION_LEAD: "Automation Lead",
+    UserRole.AUTOMATION_SENIOR: "Automation Senior", UserRole.AUTOMATION_USER: "Automation User",
+    UserRole.AUTOMATION_TRAINEE: "Automation Trainee", UserRole.VIEWER: "Viewer",
+}
 
 
 def me_payload(db: Session, user: User) -> dict:
@@ -209,6 +216,7 @@ async def update_user(
         raise HTTPException(status_code=400, detail="You cannot change your own role.")
 
     fields = payload.model_fields_set
+    role_change: Optional[tuple[UserRole, UserRole]] = None
     if "email" in fields and payload.email and payload.email != user.email:
         if db.query(User).filter(User.email == payload.email, User.id != user.id).first():
             raise HTTPException(status_code=400, detail="Email already registered.")
@@ -227,6 +235,8 @@ async def update_user(
         old = (user.role, user.scope_tag)
         user.role = role
         user.scope_tag = _resolve_tag(role, payload.scope_tag, user.scope_tag)
+        if old[0] != user.role:
+            role_change = (old[0], user.role)
         if old != (user.role, user.scope_tag):
             logger.info("%s changed %s from %s/%s to %s/%s", current_user.username, user.username,
                         old[0].value, old[1], user.role.value, user.scope_tag)
@@ -236,6 +246,10 @@ async def update_user(
         _set_projects(db, current_user, user, payload.project_ids)
     db.commit()
     db.refresh(user)
+    if role_change:
+        before, after = (ROLE_NAMES.get(r, r.value) for r in role_change)
+        notify(db, [user.id], "promotion", f"Your role is now {after}",
+               f"{current_user.full_name or current_user.username} changed your role from {before} to {after}.", "/")
     return _user_response(db, user)
 
 

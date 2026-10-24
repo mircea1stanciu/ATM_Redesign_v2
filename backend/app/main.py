@@ -16,10 +16,13 @@ from app.core.db import SessionLocal
 from app.core.migrations import upgrade_database
 from app.core.permissions import PermissionDenied
 from app.core.rate_limit import limiter
+from app.modules.deployments.router import router as deployments_router
 from app.modules.identity.router import router as identity_router
 from app.modules.identity.service import get_default_organization, seed_dev_admin
 from app.modules.identity.users_router import router as users_router
 from app.modules.learning.community_router import router as community_router
+from app.modules.notifications.router import router as notifications_router
+from app.modules.notifications.router import socket_router as notifications_socket_router
 from app.modules.projects.router import router as projects_router
 from app.modules.reporting.reports_router import router as reports_router
 from app.modules.reporting.router import router as reporting_router
@@ -103,6 +106,9 @@ app.include_router(test_manager_router, prefix="/api/test-manager", tags=["Work"
 app.include_router(tasks_router, prefix="/api/tasks", tags=["Work"])
 app.include_router(zephyr_planner_router, prefix="/api/zephyr-planner", tags=["Work"])
 app.include_router(work_router)
+app.include_router(deployments_router)
+app.include_router(notifications_router)
+app.include_router(notifications_socket_router)
 app.include_router(community_router, prefix="/api/community", tags=["Learning"])
 
 

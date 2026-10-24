@@ -50,9 +50,10 @@ PERSONAL = {
     "/api/settings/requirements-filters", "/api/settings/confluence", "/api/settings/confluence/test",
     "/api/settings/confluence/spaces",
 }
-PERSONAL_PREFIXES = ("/api/settings/security", "/api/settings/preferences")
-# Authorised by a signed, expiring token in the URL (made by POST /api/runs/{id}/report-link after report.view).
-SIGNED = {"/api/reports/view/{token}/{path:path}"}
+PERSONAL_PREFIXES = ("/api/settings/security", "/api/settings/preferences", "/api/notifications")
+# Authorised by a signature: a signed, expiring token in the URL (made by POST /api/runs/{id}/report-link after
+# report.view), or the HMAC of a deployment event with the service's secret.
+SIGNED = {"/api/reports/view/{token}/{path:path}", "/api/deployments/webhook"}
 PUBLIC = {"/api/auth/login", "/api/auth/login/verify-2fa", "/api/auth/register", "/api/health"}
 
 

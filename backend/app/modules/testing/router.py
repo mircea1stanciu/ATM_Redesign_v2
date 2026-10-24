@@ -139,6 +139,7 @@ async def create_analytics_run(
         branch=payload.branch,
         commit_sha=payload.commit_sha,
         triggered_by=current_user.email,  # the signed-in user, whatever the browser sends
+        started_by_id=current_user.id,
         name=_clean_run_name(payload.name),
         collection=payload.collection,
         collection_path=payload.collection,
