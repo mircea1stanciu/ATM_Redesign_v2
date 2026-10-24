@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -11,34 +11,36 @@ from app.core.db import Base
 class Project(Base):
     """A test automation project (GitHub repository and/or local checkout)."""
     __tablename__ = "projects"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    key = Column(String(20), unique=True, nullable=False, index=True)
-    name = Column(String(200), nullable=False)
-    description = Column(Text)
-    
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    key: Mapped[str] = mapped_column(String(20), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+
     # Multi-tenant fields
-    community_id = Column(String(50), nullable=False, index=True)
-    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False, index=True)
-    
+    community_id: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    organization_id: Mapped[int] = mapped_column(Integer, ForeignKey("organizations.id"), nullable=False, index=True)
+
     # Project settings
-    lead_user_id = Column(Integer, ForeignKey("users.id"))
-    icon = Column(String(100))
-    color = Column(String(20))
-    is_active = Column(Boolean, default=True)
-    is_archived = Column(Boolean, default=False)
-    github_repo_url = Column(String(512))
+    lead_user_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"))
+    icon: Mapped[Optional[str]] = mapped_column(String(100))
+    color: Mapped[Optional[str]] = mapped_column(String(20))
+    is_active: Mapped[Optional[bool]] = mapped_column(Boolean, default=True)
+    is_archived: Mapped[Optional[bool]] = mapped_column(Boolean, default=False)
+    github_repo_url: Mapped[Optional[str]] = mapped_column(String(512))
     # Where the project's stories and requirement pages live (Work area).
-    jira_project_key = Column(String(50))
-    confluence_space_key = Column(String(100))
+    jira_project_key: Mapped[Optional[str]] = mapped_column(String(50))
+    confluence_space_key: Mapped[Optional[str]] = mapped_column(String(100))
     # Test report pages are published under this Confluence page (phase 10).
-    confluence_parent_page_id = Column(String(64))
-    
+    confluence_parent_page_id: Mapped[Optional[str]] = mapped_column(String(64))
+    # Deployments and their checks are posted to this Microsoft Teams channel (workflow webhook URL, encrypted).
+    teams_webhook: Mapped[Optional[str]] = mapped_column(String(1024))
+
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    created_by_user_id = Column(Integer, ForeignKey("users.id"))
-    
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_by_user_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"))
+
     # Relationships
     lead = relationship("User", foreign_keys=[lead_user_id])
     creator = relationship("User", foreign_keys=[created_by_user_id])
@@ -122,7 +124,9 @@ class AnalyticsRun(Base):
     environment_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("test_environments.id", ondelete="SET NULL"), nullable=True)
     trigger: Mapped[str] = mapped_column(String(20), default="manual", server_default="manual",
-                                         nullable=False)  # manual | schedule
+                                         nullable=False)  # manual | schedule | deployment
+    # Who started it (for a schedule or a deployment check: the person it runs as). Told when it finishes.
+    started_by_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
 
 
 class ReportPublication(Base):

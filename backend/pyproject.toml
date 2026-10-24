@@ -90,7 +90,6 @@ module = [
     "app.modules.identity.models",
     "app.modules.identity.router",
     "app.modules.learning.community_router",
-    "app.modules.projects.models",
     "app.modules.projects.router",
     "app.modules.reporting.router",
     "app.modules.reporting.service",
