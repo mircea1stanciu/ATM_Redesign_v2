@@ -20,6 +20,7 @@ from app.modules.projects.service import (
     local_status,
     project_github_token,
 )
+from app.modules.reviews.router import record_opened
 from app.modules.work.service import link_pull_request, link_pushed_files
 
 router = APIRouter(prefix="/api/projects", tags=["Workspace"])
@@ -459,10 +460,13 @@ async def create_project_pull_request(
         url = pr.get("html_url", "")
         # A pull request from a work item's branch traces to the item and moves it to "in review".
         item = link_pull_request(db, project_id, head, url, pr.get("title", title)) if url else None
+        number = pr.get("number", 0)
+        record_opened(db, project_id, number, pr.get("title", title), url, head, base, current_user)
         author = current_user.full_name or current_user.username
         notify(db, reviewers(db, project_id, current_user), "review_request",
                f"{author} asks for a review: {pr.get('title', title)}",
-               f"{project.name} · {head} → {base}", url or None, project_id=project_id)
+               f"{project.name} · {head} → {base}", f"/reviews/{project_id}/{number}" if number else (url or None),
+               project_id=project_id)
         return {"number": pr.get("number", 0), "url": url, "state": pr.get("state", "open"),
                 "title": pr.get("title", title), "head": head, "base": base,
                 "work_item": {"id": item.id, "external_key": item.external_key} if item else None}

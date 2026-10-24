@@ -26,6 +26,7 @@ from app.modules.notifications.router import socket_router as notifications_sock
 from app.modules.projects.router import router as projects_router
 from app.modules.reporting.reports_router import router as reports_router
 from app.modules.reporting.router import router as reporting_router
+from app.modules.reviews.router import router as reviews_router
 from app.modules.settings.account_router import router as account_settings_router
 from app.modules.settings.router import router as connections_router
 from app.modules.testing.devices_router import router as devices_router
@@ -109,6 +110,7 @@ app.include_router(work_router)
 app.include_router(deployments_router)
 app.include_router(notifications_router)
 app.include_router(notifications_socket_router)
+app.include_router(reviews_router)
 app.include_router(community_router, prefix="/api/community", tags=["Learning"])
 
 

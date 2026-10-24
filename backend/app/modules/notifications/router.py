@@ -24,6 +24,7 @@ KIND_LABELS = {
     "deployment_check": "Environment checks after a deployment",
     "run_finished": "My runs finished",
     "review_request": "Pull requests waiting for my review",
+    "review": "Reviews of my pull requests",
     "promotion": "Changes to my role",
 }
 WS_TOKEN_PROTOCOL = "atm-token"
