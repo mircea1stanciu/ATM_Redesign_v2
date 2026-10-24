@@ -85,3 +85,22 @@ class Hint(Base):
     updated_by_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
                                                  nullable=False)
+
+
+class ReadinessRequest(Base):
+    """A request to review whether someone is ready for the next role, and the lead's decision (phase 14)."""
+    __tablename__ = "readiness_requests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False,
+                                         index=True)
+    requested_by_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
+    note: Mapped[Optional[str]] = mapped_column(String(2000))
+    status: Mapped[str] = mapped_column(String(20), default="open", nullable=False)  # open | decided
+    decision: Mapped[Optional[str]] = mapped_column(String(20))  # promoted | not_yet
+    from_role: Mapped[Optional[str]] = mapped_column(String(40))
+    to_role: Mapped[Optional[str]] = mapped_column(String(40))
+    decision_note: Mapped[Optional[str]] = mapped_column(String(2000))
+    decided_by_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
+    requested_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime)

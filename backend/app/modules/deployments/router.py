@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.crypto import encrypt
 from app.core.db import get_db
 from app.core.permissions import has_permission, permission_denied, require, visible_project_ids
+from app.modules.audit.service import record
 from app.modules.deployments import service as deployments
 from app.modules.deployments.models import Deployment, DeploymentCheck, Service, ServiceProject
 from app.modules.identity.models import User
@@ -31,6 +32,10 @@ async def deployment_webhook(request: Request, x_atm_timestamp: Optional[str] = 
     body = await request.body()
     service, event = deployments.verify(db, body, x_atm_timestamp, x_atm_signature)
     deployment, created = deployments.record(db, service, event)
+    record(db, "deployment.webhook", f"{service.name} {deployment.version} deployed to {deployment.environment}"
+                                     + (" (repeated delivery)" if not created else ""),
+           details={"service": service.name, "deployment_id": deployment.id, "source": event.source,
+                    "duplicate": not created})
     if created:
         await deployments.announce(db, service, deployment)
         await deployments.start_checks(db, service, deployment)
