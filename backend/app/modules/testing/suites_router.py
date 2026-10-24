@@ -1,6 +1,7 @@
 """Suites (test type, target, environment, schedule), project environments, and running a suite (phase 08)."""
 import re
 from datetime import datetime
+from pathlib import Path
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -236,7 +237,8 @@ async def get_or_create_default_suite(project_id: int,
     """The suite ad-hoc runs are filed under: the project's first suite, or a new "Default Suite". Anyone who may run
     tests may use it (creating other suites needs suite.manage)."""
     get_project_or_404(db, project_id)
-    suite = (db.query(AnalyticsSuite).filter(AnalyticsSuite.project_id == project_id)
+    suite = (db.query(AnalyticsSuite).filter(AnalyticsSuite.project_id == project_id,
+                                             AnalyticsSuite.archived_at.is_(None))
              .order_by(AnalyticsSuite.id).first())
     if suite is None:
         suite = AnalyticsSuite(project_id=project_id, name=DEFAULT_SUITE_NAME, tags=[], active=True,
@@ -253,19 +255,25 @@ class SuiteRunRequest(BaseModel):
     branch: Optional[str] = Field(default=None, max_length=255)
 
 
-async def start_suite_run(db: Session, user: User, suite: AnalyticsSuite, environment_id: Optional[int],
-                          trigger: str = "manual", branch: Optional[str] = None) -> AnalyticsRun:
-    """Create a run of the suite and start it in the user's checkout (also used by the scheduler)."""
+async def start_suite_run(db: Session, user: Optional[User], suite: AnalyticsSuite, environment_id: Optional[int],
+                          trigger: str = "manual", branch: Optional[str] = None,
+                          repo_path: Optional[Path] = None) -> AnalyticsRun:
+    """Create a run of the suite and start it in the user's checkout (also used by the scheduler). Without a user, it
+    runs in ``repo_path`` as ATM itself: the project's service account (phase 18)."""
     if suite.archived_at is not None:
         raise HTTPException(status_code=400, detail="This suite is archived. Restore it to run it.")
     if not suite.target:
         raise HTTPException(status_code=400, detail="Choose what the suite runs (its target) first.")
-    repo_path = checkout_path(user, suite.project_id)
+    if repo_path is None:
+        if user is None:
+            raise HTTPException(status_code=400, detail="A run needs a person or the project's service account.")
+        repo_path = checkout_path(user, suite.project_id)
     if not (repo_path / ".git").exists():
         raise HTTPException(status_code=400, detail="No local checkout linked for this project.")
     _environment(db, suite.project_id, environment_id)
-    run = AnalyticsRun(suite_id=suite.id, branch=branch, triggered_by=user.email if trigger == "manual" else trigger,
-                       name=suite.name, trigger=trigger, started_by_id=user.id)
+    triggered_by = user.email if user and trigger == "manual" else trigger
+    run = AnalyticsRun(suite_id=suite.id, branch=branch, triggered_by=triggered_by, name=suite.name, trigger=trigger,
+                       started_by_id=user.id if user else None)
     db.add(run)
     db.commit()
     db.refresh(run)

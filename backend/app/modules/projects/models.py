@@ -35,6 +35,13 @@ class Project(Base):
     confluence_parent_page_id: Mapped[Optional[str]] = mapped_column(String(64))
     # Deployments and their checks are posted to this Microsoft Teams channel (workflow webhook URL, encrypted).
     teams_webhook: Mapped[Optional[str]] = mapped_column(String(1024))
+    # Phase 18: the project's ATM service account for scheduled runs (a GitHub token, encrypted) and its checkout's
+    # last sync. Set by a lead; schedules then no longer depend on the person who set them.
+    service_github_token: Mapped[Optional[str]] = mapped_column(String(1024))
+    service_configured_by_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"))
+    service_synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    service_error: Mapped[Optional[str]] = mapped_column(String(500))
 
     # Timestamps
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=datetime.utcnow)
