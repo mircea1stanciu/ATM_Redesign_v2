@@ -173,8 +173,10 @@ async def _set_manual_run_status(run_id: str, manual_run_id: int, artifact_dir: 
     await _broadcast_manual_run_message(run_id, payload)
     if status not in ("pending", "running"):
         from app.modules.deployments.service import on_run_finished
+        from app.modules.reporting.auto_publish import after_run
 
         await on_run_finished(manual_run_id, status)
+        await after_run(manual_run_id, status)
 
 
 ARTIFACTS_FOLDER = ".automationtestmanager"

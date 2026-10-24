@@ -48,6 +48,8 @@ class Settings(BaseSettings):
 
     # GitHub Models (the "GitHub Copilot" AI provider). Only GitHub Enterprise setups and the UI tests change it.
     ATM_GITHUB_MODELS_BASE_URL: str = "https://models.github.ai"
+    # Where ATM downloads the Allure command line from (phase 19).
+    ATM_MAVEN_BASE_URL: str = "https://repo1.maven.org/maven2"
     CONFLUENCE_SPACE_NAME: str = ""
     ZEPHYR_PROJECT_KEY: str = ""  # Selected Jira project for Zephyr
     ZEPHYR_SELECTED_FOLDER_ID: str = ""  # Selected test folder/cycle ID

@@ -1,9 +1,9 @@
 """Tools ATM can install itself on the station, without admin rights.
 
-Only standalone binaries qualify (currently k6): the official release is downloaded from
-GitHub, its SHA-256 checksum verified, and the binary placed in ATM's own tools folder
-(``~/.automationtestmanager/tools/<tool>/``, or ``$ATM_TOOLS_DIR``). Nothing is added to the
-system PATH; ATM finds the binary through :func:`managed_path`.
+k6: the official release is downloaded from GitHub, its SHA-256 checksum verified, and the binary placed in ATM's
+own tools folder (``~/.automationtestmanager/tools/<tool>/``, or ``$ATM_TOOLS_DIR``). Allure (phase 19): the
+command line distribution from Maven Central, verified with its SHA-1 file; it needs a Java runtime, which ATM does not
+install. Nothing is added to the system PATH; ATM finds the binaries through :func:`managed_path`.
 """
 from __future__ import annotations
 
@@ -23,7 +23,11 @@ from pathlib import Path
 import httpx
 
 K6_RELEASE_API = "https://api.github.com/repos/grafana/k6/releases/latest"
-INSTALLABLE = {"k6": "official release from github.com/grafana/k6"}
+ALLURE_MAVEN_PATH = "io/qameta/allure/allure-commandline"
+INSTALLABLE = {"k6": "official release from github.com/grafana/k6",
+               "allure": "Allure command line from Maven Central (needs Java)"}
+# Tests replace this with httpx.MockTransport so no request leaves the process.
+HTTP_TRANSPORT: httpx.AsyncBaseTransport | None = None
 DOWNLOAD_TIMEOUT_SECONDS = 15 * 60
 
 _install_lock = asyncio.Lock()
@@ -46,12 +50,25 @@ def managed_path(tool: str) -> str | None:
     """The copy of ``tool`` installed by ATM, if any."""
     if tool not in INSTALLABLE:
         return None
-    binary = tools_dir() / tool / _binary_name(tool)
+    if tool == "allure":
+        binary = tools_dir() / "allure" / "dist" / "bin" / ("allure.bat" if os.name == "nt" else "allure")
+    else:
+        binary = tools_dir() / tool / _binary_name(tool)
     return str(binary) if binary.is_file() and os.access(binary, os.X_OK) else None
 
 
 def is_installable(tool: str) -> bool:
+    if tool == "allure":
+        return True
     return tool in INSTALLABLE and _k6_platform() is not None
+
+
+def java_available() -> bool:
+    """Allure's command line runs on Java: a java on the PATH, or under JAVA_HOME."""
+    import shutil
+
+    java_home = os.environ.get("JAVA_HOME", "").strip()
+    return bool(shutil.which("java")) or bool(java_home and (Path(java_home) / "bin" / _binary_name("java")).is_file())
 
 
 def _k6_platform(system: str | None = None, machine: str | None = None) -> tuple[str, str, str] | None:
@@ -105,7 +122,7 @@ def _client() -> httpx.AsyncClient:
     from app.services.scaffold_service import station_ca_bundle
 
     bundle = station_ca_bundle()  # Trust the station's certificates (TLS-inspecting corporate proxies).
-    return httpx.AsyncClient(verify=bundle or True, follow_redirects=True,
+    return httpx.AsyncClient(verify=bundle or True, follow_redirects=True, transport=HTTP_TRANSPORT,
                              timeout=httpx.Timeout(60, read=120), headers={"User-Agent": "AutomationTestManager"})
 
 
@@ -119,12 +136,14 @@ async def install(tool: str, log: Callable[[str], None]) -> str:
             log(f"{tool} is already installed at {existing}")
             return existing
         try:
-            return await asyncio.wait_for(_install_k6(log), timeout=DOWNLOAD_TIMEOUT_SECONDS)
+            installer = _install_allure(log) if tool == "allure" else _install_k6(log)
+            return await asyncio.wait_for(installer, timeout=DOWNLOAD_TIMEOUT_SECONDS)
         except asyncio.TimeoutError as exc:
             minutes = DOWNLOAD_TIMEOUT_SECONDS // 60
             raise ToolInstallError(f"Downloading {tool} took longer than {minutes} minutes.") from exc
         except httpx.HTTPError as exc:
-            raise ToolInstallError(f"Could not download {tool}: {exc}. Check that github.com is reachable "
+            source = "repo1.maven.org" if tool == "allure" else "github.com"
+            raise ToolInstallError(f"Could not download {tool}: {exc}. Check that {source} is reachable "
                                    "from this station, or install it manually.") from exc
 
 
@@ -178,3 +197,66 @@ async def _install_k6(log: Callable[[str], None]) -> str:
         raise ToolInstallError(f"The downloaded k6 does not start: {(version.stderr or version.stdout).strip()}")
     log(f"Installed {version.stdout.strip().splitlines()[0] if version.stdout.strip() else 'k6 ' + tag} at {target}")
     return str(target)
+
+
+def maven_base() -> str:
+    from app.core.config import settings
+
+    return settings.ATM_MAVEN_BASE_URL.rstrip("/")
+
+
+def allure_latest_version(metadata: str) -> str:
+    """The <release> (or last <version>) of Maven's metadata for allure-commandline."""
+    import re
+
+    release = re.search(r"<release>([^<]+)</release>", metadata)
+    versions = re.findall(r"<version>([^<]+)</version>", metadata)
+    version = release.group(1) if release else (versions[-1] if versions else "")
+    if not version:
+        raise ToolInstallError("Maven Central lists no Allure version.")
+    return version.strip()
+
+
+def extract_allure(archive: bytes, target: Path) -> Path:
+    """Unpack the distribution (allure-<version>/bin/allure, lib/...) into ``target`` and return its bin script."""
+    import shutil
+
+    staging = target.with_name(target.name + ".new")
+    shutil.rmtree(staging, ignore_errors=True)
+    with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
+        for member in bundle.infolist():
+            path = (staging / member.filename).resolve()
+            if staging.resolve() not in path.parents and path != staging.resolve():
+                raise ToolInstallError(f"The Allure archive has an unsafe path: {member.filename}")
+        bundle.extractall(staging)
+    roots = [p for p in staging.iterdir() if p.is_dir()]
+    if len(roots) != 1 or not (roots[0] / "bin").is_dir():
+        raise ToolInstallError("The Allure archive does not look like the command line distribution.")
+    for script in (roots[0] / "bin").iterdir():
+        script.chmod(script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    shutil.rmtree(target, ignore_errors=True)
+    roots[0].rename(target)
+    shutil.rmtree(staging, ignore_errors=True)
+    return target / "bin" / ("allure.bat" if os.name == "nt" else "allure")
+
+
+async def _install_allure(log: Callable[[str], None]) -> str:
+    base = f"{maven_base()}/{ALLURE_MAVEN_PATH}"
+    async with _client() as client:
+        log("Looking up the latest Allure command line on Maven Central…")
+        version = allure_latest_version((await client.get(f"{base}/maven-metadata.xml")).raise_for_status().text)
+        name = f"allure-commandline-{version}.zip"
+        expected = (await client.get(f"{base}/{version}/{name}.sha1")).raise_for_status().text.split()[0].strip()
+        log(f"Downloading {name}…")
+        archive = (await client.get(f"{base}/{version}/{name}")).raise_for_status().content
+    if hashlib.sha1(archive).hexdigest() != expected.lower():  # noqa: S324 - Maven Central publishes SHA-1
+        raise ToolInstallError(f"{name} failed its checksum verification; nothing was installed.")
+    log("Checksum verified (SHA-1, as published on Maven Central).")
+    target = tools_dir() / "allure" / "dist"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    binary = await asyncio.to_thread(extract_allure, archive, target)
+    log(f"Installed Allure {version} at {binary}")
+    if not java_available():
+        log("Java was not found: install a Java runtime (for example Eclipse Temurin 21) so Allure can generate "
+            "reports.")
+    return str(binary)

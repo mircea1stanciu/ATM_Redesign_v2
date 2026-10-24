@@ -40,7 +40,10 @@ def imported_report_dir(project_id: int, report_id: int) -> Path:
 
 
 def allure_binary() -> Optional[str]:
-    return shutil.which("allure")
+    """Allure on the PATH, or the copy ATM installed itself (phase 19)."""
+    from app.services import station_tools_service
+
+    return shutil.which("allure") or station_tools_service.managed_path("allure")
 
 
 # ── Results ───────────────────────────────────────────────────────────────────

@@ -33,7 +33,7 @@ PLAN = {
     "code.edit": "111110", "code.push": "111110", "pr.create": "111110", "ai.use": "111110",
     "run.view": "111111", "run.execute": "111110", "run.execute.ci": "111100", "suite.manage": "111100",
     "suite.delete": "110000", "environment.manage": "111000", "device.manage": "111110",
-    "report.view": "111111", "report.publish": "111000",
+    "report.view": "111111", "report.publish": "111000", "report.manage": "110000",
     "pr.view": "111111", "pr.comment": "111110", "pr.review": "111000",
     "deployment.view": "111111", "deployment.configure": "110000",
     "learning.use": "111110", "learning.mentor": "111000", "learning.manage": "110000",
@@ -53,8 +53,9 @@ PERSONAL = {
 }
 PERSONAL_PREFIXES = ("/api/settings/security", "/api/settings/preferences", "/api/notifications")
 # Authorised by a signature: a signed, expiring token in the URL (made by POST /api/runs/{id}/report-link after
-# report.view), or the HMAC of a deployment event with the service's secret.
-SIGNED = {"/api/reports/view/{token}/{path:path}", "/api/deployments/webhook"}
+# report.view), the HMAC of a deployment event with the service's secret, or a report share link's random token.
+SIGNED = {"/api/reports/view/{token}/{path:path}", "/api/deployments/webhook",
+          "/api/reports/shared/{token}/{path:path}"}
 PUBLIC = {"/api/auth/login", "/api/auth/login/verify-2fa", "/api/auth/register", "/api/health"}
 
 
