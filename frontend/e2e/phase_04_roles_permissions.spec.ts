@@ -14,7 +14,8 @@ test.beforeEach(({ page }) => {
 const ROLES: Array<{ role: Role; label: string; seesUsers: boolean; managesUsers: boolean; createsProjects: boolean }> = [
   { role: 'super_admin', label: 'Super Admin', seesUsers: true, managesUsers: true, createsProjects: true },
   { role: 'automation_lead', label: 'Automation Lead', seesUsers: true, managesUsers: true, createsProjects: true },
-  { role: 'automation_senior', label: 'Automation Senior', seesUsers: true, managesUsers: false, createsProjects: false },
+  // Phase 15: Admin is for Super Admins and Leads only.
+  { role: 'automation_senior', label: 'Automation Senior', seesUsers: false, managesUsers: false, createsProjects: false },
   { role: 'automation_user', label: 'Automation User', seesUsers: false, managesUsers: false, createsProjects: false },
   { role: 'automation_trainee', label: 'Automation Trainee', seesUsers: false, managesUsers: false, createsProjects: false },
   { role: 'viewer', label: 'Viewer', seesUsers: false, managesUsers: false, createsProjects: false },
