@@ -16,10 +16,12 @@ from app.core.db import SessionLocal
 from app.core.migrations import upgrade_database
 from app.core.permissions import PermissionDenied
 from app.core.rate_limit import limiter
+from app.modules.audit.router import router as audit_router
 from app.modules.deployments.router import router as deployments_router
 from app.modules.identity.router import router as identity_router
 from app.modules.identity.service import get_default_organization, seed_dev_admin
 from app.modules.identity.users_router import router as users_router
+from app.modules.learning.readiness_router import router as readiness_router
 from app.modules.learning.router import router as learning_router
 from app.modules.notifications.router import router as notifications_router
 from app.modules.notifications.router import socket_router as notifications_socket_router
@@ -112,6 +114,8 @@ app.include_router(notifications_router)
 app.include_router(notifications_socket_router)
 app.include_router(reviews_router)
 app.include_router(learning_router)
+app.include_router(readiness_router)
+app.include_router(audit_router)
 
 
 @app.get("/api/health", tags=["Health"])

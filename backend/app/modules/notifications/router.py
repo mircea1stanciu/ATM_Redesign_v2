@@ -26,6 +26,7 @@ KIND_LABELS = {
     "review_request": "Pull requests waiting for my review",
     "review": "Reviews of my pull requests",
     "practice": "Feedback on my practice tasks",
+    "readiness": "Readiness reviews (requests and decisions)",
     "promotion": "Changes to my role",
 }
 WS_TOKEN_PROTOCOL = "atm-token"
