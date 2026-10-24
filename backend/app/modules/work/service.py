@@ -10,6 +10,7 @@ from app.modules.work.integrations import (
     ConfluenceClient,
     Connection,
     IntegrationError,
+    JiraAgileClient,
     JiraClient,
     confluence_space_key,
     jira_project_key,
@@ -39,29 +40,46 @@ def _quote(value: str) -> str:
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def build_jql(project_key: str, *, q: str = "", status: str = "", issue_type: str = "", story_types: list[str],
-              assignee: str = "", sprint: str = "", label: str = "") -> str:
-    """The inbox query. By default it lists the project's stories (user and technical) when the project has them."""
+ORDER_BY = re.compile(r"\s+order\s+by\s+.*$", re.IGNORECASE | re.DOTALL)
+
+
+def split_values(value: str) -> list[str]:
+    """A filter that may hold several values, comma separated in the URL ("Story,Bug")."""
+    return [part.strip() for part in (value or "").split(",") if part.strip()]
+
+
+def build_jql(project_key: str, *, story_types: list[str], q: str = "", types: Optional[list[str]] = None,
+              statuses: Optional[list[str]] = None, assignee: str = "", sprint: str = "",
+              labels: Optional[list[str]] = None, jql: str = "") -> str:
+    """The inbox query (phase 16): every issue type unless types are chosen ("stories" = the project's story types),
+    several statuses and labels, a sprint (the current one or a sprint id), and an optional advanced JQL clause."""
     clauses = [f"project = {_quote(project_key)}"]
-    if issue_type == "all":
-        pass
-    elif issue_type:
-        clauses.append(f"issuetype = {_quote(issue_type)}")
-    elif story_types:
-        clauses.append("issuetype in (" + ", ".join(_quote(t) for t in story_types) + ")")
-    if status:
-        clauses.append(f"status = {_quote(status)}")
+    wanted: list[str] = []
+    for name in types or []:
+        if name == "stories":
+            wanted.extend(story_types)
+        elif name != "all":
+            wanted.append(name)
+    if wanted:
+        clauses.append("issuetype in (" + ", ".join(_quote(t) for t in dict.fromkeys(wanted)) + ")")
+    if statuses:
+        clauses.append("status in (" + ", ".join(_quote(s) for s in statuses) + ")")
     if assignee == "me":
         clauses.append("assignee = currentUser()")
     elif assignee == "unassigned":
         clauses.append("assignee is EMPTY")
     if sprint == "current":
         clauses.append("sprint in openSprints()")
-    if label:
-        clauses.append(f"labels = {_quote(label)}")
+    elif sprint.isdigit():
+        clauses.append(f"sprint = {int(sprint)}")
+    if labels:
+        clauses.append("labels in (" + ", ".join(_quote(label) for label in labels) + ")")
     text = q.strip()
     if text:
         clauses.append(f"key = {_quote(text.upper())}" if ISSUE_KEY.match(text.upper()) else f"text ~ {_quote(text)}")
+    advanced = ORDER_BY.sub("", (jql or "").strip())
+    if advanced:
+        clauses.append(f"({advanced})")
     return " AND ".join(clauses) + " ORDER BY updated DESC"
 
 
@@ -91,9 +109,13 @@ async def jira_filters(connection: Connection, project: Any) -> dict:
     }
 
 
-async def jira_inbox(db: Session, connection: Connection, project: Any, *, cursor: int = 0, **filters: str) -> dict:
+async def jira_inbox(db: Session, connection: Connection, project: Any, *, cursor: int = 0, q: str = "",
+                     issue_type: str = "", status: str = "", assignee: str = "", sprint: str = "", label: str = "",
+                     jql: str = "") -> dict:
     meta = await jira_filters(connection, project)
-    jql = build_jql(meta["project_key"], story_types=meta["story_types"], **filters)
+    jql = build_jql(meta["project_key"], story_types=meta["story_types"], q=q, types=split_values(issue_type),
+                    statuses=split_values(status), assignee=assignee, sprint=sprint, labels=split_values(label),
+                    jql=jql)
     data = await JiraClient(connection).request(
         "GET", "/search", params={"jql": jql, "startAt": cursor, "maxResults": PAGE_SIZE, "fields": INBOX_FIELDS})
     issues = (data or {}).get("issues") or []
@@ -107,6 +129,34 @@ async def jira_inbox(db: Session, connection: Connection, project: Any, *, curso
         "total": total,
         "next_cursor": next_cursor if next_cursor < total and issues else None,
     }
+
+
+SPRINT_ORDER = {"active": 0, "future": 1, "closed": 2}
+CLOSED_SPRINTS_SHOWN = 5
+
+
+async def jira_sprints(connection: Connection, project: Any) -> list[dict]:
+    """The sprints of the project's boards (Jira Software): active, future, and the last closed ones."""
+    key = jira_project_key(project, connection)
+    client = JiraAgileClient(connection)
+    try:
+        boards = (await client.request("GET", "/board", params={"projectKeyOrId": key, "maxResults": 5}) or {})
+    except IntegrationError as exc:
+        if exc.status_code == 404:
+            return []  # no Jira Software: no boards, no sprints
+        raise
+    sprints: dict[int, dict] = {}
+    for board in (boards.get("values") or [])[:3]:
+        data = await client.request("GET", f"/board/{board['id']}/sprint",
+                                    params={"state": "active,future,closed", "maxResults": 50}) or {}
+        for sprint in data.get("values") or []:
+            sprints.setdefault(sprint["id"], {
+                "id": sprint["id"], "name": sprint.get("name") or f"Sprint {sprint['id']}",
+                "state": sprint.get("state") or "future", "start_date": sprint.get("startDate"),
+                "end_date": sprint.get("endDate"), "board": board.get("name")})
+    ordered = sorted(sprints.values(), key=lambda s: (SPRINT_ORDER.get(s["state"], 3), s["start_date"] or ""))
+    closed = [s for s in ordered if s["state"] == "closed"][-CLOSED_SPRINTS_SHOWN:][::-1]
+    return [s for s in ordered if s["state"] != "closed"] + closed
 
 
 def _issue_url(connection: Connection, key: str) -> str:

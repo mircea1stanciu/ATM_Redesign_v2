@@ -140,6 +140,14 @@ class JiraClient(_Client):
         return [f"{self.connection.base_url}/rest/api/2", f"{self.connection.base_url}/rest/api/3"]
 
 
+class JiraAgileClient(_Client):
+    """Jira Software's Agile API (boards and sprints); servers without Jira Software answer 404."""
+    name = "Jira"
+
+    def _bases(self) -> list[str]:
+        return [f"{self.connection.base_url}/rest/agile/1.0"]
+
+
 class ConfluenceClient(_Client):
     name = "Confluence"
 
