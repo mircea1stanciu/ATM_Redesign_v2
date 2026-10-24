@@ -55,3 +55,13 @@ notes of each phase in [06-implementation-plan.md](06-implementation-plan.md).
 | Deleting a suite deletes its runs | Archive suites instead | `delete_suite` |
 | "Changed tests" in the run dialog does not apply an environment yet | Pass the environment there too | `ChangedTestsPanel` |
 | The UI tests use the sample repository's own pytest test and k6 script, and a k6 stand-in, instead of projects generated from the starter templates | Generate starter projects in the tests (slow: installs dependencies) | `e2e/harness/start-backend.mjs` |
+
+## Phase 09: Allure reporting
+
+| Decision | Alternative | To reverse |
+|---|---|---|
+| The custom HTML report is retired: without the Allure command line (and Java) a run has no report, only the message "Allure not installed" | Keep the old report as a fallback | Restore `report_template.py` and call it when `allure_binary()` is missing |
+| ATM does not install Allure itself yet | Download it like k6 (from Maven Central) | `station_tools_service` |
+| Reports are stored centrally under `ARTIFACTS_DIR/reports` and kept forever | A retention period (for example 90 days or the last N runs per suite) | A clean-up job in the scheduler |
+| A report link is valid for one hour | Longer, or links that never expire for sharing | `LINK_TTL_SECONDS` in `reports_router.py` |
+| Flaky tests = passed in some and failed in others of the suite's last 30 runs | Allure's own flaky marks (retries) | `suite_trends` |
