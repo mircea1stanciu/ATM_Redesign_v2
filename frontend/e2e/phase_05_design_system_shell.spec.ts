@@ -48,7 +48,7 @@ test('every area and tab loads', async ({ page }) => {
     ['/reports/list', 'Reports'], ['/reports/trends', 'Reports'], ['/reports/overview', 'Reports'],
     ['/reports/analytics', 'Reports'],
     ['/reviews/waiting', 'Reviews'], ['/reviews/open', 'Reviews'], ['/deployments/timeline', 'Deploys'], ['/deployments/services', 'Deploys'],
-    ['/admin/users', 'Admin'], ['/admin/projects', 'Admin'],
+    ['/admin/users', 'Admin'], ['/admin/projects', 'Admin'], ['/admin/audit', 'Admin'],
   ]
   for (const [url, title] of screens) {
     await page.goto(url)

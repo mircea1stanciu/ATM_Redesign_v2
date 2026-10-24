@@ -10,7 +10,10 @@ export type Role =
   | 'automation_trainee'
   | 'viewer'
 
-type Sessions = Record<Role, { username: string; token: string }>
+/** A seeded user: one per role, and a trainee of the lead seeded only for the promotion tests (phase 14). */
+export type Person = Role | 'promotion_candidate'
+
+type Sessions = Record<Person, { username: string; token: string }>
 
 let sessions: Sessions | undefined
 
@@ -30,7 +33,7 @@ export function credentials(role: Role) {
 }
 
 /** Authorization header for calling the API (through the Vite proxy) as the seeded user of a role. */
-export function authHeaders(role: Role) {
+export function authHeaders(role: Person) {
   return { Authorization: `Bearer ${readSessions()[role].token}` }
 }
 
@@ -38,7 +41,7 @@ export function authHeaders(role: Role) {
  * Opens the app as the seeded user of a role, using the token minted by the seed script.
  * The login endpoint allows 5 attempts per minute, so only the login spec signs in through the form.
  */
-export async function login(page: Page, role: Role) {
+export async function login(page: Page, role: Person) {
   const { token } = readSessions()[role]
   await page.goto('/login')
   await page.evaluate(value => {

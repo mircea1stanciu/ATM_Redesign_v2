@@ -20,6 +20,7 @@ from app.core.permissions import (
     require,
     visible_project_ids,
 )
+from app.modules.audit.service import record
 from app.modules.identity.models import Organization, User, UserRole
 from app.modules.identity.service import get_default_organization
 from app.modules.notifications.service import notify
@@ -248,8 +249,12 @@ async def update_user(
     db.refresh(user)
     if role_change:
         before, after = (ROLE_NAMES.get(r, r.value) for r in role_change)
+        actor = current_user.full_name or current_user.username
+        record(db, "role.change", f"{actor} changed {user.full_name or user.username} from {before} to {after}",
+               actor_id=current_user.id, subject_user_id=user.id,
+               details={"from": role_change[0].value, "to": role_change[1].value})
         notify(db, [user.id], "promotion", f"Your role is now {after}",
-               f"{current_user.full_name or current_user.username} changed your role from {before} to {after}.", "/")
+               f"{actor} changed your role from {before} to {after}.", "/")
     return _user_response(db, user)
 
 

@@ -35,6 +35,7 @@ from app.modules.projects.service import set_project_github_token  # noqa: E402
 from app.modules.settings.connections import set_secret  # noqa: E402
 
 SAMPLE_PROJECT_KEY = "E2E"
+CANDIDATE = "promotion_candidate"
 SAMPLE_GITHUB_TOKEN = "e2e-github-token"
 PUBLISHING_ROLES = {UserRole.SUPER_ADMIN, UserRole.AUTOMATION_USER}
 SCOPE_TAGS = {
@@ -104,7 +105,18 @@ def seed(sessions_path: str) -> None:
             user_id = users[role].id
             if not db.query(ProjectMember).filter_by(project_id=project.id, user_id=user_id).first():
                 db.add(ProjectMember(project_id=project.id, user_id=user_id))
+        # A trainee of the lead whom the phase 14 tests promote (the shared trainee keeps its role for other tests).
+        candidate = db.query(User).filter(User.username == CANDIDATE).first()
+        if not candidate:
+            candidate = User(username=CANDIDATE, email=f"{CANDIDATE}@e2e.test", full_name="E2E Promotion Candidate",
+                             hashed_password=User.hash_password(password), role=UserRole.AUTOMATION_TRAINEE,
+                             scope_tag="project_base", organization_id=org.id, is_active=True,
+                             assigned_lead_id=lead.id)
+            db.add(candidate)
+            db.flush()
+            db.add(ProjectMember(project_id=project.id, user_id=candidate.id))
         db.commit()
+        sessions[CANDIDATE] = {"username": CANDIDATE, "token": create_access_token(data={"user_id": candidate.id})}
 
         fake_url = os.getenv("E2E_FAKE_URL")
         if fake_url:

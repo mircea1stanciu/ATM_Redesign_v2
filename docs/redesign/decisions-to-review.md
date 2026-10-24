@@ -1,8 +1,8 @@
 # Decisions to review
 
-Judgement calls made while implementing the phases, collected for one review after phase 14. Each entry says what was
-decided, the main alternative, and what reversing it involves. The full context is in the "Decided while building"
-notes of each phase in [06-implementation-plan.md](06-implementation-plan.md).
+All 14 phases are built. These are the judgement calls made while implementing them, collected for one review.
+Each entry says what was decided, the main alternative, and what reversing it involves. The full context is in the
+"Decided while building" notes of each phase in [06-implementation-plan.md](06-implementation-plan.md).
 
 ## Phase 04: roles and permissions
 
@@ -119,3 +119,14 @@ notes of each phase in [06-implementation-plan.md](06-implementation-plan.md).
 | Hints live in the database and are edited by leads; detection rules stay in the frontend | Rules in the database too | `hints` table, `features/workspace/hints.ts` |
 | Viewers read lessons but do not hand in practice | Viewers practise too | `submit_practice` (`code.edit`) |
 
+## Phase 14: readiness and promotion (open topic T4, suggested default)
+
+| Decision | Alternative | To reverse |
+|---|---|---|
+| The lead sees evidence only (path progress, lessons, quizzes, practice, work items, PRs approved, runs); no thresholds or score | Criteria with minimums ("ready" when met) | `evidence` in `learning/readiness_router.py`, `ReadinessPage.tsx` |
+| "PRs merged after review" is counted as PRs opened from ATM and approved in an ATM review | Ask GitHub which were merged | `evidence` (pull requests) |
+| Trainees and Users request a review themselves; mentors may request it for them | Only the lead starts a review | `request_review` |
+| A decision needs a note; "Not yet" is recorded and told like a promotion | Note optional; "not yet" without a record | `decide` |
+| A promotion keeps the person's scope tag (project_base stays project_base) | Ask for the tag when promoting | `decide` (scope_tag) |
+| The audit log covers promotions, readiness decisions, role changes, report publications and deployment webhooks | Also logins, settings, deletions | `app/modules/audit/service.py` callers |
+| A lead sees audit entries they made, about their people, or in their projects; webhook calls only super admins | Leads see everything | `list_audit` in `modules/audit/router.py` |

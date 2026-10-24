@@ -14,6 +14,7 @@ from typing import Any, Optional
 
 from sqlalchemy.orm import Session
 
+from app.modules.audit.service import record
 from app.modules.identity.models import User
 from app.modules.projects.models import AnalyticsRun, AnalyticsSuite, Project, ReportPublication, TestEnvironment
 from app.modules.reporting import allure
@@ -167,6 +168,9 @@ async def publish_run(db: Session, user: User, run: AnalyticsRun, atm_base_url: 
     db.add(publication)
     db.commit()
     db.refresh(publication)
+    record(db, "report.publish", f"{user.full_name or user.username} published {page_title(project, suite)} "
+                                 f"(version {publication.page_version})", actor_id=user.id, project_id=project.id,
+           details={"run_id": run.id, "page_url": publication.page_url, "version": publication.page_version})
     return publication
 
 
