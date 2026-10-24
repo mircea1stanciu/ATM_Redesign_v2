@@ -51,6 +51,8 @@ PERSONAL = {
     "/api/settings/confluence/spaces",
 }
 PERSONAL_PREFIXES = ("/api/settings/security", "/api/settings/preferences")
+# Authorised by a signed, expiring token in the URL (made by POST /api/runs/{id}/report-link after report.view).
+SIGNED = {"/api/reports/view/{token}/{path:path}"}
 PUBLIC = {"/api/auth/login", "/api/auth/login/verify-2fa", "/api/auth/register", "/api/health"}
 
 
@@ -69,15 +71,32 @@ def _required_permission(route: APIRoute):
     return None
 
 
+def api_routes(routes, prefix: str = ""):
+    """Every APIRoute with its full path. FastAPI 0.16x keeps included routers as wrappers (`include_context`), so
+    `app.routes` alone lists only the top level."""
+    for route in routes:
+        if isinstance(route, APIRoute):
+            yield prefix + route.path, route
+        context = getattr(route, "include_context", None)
+        if context is not None:
+            yield from api_routes(context.included_router.routes, prefix + (context.prefix or ""))
+
+
+def test_the_route_walk_sees_the_modules():
+    paths = {path for path, _ in api_routes(app.routes)}
+    assert len(paths) > 150
+    assert {"/api/me", "/api/users", "/api/projects/{project_id}/work/items", "/api/suites/{suite_id}/runs"} <= paths
+
+
 def test_every_endpoint_declares_a_permission():
     unguarded = []
-    for route in app.routes:
-        if not isinstance(route, APIRoute) or not route.path.startswith("/api"):
+    for path, route in api_routes(app.routes):
+        if not path.startswith("/api"):
             continue
-        if route.path in PUBLIC or route.path in PERSONAL or route.path.startswith(PERSONAL_PREFIXES):
+        if path in PUBLIC or path in PERSONAL or path in SIGNED or path.startswith(PERSONAL_PREFIXES):
             continue
         if _required_permission(route) is None:
-            unguarded.append(f"{sorted(route.methods)} {route.path}")
+            unguarded.append(f"{sorted(route.methods)} {path}")
     assert unguarded == []
 
 

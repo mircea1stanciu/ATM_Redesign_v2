@@ -45,7 +45,8 @@ test('every area and tab loads', async ({ page }) => {
     ['/work/inbox', 'Work'], ['/work/board', 'Work'], ['/work/jira', 'Work'], ['/work/confluence', 'Work'], ['/work/confluence-analyzer', 'Work'],
     ['/work/workspace', 'Work'],
     ['/tests/runs', 'Tests'], ['/tests/project', 'Tests'], ['/tests/libraries', 'Tests'],
-    ['/reports/overview', 'Reports'], ['/reports/analytics', 'Reports'],
+    ['/reports/list', 'Reports'], ['/reports/trends', 'Reports'], ['/reports/overview', 'Reports'],
+    ['/reports/analytics', 'Reports'],
     ['/reviews', 'Reviews'], ['/deployments', 'Deploys'],
     ['/admin/users', 'Admin'], ['/admin/projects', 'Admin'],
   ]
@@ -138,7 +139,7 @@ test('keyboard: g + letter jumps to an area, ? lists the shortcuts, Tab reaches 
   await expect(page).toHaveURL(/\/tests\/runs$/)
   await page.keyboard.press('g')
   await page.keyboard.press('r')
-  await expect(page).toHaveURL(/\/reports\/overview$/)
+  await expect(page).toHaveURL(/\/reports\/list$/)
   await page.keyboard.press('g')
   await page.keyboard.press('h')
   await expect(page).toHaveURL(/\/$/)

@@ -52,7 +52,7 @@ test.describe('main screens', () => {
     const areas = [
       { link: 'Work', url: /\/work\/inbox$/ },
       { link: 'Tests', url: /\/tests\/runs$/ },
-      { link: 'Reports', url: /\/reports\/overview$/ },
+      { link: 'Reports', url: /\/reports\/list$/ },
       { link: 'Reviews', url: /\/reviews$/ },
       { link: 'Deploys', url: /\/deployments$/ },
       { link: 'Learning', url: /\/learning$/ },

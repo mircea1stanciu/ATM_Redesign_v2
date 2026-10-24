@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { ChevronDown, ChevronRight, Download, ExternalLink, FileBarChart2, FolderSync, Github, Loader2 } from 'lucide-react'
 import { apiService } from '@/services/api'
 import type { AllureReport } from '@/types/domain'
@@ -18,7 +19,7 @@ export default function AllureReportsPanel({ projectId }: AllureReportsPanelProp
   const [importing, setImporting] = useState<'local' | 'github' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<number | null>(null)
-  const [openingReportId, setOpeningReportId] = useState<number | null>(null)
+  const navigate = useNavigate()
 
   const load = async () => {
     if (!projectId) {
@@ -66,17 +67,10 @@ export default function AllureReportsPanel({ projectId }: AllureReportsPanelProp
     }
   }
 
-  const openAllureHtml = async (report: AllureReport) => {
+  const openAllureHtml = (report: AllureReport) => {
     if (!projectId) return
-    setOpeningReportId(report.id)
-    try {
-      const htmlReport = await apiService.getImportedAllureReport(projectId, report.id)
-      const url = URL.createObjectURL(htmlReport)
-      window.open(url, '_blank', 'noopener,noreferrer')
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
-    } finally {
-      setOpeningReportId(null)
-    }
+    // Imported results get a real Allure report, generated on first view.
+    navigate(`/reports/runs/allure-${report.id}`)
   }
 
   return (
@@ -152,10 +146,9 @@ export default function AllureReportsPanel({ projectId }: AllureReportsPanelProp
                     <button
                       type="button"
                       onClick={() => void openAllureHtml(report)}
-                      disabled={openingReportId === report.id}
                       className="inline-flex items-center gap-1 text-blue-600 hover:underline disabled:opacity-50 dark:text-blue-400"
                     >
-                      {openingReportId === report.id ? <Loader2 size={10} className="animate-spin" /> : <ExternalLink size={10} />}
+                      <ExternalLink size={10} />
                       Allure HTML
                     </button>
                     {report.report_url && <a href={report.report_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:underline dark:text-blue-400"><Download size={10} /> Workflow</a>}

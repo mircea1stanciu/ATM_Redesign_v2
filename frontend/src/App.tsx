@@ -27,6 +27,9 @@ const SettingsPage = lazy(() => import('@/pages/SettingsPage'))
 const AdminProjectsPage = lazy(() => import('@/features/admin/AdminProjectsPage'))
 const InboxPage = lazy(() => import('@/features/work/InboxPage'))
 const SuitesPage = lazy(() => import('@/features/testing/SuitesPage'))
+const ReportsListPage = lazy(() => import('@/features/reports/ReportsListPage'))
+const TrendsPage = lazy(() => import('@/features/reports/TrendsPage'))
+const ReportViewerPage = lazy(() => import('@/features/reports/ReportViewerPage'))
 const EnvironmentsPage = lazy(() => import('@/features/testing/EnvironmentsPage'))
 const BoardPage = lazy(() => import('@/features/work/BoardPage'))
 
@@ -273,7 +276,10 @@ export default function App() {
               <Route path="libraries" element={<LibraryTab />} />
             </Route>
             <Route path="reports" element={<RequirePermission any={['report.view']}><ReportsLayout /></RequirePermission>}>
-              <Route index element={<Navigate to="overview" replace />} />
+              <Route index element={<Navigate to="list" replace />} />
+              <Route path="list" element={<ReportsListPage />} />
+              <Route path="trends" element={<TrendsPage />} />
+              <Route path="runs/:runId" element={<ReportViewerPage />} />
               <Route path="overview" element={<DashboardPage />} />
               <Route path="analytics" element={<AnalyticsPage />} />
             </Route>

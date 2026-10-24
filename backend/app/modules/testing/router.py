@@ -42,7 +42,6 @@ from app.modules.testing.runs import (
     _manual_run_artifact_dir,
     _start_appium_run,
     _start_framework_run,
-    _write_manual_allure_report,
     _write_manual_run_metadata,
     cancelled_manual_runs,
     manual_run_processes,
@@ -279,34 +278,6 @@ async def get_run_report_file(
     media_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
     return FileResponse(path, media_type=media_type, filename=path.name.split("-", 1)[-1],
                         content_disposition_type="inline")
-
-
-@runs_router.get("/runs/{run_id}/allure-report")
-async def get_manual_allure_report(
-    run_id: str,
-    current_user=Depends(require("run.view", project_from="run_id")),
-    db: Session = Depends(get_db),
-):
-    """Serve the generated Allure-style HTML report for one local execution."""
-    if not run_id.startswith("manual-"):
-        raise HTTPException(status_code=404, detail="Allure report not found")
-    try:
-        manual_run_id = int(run_id.removeprefix("manual-"))
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Allure report not found")
-    run = db.query(AnalyticsRun).filter(AnalyticsRun.id == manual_run_id).first()
-    if not run:
-        raise HTTPException(status_code=404, detail="Run not found")
-    suite = db.query(AnalyticsSuite).filter(AnalyticsSuite.id == run.suite_id).first()
-    if not suite:
-        raise HTTPException(status_code=404, detail="Suite not found")
-    repo_path = checkout_path(current_user, suite.project_id)
-    artifact_dir = _manual_run_artifact_dir(repo_path, run_id)
-    _write_manual_allure_report(artifact_dir, run_id, run.collection or run_id, list(run.results_json or []))
-    report_path = artifact_dir / "allure-report" / "index.html"
-    if not report_path.is_file():
-        raise HTTPException(status_code=404, detail="Allure report is not available until this run completes.")
-    return FileResponse(report_path, media_type="text/html")
 
 
 @runs_router.post("/runs/{run_id}/execute")

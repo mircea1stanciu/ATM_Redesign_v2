@@ -288,6 +288,28 @@ They touch different modules, so their PRs do not conflict (see section 6.4).
   - Today's custom HTML report is retired.
 - **UI tests:** run a Bruno and a Playwright sample, open both reports, and check that the trend shows two points
   after two runs.
+- **Decided while building phase 09:**
+  - Every finished run gets a real Allure report (`app/modules/reporting/allure.py`). Results come from the
+    framework's Allure adapter when it wrote some during the run (`allure-results`, `target/allure-results`,
+    `build/allure-results`, or the Bruno collection's folder); otherwise ATM converts its parsed results (JUnit,
+    Bruno, Newman, k6, console summaries). `environment.properties` and `executor.json` describe the run, and
+    `history/` comes from the suite's previous report.
+  - Reports are stored under `ARTIFACTS_DIR/reports/project-*/suite-*/run-*`, not in the executing user's checkout, so
+    everyone who may see a run can open its report. Imported Allure results (local folders, GitHub artifacts) get a
+    real report too, generated on first view.
+  - The report opens inside ATM (Reports › a run), full screen, or in its own tab, through a signed link valid for an
+    hour (`POST /api/runs/{id}/report-link`). Report files are served sandboxed (CSP `sandbox`, opaque origin) so
+    HTML in test results can never run as ATM; only they may be framed by ATM.
+  - The Reports area: Reports (the list, default), Trends (pass rate, duration and p95 per suite over its last 30
+    runs, and the flaky tests: passed in some of them and failed in others), Overview and Analytics.
+  - The custom HTML report is retired. Without the Allure command line (it needs Java), a run's report says "Allure
+    not installed".
+  - Fixed: since FastAPI 0.16x keeps included routers as wrappers, the "every endpoint declares a permission" test only
+    looked at the top level; it now walks every router (all endpoints were guarded).
+  - The UI tests use the `allure-commandline` npm package (a frontend dev dependency) and run the Playwright sample for
+    real with the frontend's `node_modules`; the Bruno CLI is a stand-in.
+- **Left for later phases:** ATM installing the Allure command line itself (like k6), cleaning up old reports, and
+  Confluence publishing (phase 10).
 
 ### Phase 10: `feature/phase_10_confluence_reports`
 - **Goal:** publish reports to Confluence.
