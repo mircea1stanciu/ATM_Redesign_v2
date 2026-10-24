@@ -181,6 +181,32 @@ They touch different modules, so their PRs do not conflict (see section 6.4).
   - Jira write-back: comment and link, plus status when allowed.
 - **UI tests:** run against a mocked Jira and Confluence (a fake server in the test harness). Open a story, start
   work, check that the branch is created and the workspace opens with the story attached.
+- **Decided while building phase 06:**
+  - Each project has a Jira project key and a Confluence space key, set by a lead in Admin › Projects. When they are
+    empty, the team's project and space from Settings › Connections are used, so existing setups keep working.
+    Credentials did not change: the base URL comes from the lead (or the user's own settings), the token is the
+    user's.
+  - The inbox lists the project's story types (issue types whose name contains "story") unless another type or
+    "All types" is chosen. Filters (text or key, type, status, assignee, current sprint, label) are in the URL.
+  - ATM calls Jira REST API v2 first (Cloud and Server/DC, plain-text comments) and falls back to v3. Jira and
+    Confluence HTML is sanitised in the browser (DOMPurify) before it is shown.
+  - "Start work" creates the work item, creates the branch from the default branch in the user's checkout (or
+    switches to it when it exists), records the branch owner (trainees push only their own branches), assigns the
+    item to the user and stores a snapshot of the story; the AI assistant gets that snapshot with every message.
+    The tests chosen in the dialog become trace links. A Jira comment is optional and needs `jira.write`.
+  - Test suggestions match words of the story title against test file paths in the checkout; the project's suites
+    are offered too. Richer suggestions (changed-file analysis) come with phase 07.
+  - Board rules: the assignee moves their own item; `work.assign` moves any item and assigns people; anyone who can
+    start work may take an unassigned item.
+  - A pull request opened from a work item's branch is linked to the item, which moves to "in review".
+  - Jira write-back: comment, web link (for example the pull request), and the status changes Jira offers to the
+    user ("status when allowed" means Jira's own transitions).
+  - Changing a project's lead now needs `project.members.manage`; before, `project.configure` was enough.
+- **Left for later phases:**
+  - Runs and changed test files are linked by hand for now; phase 07 links the files of a push and phase 08 the runs
+    of the branch.
+  - Attachments are listed by name (downloading needs the user's Jira session). Only "current sprint" is offered as
+    a sprint filter.
 
 ### Phase 07: `feature/phase_07_workspace_publish`
 - **Goal:** the daily editor flow.
