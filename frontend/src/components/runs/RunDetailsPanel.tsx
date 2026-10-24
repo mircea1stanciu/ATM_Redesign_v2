@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ExternalLink, FileText, Loader2 } from 'lucide-react'
+import PerformanceMetrics from '@/features/testing/PerformanceMetrics'
 import { apiService } from '@/services/api'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { runDisplayName } from '@/utils/runName'
@@ -120,6 +121,8 @@ export default function RunDetailsPanel({
           details were collected).
         </p>
       )}
+
+      {details?.performance && <PerformanceMetrics performance={details.performance} />}
 
       <Section title="Reports">
         <div className="space-y-1.5">

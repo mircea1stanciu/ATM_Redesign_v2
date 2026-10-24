@@ -15,3 +15,6 @@ This folder holds the plan for redesigning ATM (AutomationTestManager). Read the
 The plan is a living document. When a phase changes the plan, it updates these files in the same PR.
 
 Topics we agreed to discuss later are listed in [01-overview.md › Open topics](01-overview.md#open-topics).
+
+Judgement calls made while implementing, to review together after phase 14, are listed in
+[decisions-to-review.md](decisions-to-review.md).

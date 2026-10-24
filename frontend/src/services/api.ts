@@ -277,6 +277,7 @@ export const apiService = {
       framework_target?: string
       extra_args?: string
       run_requests?: string[]
+      environment_id?: number
     },
   ): Promise<ExecuteRunResponse> {
     const response = await api.post<ExecuteRunResponse>(`/runs/${runId}/execute`, payload || {})

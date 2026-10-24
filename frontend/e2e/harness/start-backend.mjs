@@ -44,6 +44,9 @@ writeFileSync(join(seedTree, 'tests', 'ui', 'login_error.spec.ts'), "// Login er
 writeFileSync(join(seedTree, 'tests', 'test_login_error.py'), "def test_login_error_message():\n    message = 'Wrong email or password'\n")
 writeFileSync(join(seedTree, 'pytest.ini'), '[pytest]\n')
 writeFileSync(join(seedTree, '.gitignore'), '.venv/\n.pytest_cache/\n__pycache__/\n')
+// A k6 script, so a performance suite can be created and run (k6 itself is the stand-in below).
+mkdirSync(join(seedTree, 'perf'), { recursive: true })
+writeFileSync(join(seedTree, 'perf', 'load.js'), "import http from 'k6/http'\nexport default function () { http.get(__ENV.BASE_URL) }\n")
 git(['init', '--initial-branch=main'], seedTree)
 git(['add', '.'], seedTree)
 git(['commit', '-m', 'Initial sample'], seedTree)
@@ -64,8 +67,35 @@ mkdirSync(join(traineeCheckout, '.venv', 'bin'), { recursive: true })
 writeFileSync(join(traineeCheckout, '.venv', 'bin', 'python'), `#!/bin/sh\nexec "${realPython}" "$@"\n`)
 chmodSync(join(traineeCheckout, '.venv', 'bin', 'python'), 0o755)
 
+// A stand-in for k6 on PATH: it writes a realistic --summary-export file and exits 0, so performance runs work
+// without installing k6. It records BASE_URL in the summary so tests can check the environment reached the runner.
+const binDir = join(workDir, 'bin')
+mkdirSync(binDir, { recursive: true })
+writeFileSync(join(binDir, 'k6'), `#!/usr/bin/env node
+const args = process.argv.slice(2)
+const out = args[args.indexOf('--summary-export') + 1]
+const summary = {
+  root_group: { name: '', checks: { 'status is 200': { passes: 100, fails: 0 } }, groups: [] },
+  metrics: {
+    http_req_duration: { avg: 85.4, 'p(90)': 120.2, 'p(95)': 142.7, max: 310.5 },
+    http_reqs: { count: 100, rate: 19.8 },
+    http_req_failed: { value: 0 },
+    vus_max: { value: 5, max: 5 },
+    iterations: { count: 100 },
+  },
+  base_url: process.env.BASE_URL || null,
+}
+require('fs').writeFileSync(out, JSON.stringify(summary))
+console.log('     ✓ status is 200')
+console.log('     http_req_duration..............: avg=85.4ms p(95)=142.7ms')
+`)
+chmodSync(join(binDir, 'k6'), 0o755)
+
 const env = {
   ...process.env,
+  PATH: `${binDir}:${process.env.PATH}`,
+  // Suite schedules are checked every 2 s, so "schedule a suite and see it start" does not wait half a minute.
+  ATM_SCHEDULER_INTERVAL_SECONDS: '2',
   ATM_DATABASE_PATH: join(workDir, 'e2e.db'),
   // AI conversations and other artifacts: per run, so a run never sees an earlier run's files.
   ARTIFACTS_DIR: join(workDir, 'artifacts'),

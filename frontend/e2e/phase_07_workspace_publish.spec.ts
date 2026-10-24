@@ -14,7 +14,7 @@ test.beforeEach(({ page }) => {
 
 const FILE = 'tests/test_login_error.py'
 const BRANCH = `feature/e2e-trainee-${Date.now()}`
-const GIT_TIMEOUT = 20_000
+const GIT_TIMEOUT = 30_000
 
 async function sampleProjectId(request: APIRequestContext): Promise<string> {
   const projects = await (await request.get('/api/projects/', { headers: authHeaders('automation_trainee') })).json()
@@ -72,6 +72,7 @@ test('run changed tests: the changed pytest file runs and passes', async ({ page
 })
 
 test('new branch, commit & push to the repository, open a pull request', async ({ page, request }) => {
+  test.setTimeout(90_000) // git steps (branch, commit, push) on a busy station
   const projectId = await sampleProjectId(request)
   await login(page, 'automation_trainee')
   await page.goto('/work/workspace')
@@ -91,7 +92,8 @@ test('new branch, commit & push to the repository, open a pull request', async (
   await expect(commit.getByRole('list', { name: 'Changed files' })).toContainText(FILE)
   await commit.getByLabel('Commit message').fill('Add an assertion to the login error test')
   await commit.getByRole('button', { name: 'Commit & push' }).click()
-  await expect(page.getByText(`Pushed ${BRANCH}`)).toBeVisible({ timeout: GIT_TIMEOUT })
+  // Check the outcome, not the toast (it closes after a few seconds, which a slow push can outlast).
+  await expect(commit).toBeHidden({ timeout: GIT_TIMEOUT })
   await expect(toolbar).toContainText('0 uncommitted')
   const branches = await (await request.get(`${fakeServicesUrl()}/api/v3/repos/e2e/sample/branches`)).json()
   expect(branches.map((b: { name: string }) => b.name)).toContain(BRANCH)
@@ -100,7 +102,7 @@ test('new branch, commit & push to the repository, open a pull request', async (
   const pr = page.getByRole('dialog', { name: 'Open a pull request' })
   await pr.getByLabel('Title').fill('Login error test asserts the message')
   await pr.getByRole('button', { name: 'Open pull request' }).click()
-  await expect(page.getByText(/Opened pull request #\d+/)).toBeVisible({ timeout: GIT_TIMEOUT })
+  await expect(pr).toBeHidden({ timeout: GIT_TIMEOUT })
   const { pullRequests } = await (await request.get(`${fakeServicesUrl()}/__e2e/requests`)).json()
   expect(pullRequests).toContainEqual(expect.objectContaining({ head: BRANCH, base: 'main', title: 'Login error test asserts the message' }))
 

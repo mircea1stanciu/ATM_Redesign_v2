@@ -49,9 +49,12 @@ export default function ActionBar({ projectId, workItem, layout, onLayoutChange,
 
   const branch = status.data?.current_branch ?? ''
   const changed = uncommitted.data?.files.length ?? 0
+  const email = useAppStore(s => s.user?.email)
+  // My last run: the project's runs are shared with everyone, the workspace is mine.
   const lastRun = useMemo(
-    () => [...runs].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0],
-    [runs],
+    () => runs.filter(r => r.triggered_by === email)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0],
+    [runs, email],
   )
   const running = lastRun && ['running', 'pending'].includes(lastRun.status)
 

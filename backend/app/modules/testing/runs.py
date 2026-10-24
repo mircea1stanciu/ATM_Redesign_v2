@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db import SessionLocal
 from app.core.permissions import ensure
-from app.modules.projects.models import AnalyticsRun
+from app.modules.projects.models import AnalyticsRun, AnalyticsSuite, TestEnvironment
 from app.modules.reporting.report_template import render_report_html
 
 manual_run_sockets: dict[str, set[WebSocket]] = {}
@@ -60,6 +60,8 @@ class AnalyticsRunExecuteRequest(BaseModel):
     # Any other framework: run_type="framework", framework_target=<id from /local/frameworks>.
     framework_target: Optional[str] = None
     extra_args: Optional[str] = None
+    # A project environment (Tests › Environments): its variables are handed to the runner.
+    environment_id: Optional[int] = None
     # Bruno: run only these requests/folders (relative to the collection), e.g. the changed ones.
     run_requests: Optional[list[str]] = None
 
@@ -88,6 +90,8 @@ def _analytics_run_response(run: AnalyticsRun) -> dict:
         "commit_sha": run.commit_sha,
         "triggered_by": run.triggered_by,
         "source": "github_actions" if metadata else "local",
+        "trigger": run.trigger or "manual",
+        "environment_id": str(run.environment_id) if run.environment_id else None,
         "collection": run.collection,
         "environment": run.environment,
         "execution_time": run.started_at.isoformat()
@@ -827,6 +831,12 @@ async def _start_framework_run(
         raise HTTPException(status_code=400, detail="Select what to run.")
     if (payload.extra_args or "").strip():  # extra command-line arguments need edit rights
         ensure(db, current_user, "code.edit")
+    suite = db.query(AnalyticsSuite).filter(AnalyticsSuite.id == run.suite_id).first()
+    environment = None
+    if payload.environment_id is not None:
+        environment = db.query(TestEnvironment).filter(TestEnvironment.id == payload.environment_id).first()
+        if not environment or not suite or environment.project_id != suite.project_id:
+            raise HTTPException(status_code=400, detail="That environment is not one of this project's.")
     if run_id in manual_run_processes:
         raise HTTPException(status_code=409, detail="This run is already executing.")
     artifact_dir = _manual_run_artifact_dir(repo_path, run_id)
@@ -834,7 +844,7 @@ async def _start_framework_run(
         shutil.rmtree(artifact_dir, ignore_errors=True)
     try:
         plan = await asyncio.to_thread(framework_run_service.build_plan, repo_path, target, artifact_dir,
-                                       payload.extra_args)
+                                       payload.extra_args, environment.variables if environment else None)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     _forget_framework_detection(repo_path)
@@ -842,6 +852,7 @@ async def _start_framework_run(
     run.status = "running"
     run.started_at = datetime.utcnow()
     run.finished_at = None
+    run.environment_id = environment.id if environment else None
     run.collection_path = f"{framework_run_service.FRAMEWORK_TARGET_PREFIX}{plan.target}"
     run.environment = plan.seed.get("framework")
     run.collection = f"{plan.label} - {run.started_at.strftime('%Y-%m-%d %H:%M:%S')}"

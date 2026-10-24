@@ -26,6 +26,7 @@ async function sampleProjectId(request: APIRequestContext): Promise<string> {
 }
 
 test('Publish: branch, commit, push to the repository and open a pull request', async ({ page, request }) => {
+  test.setTimeout(90_000) // git steps (branch, commit, push) on a busy station
   const projectId = await sampleProjectId(request)
   const branch = `feature/e2e-${Date.now()}`
   // A change to publish, written through the editor API.
@@ -49,13 +50,13 @@ test('Publish: branch, commit, push to the repository and open a pull request', 
   const commit = page.getByRole('dialog', { name: 'Commit & push' })
   await commit.getByLabel('Commit message').fill('Add a note from the UI test')
   await commit.getByRole('button', { name: 'Commit & push' }).click()
-  await expect(page.getByText(`Pushed ${branch}`)).toBeVisible({ timeout: 20_000 })
+  await expect(commit).toBeHidden({ timeout: 30_000 })
 
   await toolbar.getByRole('button', { name: 'Open PR' }).click()
   const pr = page.getByRole('dialog', { name: 'Open a pull request' })
   await pr.getByLabel('Title').fill('UI test pull request')
   await pr.getByRole('button', { name: 'Open pull request' }).click()
-  await expect(page.getByText(/Opened pull request #\d+/)).toBeVisible({ timeout: 20_000 })
+  await expect(pr).toBeHidden({ timeout: 30_000 })
 
   // The branch really reached the repository, and GitHub got the pull request request.
   const branches = await (await request.get(`${fakeServicesUrl()}/api/v3/repos/e2e/sample/branches`)).json()

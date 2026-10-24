@@ -132,21 +132,42 @@ def ensure(db: Session, user: User, permission: str, project_id: Optional[int] =
         raise permission_denied("This project is not in your scope.")
 
 
-def _project_of_run(db: Session, run_id) -> Optional[int]:
-    from app.modules.projects.models import AnalyticsRun, AnalyticsSuite
+def _project_of_run(db: Session, run_id: str) -> Optional[int]:
+    """The project of a run addressed as ``manual-<id>`` (local run) or ``allure-<id>`` (imported report)."""
+    from app.modules.projects.models import AllureReport, AnalyticsRun
 
-    run = db.query(AnalyticsRun).filter(AnalyticsRun.id == run_id).first()
+    kind, _, number = str(run_id).rpartition("-")
+    if not number.isdigit():
+        return None
+    if kind == "allure":
+        report = db.query(AllureReport).filter(AllureReport.id == int(number)).first()
+        return int(report.project_id) if report else None
+    if kind not in ("manual", ""):
+        return None
+    run = db.query(AnalyticsRun).filter(AnalyticsRun.id == int(number)).first()
     if not run:
         return None
-    suite = db.query(AnalyticsSuite).filter(AnalyticsSuite.id == run.suite_id).first()
+    return _project_of_suite(db, run.suite_id)
+
+
+def _project_of_suite(db: Session, suite_id) -> Optional[int]:
+    from app.modules.projects.models import AnalyticsSuite
+
+    if not str(suite_id).isdigit():
+        return None
+    suite = db.query(AnalyticsSuite).filter(AnalyticsSuite.id == int(suite_id)).first()
     return int(suite.project_id) if suite else None
+
+
+_PROJECT_RESOLVERS = {"run_id": _project_of_run, "suite_id": _project_of_suite}
 
 
 def require(permission: str, project_from: Optional[str] = None) -> Callable[..., User]:
     """Dependency: the current user, after checking `permission` (and the project's scope).
 
-    ``project_from`` names the path parameter that identifies the project: ``project_id``, or ``run_id`` for
-    endpoints addressed by run (its suite's project is checked).
+    ``project_from`` names the path parameter that identifies the project: ``project_id``, or ``run_id`` /
+    ``suite_id`` for endpoints addressed by run or suite (their project is checked). An id that matches nothing answers
+    404, so the project scope is never skipped.
     """
     if permission not in PERMISSIONS:
         raise KeyError(f"Unknown permission '{permission}'")
@@ -156,7 +177,10 @@ def require(permission: str, project_from: Optional[str] = None) -> Callable[...
         if project_from:
             raw = request.path_params.get(project_from)
             if raw is not None:
-                project_id = _project_of_run(db, raw) if project_from == "run_id" else raw
+                resolver = _PROJECT_RESOLVERS.get(project_from)
+                project_id = resolver(db, raw) if resolver else raw
+                if project_id is None:
+                    raise HTTPException(status_code=404, detail="Not found")
         try:
             ensure(db, current_user, permission, int(project_id) if project_id is not None else None)
         except ValueError:

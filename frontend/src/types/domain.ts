@@ -975,6 +975,10 @@ export interface ReleaseAnalysisResponse {
   additional_tickets_error?: string | null
 }
 
+export type TestType = 'functional' | 'regression' | 'smoke' | 'api' | 'ui' | 'mobile' | 'performance'
+
+export const TEST_TYPES: TestType[] = ['functional', 'regression', 'smoke', 'api', 'ui', 'mobile', 'performance']
+
 export interface TestSuite {
   id: string
   project_id: string
@@ -983,6 +987,21 @@ export interface TestSuite {
   cron_expression: string | null
   active: boolean
   created_at: string
+  test_type?: TestType
+  /** Framework target id from /local/frameworks, e.g. "pytest@.|file|tests/test_login.py". */
+  target?: string | null
+  environment_id?: string | null
+  ci_workflow?: string | null
+  created_by_user_id?: string | null
+  last_run?: { id: string; status: RunStatus; trigger: string; created_at: string | null } | null
+}
+
+export interface TestEnvironment {
+  id: string
+  project_id: string
+  name: string
+  variables: Record<string, string>
+  bruno_environment: string | null
 }
 
 export interface TestRun {
@@ -996,6 +1015,8 @@ export interface TestRun {
   commit_sha: string | null
   triggered_by: string | null
   source: 'local' | 'github_actions'
+  trigger?: 'manual' | 'schedule' | string
+  environment_id?: string | null
   collection: string | null
   environment?: string | null
   execution_time?: string | null
@@ -1027,8 +1048,22 @@ export interface RunReportFile {
   size: number
 }
 
+export interface RunPerformance {
+  p95_ms: number | null
+  p90_ms: number | null
+  avg_ms: number | null
+  max_ms: number | null
+  requests: number
+  requests_per_second: number | null
+  error_rate: number | null
+  virtual_users: number
+  iterations: number
+}
+
 export interface RunExecutionDetails {
-  type: 'appium' | 'bruno'
+  type: 'appium' | 'bruno' | 'framework'
+  /** k6 runs: response times, throughput and errors. */
+  performance?: RunPerformance | null
   command?: string[]
   target?: {
     kind: 'runner' | 'suite' | 'collection'

@@ -260,6 +260,24 @@ They touch different modules, so their PRs do not conflict (see section 6.4).
   - The run view with performance metrics for k6.
 - **UI tests:** create a suite of each type with sample projects from the starter templates; run a functional and a
   performance suite; schedule a suite and see it start.
+- **Decided while building phase 08:**
+  - A suite has a test type, a target (a framework target detected in the checkout: a pytest file, a k6 script, a
+    Maven class…), an environment, an optional schedule (cron) and an optional GitHub Actions workflow. Tests › Suites
+    lists them with their last result; Tests › Environments holds each project's environments (variables such as
+    BASE_URL handed to the runner).
+  - The run dialog ("Run tests" in the Tests area) runs a suite, the changed tests or one file, on an environment,
+    here or on GitHub Actions (when the suite has a workflow and the user has `run.execute.ci`).
+  - One in-process scheduler (`app/modules/testing/scheduler.py`) checks every `ATM_SCHEDULER_INTERVAL_SECONDS`
+    (30). A suite starts when its cron matches the current minute, once per minute, as the person who set the
+    schedule. The cron parser is ours (`testing/cron.py`): five fields, ranges, lists and steps.
+  - k6 runs show p95 / average response time, throughput, requests, error rate and virtual users in the run details.
+  - Runs record who started them on the server (`triggered_by`), and whether a person or the schedule did
+    (`trigger`).
+  - Fixed: the run and suite endpoints did not check the project scope (run ids such as `manual-5` were not resolved
+    to their project, so only the role was checked). They now resolve the project, and unknown ids answer 404.
+  - The suite, run and environment models are typed (`Mapped[...]`).
+- **Left for later phases:** Bruno and Appium as suite targets, secret environment variables, and the Allure report of
+  each run (phase 09). The open choices are listed in [decisions-to-review.md](decisions-to-review.md).
 
 ### Phase 09: `feature/phase_09_allure_reporting`
 - **Goal:** one report for every framework.
