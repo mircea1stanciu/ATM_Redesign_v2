@@ -94,7 +94,7 @@ The product owner will decide these later. The plan leaves room for them without
 | # | Topic | What is needed | Planned in |
 |---|---|---|---|
 | T1 | Uploading Allure reports to Confluence | Page structure, who publishes, when (manual, after each run, nightly), which space | Phase 10 (built with the suggested default, see [decisions-to-review.md](decisions-to-review.md)) |
-| T2 | Testing-environment checks after a deployment | Which checks (health, smoke suite, version check), where deployments are detected (CI/CD webhook, release pages, service endpoints) | Phase 11 |
-| T3 | Notification channels beyond the app | Email, Microsoft Teams, both | Phase 11 |
+| T2 | Testing-environment checks after a deployment | Which checks (health, smoke suite, version check), where deployments are detected (CI/CD webhook, release pages, service endpoints) | Phase 11 (built with the suggested default, see [decisions-to-review.md](decisions-to-review.md)) |
+| T3 | Notification channels beyond the app | Email, Microsoft Teams, both | Phase 11 (built with the suggested default, see [decisions-to-review.md](decisions-to-review.md)) |
 | T4 | Trainee readiness criteria | Which numbers the lead wants to see before a promotion | Phase 13 |
 | T5 | Shared team server or one install per station | Decides when Postgres and real HTTPS sign-in callbacks are needed | After phase 14 |

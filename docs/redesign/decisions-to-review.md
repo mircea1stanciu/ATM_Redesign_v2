@@ -77,3 +77,19 @@ notes of each phase in [06-implementation-plan.md](06-implementation-plan.md).
 | The link back to ATM uses `ATM_PUBLIC_URL`, otherwise the browser's address | Always require `ATM_PUBLIC_URL` | `publish` in `reports_router.py` |
 | Imported Allure results cannot be published | Publish them too (no suite: page per project) | `PublishPanel.tsx`, `publish` endpoint |
 
+## Phase 11: deployments and notifications (open topics T2 and T3, suggested defaults)
+
+| Decision | Alternative | To reverse |
+|---|---|---|
+| Deployments arrive through a signed CI/CD webhook, one secret per service | Poll release pages or service endpoints; one secret per team | `deployments/service.py` (`verify`), `router.py` |
+| After a deployment, ATM runs each project's chosen smoke suite on the environment with the same name | Health or version checks; no automatic check | `start_checks` in `deployments/service.py` |
+| The check runs as a tester the lead picks, in that tester's checkout | A shared service account and checkout | `ServiceProject.check_user_id`, `_check_user` |
+| A deployment to an environment the project does not have is "skipped", not run against another environment | Run on the suite's default environment | `start_checks` |
+| Notified: members and lead of the projects that test the service (Lead, Senior, User, Trainee); not Viewers or shared-scope Seniors who are not members | Everyone who can see the project | `project_testers` in `notifications/service.py` |
+| Every kind is on by default; users mute kinds and projects | Opt in per kind | `NotificationSubscription`, `wants` |
+| Finished runs notify the person who started them (also scheduled runs: the schedule's owner) | Only failed runs, or none | `_notify_starter` |
+| Review requests (a PR opened from ATM) go to the project's Seniors and lead and the author's lead | Reviewers chosen on GitHub | `reviewers` in `notifications/service.py` (phase 12 builds the Reviews area) |
+| Teams: one channel per project through a Teams workflow webhook, deployments and checks only; no e-mail | E-mail; personal Teams messages through a bot | `notifications/teams.py`, `Project.teams_webhook` |
+| Setting a project's Teams channel needs `deployment.configure` (Super Admin, Lead) | `project.configure` (Seniors too) | `update_project` in `projects/router.py` |
+| An unknown service answers 401 like a bad signature | 404 "unknown service" (easier to set up, reveals names) | `verify` |
+
