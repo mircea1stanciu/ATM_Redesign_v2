@@ -134,3 +134,12 @@ own judgement calls at the end of this file.
 | A promotion keeps the person's scope tag (project_base stays project_base) | Ask for the tag when promoting | `decide` (scope_tag) |
 | The audit log covers promotions, readiness decisions, role changes, report publications and deployment webhooks | Also logins, settings, deletions | `app/modules/audit/service.py` callers |
 | A lead sees audit entries they made, about their people, or in their projects; webhook calls only super admins | Leads see everything | `list_audit` in `modules/audit/router.py` |
+
+## Phase 15: access and roles (from the review)
+
+| Decision | Alternative | To reverse |
+|---|---|---|
+| People lists show yourself and the roles below yours; peers (another Lead) are not shown | Show peers too | `can_see_user` in `app/core/permissions.py` |
+| The no-project banner shows for everyone who has no project and cannot create one | Only for Viewers | `NoProjectBanner.tsx` |
+| Only the upgrade's automatic memberships are removed; memberships given by a lead stay | Remove every membership of project-based users and Viewers | `0012_no_automatic_memberships.py` |
+

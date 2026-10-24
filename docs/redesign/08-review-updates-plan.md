@@ -59,6 +59,17 @@ Decisions kept as they are need no work and are not repeated here.
     hierarchy: a Super Admin sees everyone; a Lead sees themselves and the people below Lead. (#5)
 - **UI tests:** a Viewer sees five areas and the no-project banner; a Senior has no Admin; a Lead does not see Super
   Admins in the user list and takes on an unassigned person.
+- **Decided while building phase 15:**
+  - The banner shows for anyone without a project who cannot create projects (so not for a Super Admin or Lead on a
+    fresh install).
+  - Migration `0012` removes the memberships with no `added_by_user_id` whose `added_at` matches a
+    `role_migration_log` entry (the phase 04 upgrade). It cannot be undone: leads assign the projects again. Back up the
+    database before upgrading a station that has real users.
+  - `ROLE_RANK` in `app/core/permissions.py` is the one hierarchy (people lists, promotions). `can_see_user` applies it
+    to Admin › Users; leads still edit only their own people.
+  - "Assign to me" (`POST /api/users/{id}/claim`) is for Leads; a Super Admin keeps assigning any lead in the edit
+    dialog. Taking someone on is audited (`user.claim`).
+  - The phase 04, 05 and 06 UI tests follow the new matrix (a Senior has no Admin; a Viewer has no Work or Learning).
 
 ### Phase 16: `feature/phase_16_work_filters`
 - **Delivers:**

@@ -43,7 +43,7 @@ mark, ✓ still applies only to projects the user can see.
 | `project.configure` (GitHub, Jira, Confluence links) | ✓ | ✓ | ✓ (own) | | | |
 | `project.members.manage` | ✓ | ✓ | | | | |
 | **Work items (Jira and Confluence)** | | | | | | |
-| `work.view` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `work.view` | ✓ | ✓ | ✓ | ✓ | ✓ | |
 | `work.start` (create work item and branch) | ✓ | ✓ | ✓ | ✓ | ✓ | |
 | `work.assign` (assign a story to someone) | ✓ | ✓ | ✓ | | | |
 | `jira.write` (create tasks, links, comments, status) | ✓ | ✓ | ✓ | ✓ | | |
@@ -70,12 +70,12 @@ mark, ✓ still applies only to projects the user can see.
 | `deployment.view` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `deployment.configure` (service map, webhooks, checks) | ✓ | ✓ | | | | |
 | **Learning** | | | | | | |
-| `learning.use` (paths, lessons, practice) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `learning.use` (paths, lessons, practice) | ✓ | ✓ | ✓ | ✓ | ✓ | |
 | `learning.mentor` (see trainees' progress, review practice) | ✓ | ✓ | ✓ | | | |
 | `learning.manage` (paths, practice tasks, hints) | ✓ | ✓ | | | | |
 | `readiness.decide` (promote / change role) | ✓ | ✓ ³ | | | | |
 | **Administration** | | | | | | |
-| `user.view` | ✓ | ✓ | ✓ | | | |
+| `user.view` (only the roles below one's own; a Super Admin sees everyone) | ✓ | ✓ | | | | |
 | `user.manage` (create, deactivate, role, tag, lead) | ✓ | ✓ ³ | | | | |
 | `settings.system` (install-wide settings and integrations) | ✓ | | | | | |
 | `audit.view` | ✓ | ✓ | | | | |
