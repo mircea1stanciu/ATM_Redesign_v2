@@ -9,7 +9,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
-from app.core.permissions import TAGGED_ROLES, PermissionDenied, check_role_change, has_permission, require
+from app.core.permissions import ROLE_RANK, TAGGED_ROLES, PermissionDenied, check_role_change, has_permission, require
 from app.modules.audit.service import record
 from app.modules.identity.models import User, UserRole
 from app.modules.identity.users_router import ROLE_NAMES
@@ -23,8 +23,7 @@ from app.modules.work.models import WorkItem
 router = APIRouter(prefix="/api/readiness", tags=["Learning"])
 
 # The ladder a promotion climbs (docs/redesign/04-roles-and-permissions.md, section 4.4).
-RANK = {UserRole.VIEWER: 0, UserRole.AUTOMATION_TRAINEE: 1, UserRole.AUTOMATION_USER: 2,
-        UserRole.AUTOMATION_SENIOR: 3, UserRole.AUTOMATION_LEAD: 4, UserRole.SUPER_ADMIN: 5}
+RANK = ROLE_RANK
 
 
 def _name(user: Optional[User]) -> Optional[str]:

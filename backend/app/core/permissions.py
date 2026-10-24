@@ -32,7 +32,7 @@ PERMISSIONS: dict[str, frozenset[UserRole]] = {
     "project.configure": frozenset({SA, LEAD, SENIOR}),
     "project.members.manage": frozenset({SA, LEAD}),
     # Work items (Jira and Confluence)
-    "work.view": ALL,
+    "work.view": BUILDERS,  # phase 15: viewers see Home, Tests, Reports, Reviews and Deploys only
     "work.start": BUILDERS,
     "work.assign": frozenset({SA, LEAD, SENIOR}),
     "jira.write": frozenset({SA, LEAD, SENIOR, USER}),
@@ -59,12 +59,12 @@ PERMISSIONS: dict[str, frozenset[UserRole]] = {
     "deployment.view": ALL,
     "deployment.configure": frozenset({SA, LEAD}),
     # Learning
-    "learning.use": ALL,
+    "learning.use": BUILDERS,
     "learning.mentor": frozenset({SA, LEAD, SENIOR}),
     "learning.manage": frozenset({SA, LEAD}),
     "readiness.decide": frozenset({SA, LEAD}),  # leads: own people only, see check_role_change()
     # Administration
-    "user.view": frozenset({SA, LEAD, SENIOR}),
+    "user.view": frozenset({SA, LEAD}),  # and only the people below oneself, see can_see_user()
     "user.manage": frozenset({SA, LEAD}),  # leads: own people only, see check_role_change()
     "settings.system": frozenset({SA}),
     "audit.view": frozenset({SA, LEAD}),
@@ -74,6 +74,8 @@ TAGGED_ROLES = frozenset({SENIOR, USER, TRAINEE})  # exactly one scope tag each
 SCOPE_TAGS = ("project_base", "shared")
 # Roles that configure team-wide connection settings (Jira/Confluence base URL); the others inherit their lead's.
 LEAD_ROLES = frozenset({SA, LEAD})
+# The role hierarchy, highest last (promotions climb it; people lists show only those below oneself).
+ROLE_RANK = {VIEWER: 0, TRAINEE: 1, USER: 2, SENIOR: 3, LEAD: 4, SA: 5}
 # The highest role a lead may give (only a super admin creates leads and super admins).
 LEAD_ASSIGNABLE_ROLES = frozenset({SENIOR, USER, TRAINEE, VIEWER})
 
@@ -197,6 +199,11 @@ def can_manage_suite(user: User, suite) -> bool:
     if not has_permission(user, "suite.manage"):
         return False
     return user.role != USER or suite.created_by_user_id == user.id
+
+
+def can_see_user(viewer: User, other: User) -> bool:
+    """Phase 15: a super admin sees everyone; anyone else sees themselves and the roles below their own."""
+    return viewer.role == SA or viewer.id == other.id or ROLE_RANK[other.role] < ROLE_RANK[viewer.role]
 
 
 def check_role_change(actor: User, target: Optional[User], new_role: Optional[UserRole]) -> None:
