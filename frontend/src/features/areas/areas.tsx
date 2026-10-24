@@ -1,13 +1,13 @@
 import { Navigate, useSearchParams } from 'react-router-dom'
 import { useState } from 'react'
-import { GitPullRequest, Play, Terminal } from 'lucide-react'
+import { Play, Terminal } from 'lucide-react'
 import { usePermission } from '@/hooks/usePermission'
 import RunDialog from '@/features/testing/RunDialog'
 import LocalScriptsPanel from '@/pages/projects/LocalScriptsPanel'
 import { useAppStore } from '@/store/useAppStore'
 import ProjectOpenInIde from '@/components/ai/ProjectOpenInIde'
 import { visibleTabs } from '@/app/navigation'
-import { Button, Card, EmptyState, PageHeader } from '@/ui'
+import { Button, EmptyState } from '@/ui'
 import AreaLayout from './AreaLayout'
 
 export function WorkLayout() {
@@ -71,18 +71,8 @@ export function AdminIndex() {
   return <Navigate to={first?.to ?? '/'} replace />
 }
 
-export function ReviewsPage() {
-  return (
-    <div className="flex flex-col gap-4">
-      <PageHeader title="Reviews" description="Pull requests waiting for you, and every open pull request of your projects." />
-      <Card>
-        <EmptyState icon={GitPullRequest} title="Reviews in ATM are coming">
-          Seniors will review, comment on and approve pull requests here. Until then, open a pull request from
-          Work › Repository and review it on GitHub.
-        </EmptyState>
-      </Card>
-    </div>
-  )
+export function ReviewsLayout() {
+  return <AreaLayout areaId="reviews" title="Reviews" description="Pull requests waiting for you, and every open pull request of your projects." />
 }
 
 export function DeploymentsLayout() {

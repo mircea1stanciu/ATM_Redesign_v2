@@ -8,7 +8,7 @@ import { Button, Skeleton } from '@/ui'
 import LoginPage from '@/pages/LoginPage'
 import HomePage from '@/features/home/HomePage'
 import {
-  AdminIndex, AdminLayout, DeploymentsLayout, ReportsLayout, RepositoryRedirect, ReviewsPage, ScriptsPage, TestsLayout,
+  AdminIndex, AdminLayout, DeploymentsLayout, ReportsLayout, RepositoryRedirect, ReviewsLayout, ScriptsPage, TestsLayout,
   WorkLayout,
 } from '@/features/areas/areas'
 
@@ -32,6 +32,8 @@ const TimelinePage = lazy(() => import('@/features/deployments/TimelinePage'))
 const DeploymentPage = lazy(() => import('@/features/deployments/DeploymentPage'))
 const ServicesPage = lazy(() => import('@/features/deployments/ServicesPage'))
 const NotificationsPage = lazy(() => import('@/features/notifications/NotificationsPage'))
+const PullRequestsPage = lazy(() => import('@/features/reviews/PullRequestsPage'))
+const PullRequestPage = lazy(() => import('@/features/reviews/PullRequestPage'))
 const TrendsPage = lazy(() => import('@/features/reports/TrendsPage'))
 const ReportViewerPage = lazy(() => import('@/features/reports/ReportViewerPage'))
 const EnvironmentsPage = lazy(() => import('@/features/testing/EnvironmentsPage'))
@@ -287,7 +289,12 @@ export default function App() {
               <Route path="overview" element={<DashboardPage />} />
               <Route path="analytics" element={<AnalyticsPage />} />
             </Route>
-            <Route path="reviews" element={<RequirePermission any={['pr.view']}><ReviewsPage /></RequirePermission>} />
+            <Route path="reviews" element={<RequirePermission any={['pr.view']}><ReviewsLayout /></RequirePermission>}>
+              <Route index element={<Navigate to="waiting" replace />} />
+              <Route path="waiting" element={<PullRequestsPage scope="mine" />} />
+              <Route path="open" element={<PullRequestsPage scope="all" />} />
+              <Route path=":projectId/:number" element={<PullRequestPage />} />
+            </Route>
             <Route path="deployments" element={<RequirePermission any={['deployment.view']}><DeploymentsLayout /></RequirePermission>}>
               <Route index element={<Navigate to="timeline" replace />} />
               <Route path="timeline" element={<TimelinePage />} />
