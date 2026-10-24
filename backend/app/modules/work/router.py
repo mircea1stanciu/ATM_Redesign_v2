@@ -164,7 +164,8 @@ class WorkItemCreate(BaseModel):
 
 
 async def _start_branch(db: Session, user: User, project_id: int, branch: str) -> str:
-    """Create the branch from the default branch in the user's checkout (or switch to it if it exists)."""
+    """Create the branch from the default branch in the user's checkout (or switch to it if it exists). The branch
+    owner is added to the session; the caller commits."""
     from app.services.local_repo_service import LocalRepoError, LocalRepoService
 
     ensure(db, user, "code.push", project_id)
@@ -208,6 +209,24 @@ async def create_or_start_work_item(
     key = detail["key"]
     item = db.query(WorkItem).filter(WorkItem.project_id == project_id, WorkItem.source == payload.source,
                                      WorkItem.external_key == key).first()
+
+    assignee: Optional[User] = None
+    if payload.assignee_id is not None and payload.assignee_id != current_user.id:
+        ensure(db, current_user, "work.assign", project_id)
+        assignee = db.query(User).filter(User.id == payload.assignee_id).first()
+        if not assignee or not can_see_project(db, assignee, project_id):
+            raise HTTPException(status_code=400, detail="That person cannot see this project.")
+
+    # Git first, the database after: a write transaction must not stay open while git runs (SQLite has one writer).
+    branch: Optional[str] = None
+    if payload.start:
+        if item is not None and item.assignee_id not in (None, current_user.id):
+            _may_change(current_user, item)
+        branch = (payload.branch or service.branch_name(key, detail["title"])).strip()
+        if not service.BRANCH_PATTERN.match(branch):
+            raise HTTPException(status_code=400, detail=f"'{branch}' is not a valid branch name.")
+        branch = await _start_branch(db, current_user, project_id, branch)
+
     if item is None:
         item = WorkItem(project_id=project_id, source=payload.source, external_key=key, kind=detail["kind"],
                         title=detail["title"][:500], url=detail.get("url"), status="todo",
@@ -218,21 +237,10 @@ async def create_or_start_work_item(
         item.title = detail["title"][:500]
         item.url = detail.get("url")
     item.context_json = service.context_snapshot(detail)
-
-    if payload.assignee_id is not None and payload.assignee_id != current_user.id:
-        ensure(db, current_user, "work.assign", project_id)
-        assignee = db.query(User).filter(User.id == payload.assignee_id).first()
-        if not assignee or not can_see_project(db, assignee, project_id):
-            raise HTTPException(status_code=400, detail="That person cannot see this project.")
+    if assignee is not None:
         item.assignee_id = assignee.id
-
-    if payload.start:
-        if item.assignee_id not in (None, current_user.id):
-            _may_change(current_user, item)
-        branch = (payload.branch or service.branch_name(key, detail["title"])).strip()
-        if not service.BRANCH_PATTERN.match(branch):
-            raise HTTPException(status_code=400, detail=f"'{branch}' is not a valid branch name.")
-        item.branch = await _start_branch(db, current_user, project_id, branch)
+    if branch is not None:
+        item.branch = branch
         item.assignee_id = current_user.id
         if item.status == "todo":
             item.status = "in_progress"

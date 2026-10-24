@@ -33,7 +33,7 @@ from app.core.config import settings
 
 ANTHROPIC_BASE_URL = "https://api.anthropic.com"
 ANTHROPIC_VERSION = "2023-06-01"
-GITHUB_MODELS_BASE_URL = "https://models.github.ai"
+GITHUB_MODELS_BASE_URL = settings.ATM_GITHUB_MODELS_BASE_URL.rstrip("/")
 GRAPH_BASE_URL = "https://graph.microsoft.com/beta"
 MICROSOFT_LOGIN_URL = "https://login.microsoftonline.com"
 MICROSOFT_COPILOT_MODEL = "microsoft-365-copilot"

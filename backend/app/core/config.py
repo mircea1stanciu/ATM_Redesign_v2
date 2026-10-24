@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     # DATABASE_URL is deliberately not read: it belonged to the removed second backend and pointed at Postgres.
     ATM_DATABASE_URL: str = ""
     ATM_DATABASE_PATH: str = ""
+    ATM_DB_POOL_SIZE: int = 10
+    ATM_DB_MAX_OVERFLOW: int = 20
 
     # Creates the first super admin "admin" on a database without one (development only).
     ATM_DEV_ADMIN_PASSWORD: str = ""
@@ -38,6 +40,9 @@ class Settings(BaseSettings):
     CONFLUENCE_TOKEN: str = ""
     CONFLUENCE_MCP_BASE_URL: str = ""  # e.g. https://your-domain.atlassian.net/wiki
     CONFLUENCE_SPACE_KEY: str = ""
+
+    # GitHub Models (the "GitHub Copilot" AI provider). Only GitHub Enterprise setups and the UI tests change it.
+    ATM_GITHUB_MODELS_BASE_URL: str = "https://models.github.ai"
     CONFLUENCE_SPACE_NAME: str = ""
     ZEPHYR_PROJECT_KEY: str = ""  # Selected Jira project for Zephyr
     ZEPHYR_SELECTED_FOLDER_ID: str = ""  # Selected test folder/cycle ID

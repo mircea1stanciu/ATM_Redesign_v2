@@ -291,3 +291,41 @@ def test_project_jira_and_confluence_keys(client, project):
     # Choosing the project's lead is people management: not for seniors.
     assert client.patch(url, headers=senior["headers"], json={"lead_user_id": senior["id"]}).status_code == 403
     assert client.patch(url, headers=lead["headers"], json={"lead_user_id": lead["id"]}).status_code == 200
+
+
+def test_pushed_test_files_trace_to_the_work_item(client, project):
+    with SessionLocal() as db:
+        item = WorkItem(project_id=project["id"], source="jira", external_key="SHOP-9", kind="user_story",
+                        title="Pushed", status="in_progress", branch="feature/SHOP-9-pushed")
+        db.add(item)
+        db.commit()
+        paths = ["tests/ui/login_error.spec.ts", "src/app.ts", "tests/test_cart.py"]
+        assert service.link_pushed_files(db, project["id"], "feature/SHOP-9-pushed", paths) == 2
+        assert service.link_pushed_files(db, project["id"], "feature/SHOP-9-pushed", paths) == 0  # once
+        assert service.link_pushed_files(db, project["id"], "feature/other", paths) == 0
+        db.refresh(item)
+        assert sorted(link.target_ref for link in item.links) == ["tests/test_cart.py", "tests/ui/login_error.spec.ts"]
+
+
+def test_trainees_get_a_default_suite_for_their_runs(client, project):
+    trainee = _user("automation_trainee", project["id"], tag="project_base")
+    viewer = _user("viewer", project["id"])
+    url = f"/api/suites/projects/{project['id']}/default-suite"
+    assert client.post(f"/api/suites/projects/{project['id']}/suites", headers=trainee["headers"],
+                       json={"name": "Mine"}).status_code == 403  # creating suites needs suite.manage
+    first = client.post(url, headers=trainee["headers"])
+    assert first.status_code == 200 and first.json()["name"] == "Default Suite"
+    assert client.post(url, headers=trainee["headers"]).json()["id"] == first.json()["id"]
+    assert client.post(url, headers=viewer["headers"]).status_code == 403
+
+
+def test_run_artifacts_stay_out_of_commits(tmp_path):
+    from app.modules.testing.runs import _manual_run_artifact_dir
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git("init", cwd=repo)
+    _manual_run_artifact_dir(repo, "manual-1")
+    _manual_run_artifact_dir(repo, "manual-2")
+    exclude = (repo / ".git" / "info" / "exclude").read_text().splitlines()
+    assert exclude.count(".automationtestmanager/") == 1

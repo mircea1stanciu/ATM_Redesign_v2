@@ -19,7 +19,7 @@ from app.modules.projects.service import (
     local_status,
     project_github_token,
 )
-from app.modules.work.service import link_pull_request
+from app.modules.work.service import link_pull_request, link_pushed_files
 
 router = APIRouter(prefix="/api/projects", tags=["Workspace"])
 
@@ -406,9 +406,23 @@ async def push_project_local_branch(
     check_trainee_push(db, current_user, project_id, branch or "")
     repo_url, token = _repository_url_and_token(project, current_user, project_id)
     try:
-        return await LocalRepoService.push(service_view, repo_url, token, branch=branch)
+        result = await LocalRepoService.push(service_view, repo_url, token, branch=branch)
     except LocalRepoError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    return {**result, "linked_tests": await _link_pushed_tests(db, project, repo_path, branch or "")}
+
+
+async def _link_pushed_tests(db: Session, project, repo_path, branch: str) -> int:
+    """Trace the test files the branch changed (compared with the default branch) to its work item."""
+    from app.services import changed_tests_service
+
+    try:
+        changes = await asyncio.to_thread(changed_tests_service.changed_files, repo_path, None,
+                                          getattr(project, "default_branch", None) or "main", True)
+    except changed_tests_service.ChangedTestsError:
+        return 0
+    paths = [f["path"] for f in changes["files"] if f["status"] != "deleted" and f["scope"] == "committed"]
+    return link_pushed_files(db, project.id, branch, paths)
 
 
 @router.post("/{project_id}/github/pull-request")
