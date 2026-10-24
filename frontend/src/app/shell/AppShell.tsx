@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import * as RadixDialog from '@radix-ui/react-dialog'
 import AppCommandPalette from './AppCommandPalette'
+import NoProjectBanner from './NoProjectBanner'
 import ShortcutsDialog from './ShortcutsDialog'
 import Sidebar from './Sidebar'
 import TopBar from './TopBar'
@@ -44,6 +45,7 @@ export default function AppShell() {
         Skip to content
       </a>
       <TopBar onOpenPalette={() => setPaletteOpen(true)} onOpenNavigation={() => setMobileNavOpen(true)} />
+      <NoProjectBanner />
       <div className="flex min-h-0 flex-1">
         <div className="hidden lg:block">
           <Sidebar collapsed={collapsed} onToggle={toggleCollapsed} />
