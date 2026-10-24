@@ -74,6 +74,8 @@ export const AREA_TABS: Record<string, AreaTab[]> = {
     { to: '/tests/libraries', label: 'Libraries' },
   ],
   reports: [
+    { to: '/reports/list', label: 'Reports' },
+    { to: '/reports/trends', label: 'Trends' },
     { to: '/reports/overview', label: 'Overview' },
     { to: '/reports/analytics', label: 'Analytics' },
   ],

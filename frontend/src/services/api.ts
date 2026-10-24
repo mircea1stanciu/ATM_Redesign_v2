@@ -302,15 +302,7 @@ export const apiService = {
     return response.data
   },
 
-  async getAllureReport(runId: string): Promise<Blob> {
-    const response = await api.get(`/runs/${runId}/allure-report`, { responseType: 'blob' })
-    return response.data
-  },
 
-  async getImportedAllureReport(projectId: string, reportId: number): Promise<Blob> {
-    const response = await api.get(`/projects/${projectId}/allure/reports/${reportId}/html`, { responseType: 'blob' })
-    return response.data
-  },
 
   // User management: role, scope tag, lead and projects.
   async listUsers(): Promise<UserResponse[]> {

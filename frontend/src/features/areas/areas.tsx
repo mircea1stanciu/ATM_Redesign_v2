@@ -35,7 +35,7 @@ export function TestsLayout() {
 }
 
 export function ReportsLayout() {
-  return <AreaLayout areaId="reports" title="Reports" description="Results, trends and Allure reports." />
+  return <AreaLayout areaId="reports" title="Reports" description="Allure reports of every run, trends and analytics." />
 }
 
 // Before phase 07 the Repository tab had its own views; they are workspace views now, Scripts moved to Tests.

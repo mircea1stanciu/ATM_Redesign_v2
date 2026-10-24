@@ -73,11 +73,9 @@ function techValue(value: unknown): string | null {
 export default function RunDetailsPanel({
   run,
   onOpenAllure,
-  openingAllure,
 }: {
   run: TestRunDetails
   onOpenAllure: () => void
-  openingAllure: boolean
 }) {
   const [openingReport, setOpeningReport] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -132,10 +130,10 @@ export default function RunDetailsPanel({
             </span>
             <button
               onClick={onOpenAllure}
-              disabled={run.results.length === 0 || openingAllure}
+              disabled={run.results.length === 0}
               className="btn-secondary !px-2 !py-0.5 text-[10px]"
             >
-              {openingAllure ? <Loader2 size={10} className="animate-spin" /> : <ExternalLink size={10} />} Open
+              <ExternalLink size={10} /> Open
             </button>
           </div>
           {(details?.reports ?? []).map(report => (

@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   BarChart2, ExternalLink, FileCog, Github, GitBranch, Info, Laptop, Loader2,
@@ -10,7 +11,6 @@ import { useRunFilters } from '@/hooks/useRunFilters'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { LinkifiedText } from '@/components/ui/LinkifiedText'
 import { runDisplayName } from '@/utils/runName'
-import { openBlobInNewTab } from '@/utils/openBlob'
 import { RunFiltersBar } from '@/components/runs/RunFiltersBar'
 import DevicesPanel from '@/components/runs/DevicesPanel'
 import RunDetailsPanel from '@/components/runs/RunDetailsPanel'
@@ -107,7 +107,7 @@ export default function RunsPage({ embedded = false }: { embedded?: boolean } = 
     const saved = window.localStorage.getItem(LOG_VIEW_STORAGE_KEY)
     return saved === 'structured' ? 'structured' : 'cli'
   })
-  const [openingAllureReport, setOpeningAllureReport] = useState(false)
+  const navigate = useNavigate()
   const [repoEnvironments, setRepoEnvironments] = useState<string[]>([])
   const [repoEnvironmentsResolved, setRepoEnvironmentsResolved] = useState(false)
   const [leftPanelWidth, setLeftPanelWidth] = useState(() => {
@@ -309,14 +309,10 @@ export default function RunsPage({ embedded = false }: { embedded?: boolean } = 
     window.localStorage.setItem(RUNS_SPLIT_STORAGE_KEY, String(leftPanelWidth))
   }, [leftPanelWidth])
 
-  const handleOpenAllureReport = async () => {
+  const handleOpenAllureReport = () => {
     if (!selectedRunDetails) return
-    setOpeningAllureReport(true)
-    try {
-      await openBlobInNewTab(() => apiService.getAllureReport(selectedRunDetails.id))
-    } finally {
-      setOpeningAllureReport(false)
-    }
+    // The Allure report opens in Reports, embedded (it also opens full screen or in its own tab from there).
+    navigate(`/reports/runs/${selectedRunDetails.id}`)
   }
 
   return (
@@ -688,10 +684,10 @@ export default function RunsPage({ embedded = false }: { embedded?: boolean } = 
               </>
             )}
             {rightPanel === 'results' && (
-              <button onClick={() => void handleOpenAllureReport()}
-                disabled={!selectedRunDetails || selectedRunDetails.results.length === 0 || openingAllureReport}
+              <button onClick={handleOpenAllureReport}
+                disabled={!selectedRunDetails || selectedRunDetails.results.length === 0}
                 className="btn-ghost !px-2 !py-1 !text-[10px]">
-                {openingAllureReport ? <Loader2 size={10} className="animate-spin" /> : <ExternalLink size={10} />} Allure HTML
+                <ExternalLink size={10} /> Allure report
               </button>
             )}
           </div>
@@ -716,8 +712,7 @@ export default function RunsPage({ embedded = false }: { embedded?: boolean } = 
             ) : selectedRunDetails ? (
               <RunDetailsPanel
                 run={selectedRunDetails}
-                onOpenAllure={() => void handleOpenAllureReport()}
-                openingAllure={openingAllureReport}
+                onOpenAllure={handleOpenAllureReport}
               />
             ) : null
           ) : (
