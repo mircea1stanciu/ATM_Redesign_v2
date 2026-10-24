@@ -57,6 +57,14 @@ class FakeAtlassian:
         if request.url.host == "jira.test":
             if self.jira_status != 200:
                 return httpx.Response(self.jira_status, json={"errorMessages": ["nope"]})
+            if path == "/rest/agile/1.0/board":
+                return httpx.Response(200, json={"values": [{"id": 3, "name": "SHOP board"}]})
+            if path == "/rest/agile/1.0/board/3/sprint":
+                closed = [{"id": i, "name": f"Sprint {i}", "state": "closed", "startDate": f"2026-0{i}-01"}
+                          for i in range(1, 8)]
+                return httpx.Response(200, json={"values": [
+                    *closed, {"id": 8, "name": "Sprint 8", "state": "active", "startDate": "2026-08-01"},
+                    {"id": 9, "name": "Sprint 9", "state": "future"}]})
             path = path.removeprefix("/rest/api/2")
             if path == "/project/SHOP":
                 types = [{"name": "Story"}, {"name": "Technical Story"}, {"name": "Bug"},
@@ -137,12 +145,18 @@ def _user(role: str, project_id: int, tag=None, checkout=None) -> dict:
 
 
 def test_jql_and_branch_names():
-    jql = service.build_jql("SHOP", q="login", story_types=["Story", "Technical Story"], assignee="me",
-                            sprint="current", label='a"b')
-    assert jql == ('project = "SHOP" AND issuetype in ("Story", "Technical Story") AND assignee = currentUser() '
-                   'AND sprint in openSprints() AND labels = "a\\"b" AND text ~ "login" ORDER BY updated DESC')
+    jql = service.build_jql("SHOP", q="login", story_types=["Story", "Technical Story"], types=["stories", "Bug"],
+                            statuses=["To Do", "In Progress"], assignee="me", sprint="current", labels=['a"b', "ui"])
+    assert jql == ('project = "SHOP" AND issuetype in ("Story", "Technical Story", "Bug") '
+                   'AND status in ("To Do", "In Progress") AND assignee = currentUser() AND sprint in openSprints() '
+                   'AND labels in ("a\\"b", "ui") AND text ~ "login" ORDER BY updated DESC')
     assert 'key = "SHOP-7"' in service.build_jql("SHOP", q="shop-7", story_types=[])
-    assert "issuetype" not in service.build_jql("SHOP", issue_type="all", story_types=["Story"])
+    # Phase 16: every issue type by default; a sprint by id; an advanced clause without its own ORDER BY.
+    assert "issuetype" not in service.build_jql("SHOP", story_types=["Story"])
+    assert "sprint = 12" in service.build_jql("SHOP", story_types=[], sprint="12")
+    assert service.build_jql("SHOP", story_types=[], jql="priority = High order by created") == \
+        'project = "SHOP" AND (priority = High) ORDER BY updated DESC'
+    assert service.split_values(" Story, Bug ,,") == ["Story", "Bug"]
     assert service.branch_name("SHOP-7", "Login shows an error for a wrong password!") == \
         "feature/SHOP-7-login-shows-an-error-for-a"
     assert service.kind_of("Technical Story") == "technical_story" and service.kind_of("Bug") == "other"
@@ -162,6 +176,9 @@ def test_inbox_detail_and_confluence(client, project, atlassian):
     assert inbox.json()["items"][0] == {**inbox.json()["items"][0], "key": "SHOP-7", "kind": "user_story",
                                         "url": f"{JIRA}/browse/SHOP-7", "work_item": None}
     search = next(r for r in atlassian.requests if r[1].endswith("/search"))
+    assert "issuetype" not in search[2]["jql"]  # phase 16: every issue type by default
+    client.get(f"{base}/jira/issues", params={"type": "stories"}, headers=viewer["headers"])
+    search = [r for r in atlassian.requests if r[1].endswith("/search")][-1]
     assert 'issuetype in ("Story", "Technical Story")' in search[2]["jql"]
 
     detail = client.get(f"{base}/jira/issues/SHOP-7", headers=viewer["headers"]).json()
@@ -330,3 +347,31 @@ def test_run_artifacts_stay_out_of_commits(tmp_path):
     _manual_run_artifact_dir(repo, "manual-2")
     exclude = (repo / ".git" / "info" / "exclude").read_text().splitlines()
     assert exclude.count(".automationtestmanager/") == 1
+
+
+def test_sprints_and_saved_filters(client, project, atlassian):
+    user = _user("automation_user", project["id"], tag="project_base")
+    other = _user("automation_user", project["id"], tag="project_base")
+    base = f"/api/projects/{project['id']}/work"
+    sprints = client.get(f"{base}/jira/sprints", headers=user["headers"]).json()
+    assert [s["name"] for s in sprints] == ["Sprint 8", "Sprint 9", "Sprint 7", "Sprint 6", "Sprint 5", "Sprint 4",
+                                            "Sprint 3"]  # active, future, the last five closed
+    assert sprints[0]["state"] == "active" and sprints[0]["board"] == "SHOP board"
+    client.get(f"{base}/jira/issues", params={"sprint": "8", "jql": "priority = High"}, headers=user["headers"])
+    jql = [r for r in atlassian.requests if r[1].endswith("/search")][-1][2]["jql"]
+    assert "sprint = 8" in jql and "(priority = High)" in jql
+    assert client.get(f"{base}/jira/issues", params={"sprint": "x"}, headers=user["headers"]).status_code == 422
+
+    url = f"{base}/saved-filters"
+    bugs = {"name": "My bugs", "filters": {"type": "Bug", "assignee": "me"}, "is_default": True}
+    first = client.put(url, headers=user["headers"], json=bugs)
+    assert first.status_code == 200 and first.json()["filters"] == {"type": "Bug", "assignee": "me"}
+    client.put(url, headers=user["headers"], json={"name": "Sprint 8", "filters": {"sprint": "8"}, "is_default": True})
+    client.put(url, headers=user["headers"], json={"name": "My bugs", "filters": {"type": "Bug,Story"}})
+    mine = client.get(url, headers=user["headers"]).json()
+    assert [(f["name"], f["is_default"]) for f in mine] == [("Sprint 8", True), ("My bugs", False)]
+    assert next(f for f in mine if f["name"] == "My bugs")["filters"] == {"type": "Bug,Story"}
+    assert client.get(url, headers=other["headers"]).json() == []  # saved per user
+    assert client.put(url, headers=user["headers"], json={"name": "x", "filters": {"bogus": "1"}}).status_code == 400
+    assert client.delete(f"{url}/{mine[0]['id']}", headers=other["headers"]).status_code == 404
+    assert client.delete(f"{url}/{mine[0]['id']}", headers=user["headers"]).status_code == 200

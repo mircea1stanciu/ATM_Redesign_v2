@@ -158,7 +158,7 @@ export default function WorkspacePage() {
         <div className="min-w-0 flex-1">
           <Tabs label="Workspace views" param="view" items={[
             { to: 'editor', label: 'Editor', icon: FileCode2 },
-            { to: 'three-panel', label: '3-Panel', icon: Columns3 },
+            { to: 'three-panel', label: 'Repository', icon: Columns3 }, // the GitHub tree, the file and the changes
             { to: 'compare', label: 'Compare', icon: GitCompare },
             { to: 'analysis', label: 'Analysis', icon: ScanSearch },
             { to: 'runs', label: 'Runs', icon: FlaskConical },

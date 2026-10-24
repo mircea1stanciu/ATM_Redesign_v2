@@ -17,7 +17,7 @@ from app.modules.work.integrations import (
     confluence_connection,
     jira_connection,
 )
-from app.modules.work.models import TraceLink, WorkItem
+from app.modules.work.models import SavedFilter, TraceLink, WorkItem
 
 router = APIRouter(prefix="/api/projects/{project_id}/work", tags=["Work"])
 
@@ -71,11 +71,12 @@ async def get_jira_filters(project_id: int, current_user: User = Depends(VIEW), 
 async def list_jira_issues(
     project_id: int,
     q: str = "",
-    status: str = "",
-    issue_type: str = Query("", alias="type"),
+    status: str = Query("", description="One status, or several separated by commas"),
+    issue_type: str = Query("", alias="type", description="Types separated by commas; 'stories' = the story types"),
     assignee: Literal["", "me", "unassigned"] = "",
-    sprint: Literal["", "current"] = "",
-    label: str = "",
+    sprint: str = Query("", pattern=r"^(|current|\d+)$"),
+    label: str = Query("", description="One label, or several separated by commas"),
+    jql: str = Query("", max_length=2000, description="An advanced JQL clause added to the filters"),
     cursor: int = Query(0, ge=0),
     current_user: User = Depends(VIEW),
     db: Session = Depends(get_db),
@@ -83,9 +84,72 @@ async def list_jira_issues(
     try:
         return await service.jira_inbox(
             db, jira_connection(db, current_user), _project(db, project_id), cursor=cursor, q=q, status=status,
-            issue_type=issue_type, assignee=assignee, sprint=sprint, label=label)
+            issue_type=issue_type, assignee=assignee, sprint=sprint, label=label, jql=jql)
     except IntegrationError as exc:
         _raise(exc)
+
+
+@router.get("/jira/sprints")
+async def list_jira_sprints(project_id: int, current_user: User = Depends(VIEW), db: Session = Depends(get_db)):
+    """Sprints of the project's Jira boards: active, future, and the last closed ones (empty without Jira Software)."""
+    try:
+        return await service.jira_sprints(jira_connection(db, current_user), _project(db, project_id))
+    except IntegrationError as exc:
+        _raise(exc)
+
+
+FILTER_KEYS = ("q", "type", "status", "assignee", "sprint", "label", "jql")
+
+
+class SavedFilterPayload(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    filters: dict[str, str]
+    is_default: bool = False
+
+
+def _saved_filter_response(saved: SavedFilter) -> dict:
+    return {"id": saved.id, "name": saved.name, "filters": saved.filters, "is_default": saved.is_default}
+
+
+@router.get("/saved-filters")
+async def list_saved_filters(project_id: int, current_user: User = Depends(VIEW), db: Session = Depends(get_db)):
+    """My saved inbox filters for this project; the default one first."""
+    rows = (db.query(SavedFilter).filter(SavedFilter.user_id == current_user.id, SavedFilter.project_id == project_id)
+            .order_by(SavedFilter.is_default.desc(), SavedFilter.name).all())
+    return [_saved_filter_response(row) for row in rows]
+
+
+@router.put("/saved-filters")
+async def save_filter(project_id: int, payload: SavedFilterPayload, current_user: User = Depends(VIEW),
+                      db: Session = Depends(get_db)):
+    """Save the current filters under a name (the same name replaces it); optionally the inbox's default."""
+    unknown = sorted(set(payload.filters) - set(FILTER_KEYS))
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"Unknown filter: {', '.join(unknown)}.")
+    filters = {k: v.strip()[:2000] for k, v in payload.filters.items() if v and v.strip()}
+    name = payload.name.strip()
+    saved = db.query(SavedFilter).filter(SavedFilter.user_id == current_user.id, SavedFilter.project_id == project_id,
+                                         SavedFilter.name == name).first()
+    if not saved:
+        saved = SavedFilter(user_id=current_user.id, project_id=project_id, name=name)
+        db.add(saved)
+    if payload.is_default:
+        db.query(SavedFilter).filter(SavedFilter.user_id == current_user.id, SavedFilter.project_id == project_id,
+                                     SavedFilter.name != name).update({"is_default": False})
+    saved.filters, saved.is_default = filters, payload.is_default
+    db.commit()
+    return _saved_filter_response(saved)
+
+
+@router.delete("/saved-filters/{filter_id}")
+async def delete_saved_filter(project_id: int, filter_id: int, current_user: User = Depends(VIEW),
+                              db: Session = Depends(get_db)):
+    deleted = db.query(SavedFilter).filter(SavedFilter.id == filter_id, SavedFilter.user_id == current_user.id,
+                                           SavedFilter.project_id == project_id).delete()
+    db.commit()
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Saved filter not found.")
+    return {"deleted": filter_id}
 
 
 @router.get("/jira/issues/{key}")

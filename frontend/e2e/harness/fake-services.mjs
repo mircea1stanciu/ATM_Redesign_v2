@@ -39,11 +39,11 @@ const issues = {
     summary: 'Login shows an error for a wrong password', type: 'Story', status: 'To Do',
     description: 'As a shopper I see a clear message when my password is wrong.',
     acceptance: 'Given a wrong password, the message "Wrong email or password" is shown.',
-    comments: [{ author: 'Product Owner', body: 'Copy agreed with UX.' }],
+    comments: [{ author: 'Product Owner', body: 'Copy agreed with UX.' }], sprint: 12,
   },
   'E2E-2': {
     summary: 'Checkout API returns the order id', type: 'Technical Story', status: 'In Progress',
-    description: 'POST /orders answers 201 with the new order id.', acceptance: '', comments: [],
+    description: 'POST /orders answers 201 with the new order id.', acceptance: '', comments: [], sprint: 13,
   },
   'E2E-3': { summary: 'Typo in the footer', type: 'Bug', status: 'To Do', description: '', acceptance: '', comments: [] },
 }
@@ -95,6 +95,12 @@ function matchesJql(key, jql) {
   if (type && type[1] !== issue.type) return false
   const status = jql.match(/status = "([^"]*)"/)
   if (status && status[1] !== issue.status) return false
+  const statuses = jql.match(/status in \(([^)]*)\)/)
+  if (statuses && !statuses[1].split(',').map(t => t.trim().replace(/^"|"$/g, '')).includes(issue.status)) return false
+  const sprint = jql.match(/sprint = (\d+)/)
+  if (sprint && Number(sprint[1]) !== issue.sprint) return false
+  const keys = jql.match(/key in \(([^)]*)\)/)
+  if (keys && !keys[1].split(',').map(k => k.trim().replace(/^"|"$/g, '')).includes(key)) return false
   const text = jql.match(/text ~ "([^"]*)"/)
   if (text && !issue.summary.toLowerCase().includes(text[1].toLowerCase())) return false
   const exact = jql.match(/key = "([^"]*)"/)
@@ -285,7 +291,16 @@ async function github(req, res, url) {
   return json(res, 404, { message: 'Not Found' })
 }
 
+// Jira Software boards and sprints (the inbox's sprint filter).
+const SPRINTS = [
+  { id: 11, name: 'E2E Sprint 11', state: 'closed', startDate: '2026-09-01' },
+  { id: 12, name: 'E2E Sprint 12', state: 'active', startDate: '2026-10-01' },
+  { id: 13, name: 'E2E Sprint 13', state: 'future' },
+]
+
 async function jira(req, res, url) {
+  if (url.pathname === '/jira/rest/agile/1.0/board') return json(res, 200, { values: [{ id: 1, name: 'E2E board' }] })
+  if (url.pathname === '/jira/rest/agile/1.0/board/1/sprint') return json(res, 200, { values: SPRINTS })
   const path = url.pathname.replace(/^\/jira\/rest\/api\/[23]/, '')
   if (path === '/myself') return json(res, 200, { displayName: 'E2E Jira User', name: 'e2e' })
   if (path === '/project/search') return json(res, 200, { values: [{ id: '10000', key: 'E2E', name: 'E2E Jira Project' }] })

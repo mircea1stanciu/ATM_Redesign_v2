@@ -80,6 +80,18 @@ Decisions kept as they are need no work and are not repeated here.
   - The action bar shows the project's last run (with who started it). (#9)
 - **UI tests:** save a filter, reload, pick it again; choose a sprint from the list; the tab name; the last run of the
   project after another user's run.
+- **Decided while building phase 16:**
+  - Type, status and label take several values (comma separated in the URL); `type=stories` means the project's story
+    types. The quick selects stay for one value; "More filters" chooses several and adds an advanced JQL clause
+    (ANDed with the rest; an `ORDER BY` in it is dropped, the inbox keeps its own order).
+  - Sprints come from the Agile API of the project's boards (up to three boards): active, future and the last five
+    closed. Without Jira Software the list is empty and "Current sprint" still works.
+  - Saved filters (`saved_filters`, migration `0013`) belong to one user and one project, since statuses and sprints
+    differ per project. Saving under an existing name replaces it; one filter can be the default, applied when the
+    inbox opens without filters in the URL.
+  - The "3-Panel" tab is now "Repository" (its URL stays `?view=three-panel`, so links keep working).
+  - The action bar shows the project's last run and who started it ("by you", "by a schedule", or the person). The
+    phase 07 UI test checks the trainee's own run through the API, since another test's run may be the newest.
 
 ### Phase 17: `feature/phase_17_suites_environments`
 - **Delivers:**

@@ -1,20 +1,20 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
+import { useInfiniteQuery } from '@tanstack/react-query'
 import { BookOpen, ClipboardList, Search } from 'lucide-react'
 import { useAppStore } from '@/store/useAppStore'
 import { apiService } from '@/services/api'
 import { Badge, Button, Card, EmptyState, ErrorState, Skeleton, Tabs, buttonStyles, useTabParam } from '@/ui'
 import { workApi, workKeys } from './api'
-import type { JiraInboxFilters } from './api'
+import { FILTER_KEYS } from './api'
+import InboxFilters from './InboxFilters'
+import type { FilterValues } from './InboxFilters'
 import StoryPanel from './StoryPanel'
 import { KIND_LABELS, WORK_STATUS_LABELS } from './types'
 import type { InboxEntry, InboxPage as Page, WorkSource } from './types'
 
 const SOURCES = ['jira', 'confluence'] as const
 const SEARCH_DELAY_MS = 300
-
-const SELECT = 'h-8 rounded-lg border border-line bg-surface px-2 text-[13px] text-fg focus:border-brand focus:outline-none'
 
 /** A filter kept in the URL, so refresh and shared links keep the view. */
 function useParam(name: string): [string, (value: string) => void] {
@@ -67,12 +67,24 @@ export default function InboxPage() {
   const source = useTabParam('source', SOURCES)
   const [openKey, setOpenKey] = useParam('item')
   const [q, setQ] = useParam('q')
-  const [status, setStatus] = useParam('status')
-  const [type, setType] = useParam('type')
-  const [assignee, setAssignee] = useParam('assignee')
-  const [sprint, setSprint] = useParam('sprint')
-  const [label, setLabel] = useParam('label')
+  const [params, setParams] = useSearchParams()
+  const status = params.get('status') ?? ''
+  const type = params.get('type') ?? ''
+  const assignee = params.get('assignee') ?? ''
+  const sprint = params.get('sprint') ?? ''
+  const label = params.get('label') ?? ''
+  const jql = params.get('jql') ?? ''
   const [search, setSearch] = useState(q)
+  // Several filters at once (a saved filter, "More filters"), in one URL update.
+  const changeFilters = (changes: Partial<FilterValues>) => {
+    const next = new URLSearchParams(window.location.search)
+    for (const [key, value] of Object.entries(changes)) {
+      if (value) next.set(key, value)
+      else next.delete(key)
+    }
+    if ('q' in changes) setSearch(changes.q ?? '')
+    setParams(next, { replace: true })
+  }
 
   useEffect(() => {
     const timer = window.setTimeout(() => { if (search !== q) setQ(search) }, SEARCH_DELAY_MS)
@@ -81,17 +93,10 @@ export default function InboxPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search])
 
-  const filters: JiraInboxFilters = {
-    q, status, type, label,
-    assignee: assignee as JiraInboxFilters['assignee'],
-    sprint: sprint as JiraInboxFilters['sprint'],
+  const filters: FilterValues = {
+    q, status, type, label, sprint, jql,
+    assignee: assignee as FilterValues['assignee'],
   }
-  const jiraFilters = useQuery({
-    queryKey: workKeys.jiraFilters(projectId ?? ''),
-    queryFn: () => workApi.jiraFilters(projectId!),
-    enabled: Boolean(projectId) && source === 'jira',
-    retry: false,
-  })
   const list = useInfiniteQuery<Page>({
     queryKey: source === 'jira' ? workKeys.jiraIssues(projectId ?? '', filters) : workKeys.confluencePages(projectId ?? '', q),
     queryFn: ({ pageParam }) => source === 'jira'
@@ -126,28 +131,8 @@ export default function InboxPage() {
             className="h-8 w-full rounded-lg border border-line bg-surface pl-8 pr-3 text-[13px] text-fg placeholder:text-fg-muted focus:border-brand focus:outline-none" />
         </label>
         {source === 'jira' && (
-          <>
-            <select aria-label="Type" value={type} onChange={e => setType(e.target.value)} className={SELECT}>
-              <option value="">Stories</option>
-              <option value="all">All types</option>
-              {jiraFilters.data?.issue_types.map(name => <option key={name} value={name}>{name}</option>)}
-            </select>
-            <select aria-label="Status" value={status} onChange={e => setStatus(e.target.value)} className={SELECT}>
-              <option value="">Any status</option>
-              {jiraFilters.data?.statuses.map(name => <option key={name} value={name}>{name}</option>)}
-            </select>
-            <select aria-label="Assignee" value={assignee} onChange={e => setAssignee(e.target.value)} className={SELECT}>
-              <option value="">Anyone</option>
-              <option value="me">Assigned to me</option>
-              <option value="unassigned">Unassigned</option>
-            </select>
-            <select aria-label="Sprint" value={sprint} onChange={e => setSprint(e.target.value)} className={SELECT}>
-              <option value="">Any sprint</option>
-              <option value="current">Current sprint</option>
-            </select>
-            <input aria-label="Label" value={label} onChange={e => setLabel(e.target.value.trim())} placeholder="Label"
-              className={`${SELECT} w-28`} />
-          </>
+          <InboxFilters projectId={projectId} values={filters} onChange={changeFilters}
+            hasUrlFilters={FILTER_KEYS.some(key => params.has(key))} />
         )}
       </div>
 
@@ -160,7 +145,7 @@ export default function InboxPage() {
           </div>
         ) : entries.length === 0 ? (
           <EmptyState icon={source === 'jira' ? ClipboardList : BookOpen} title="Nothing found">
-            {q || status || type || assignee || sprint || label ? 'No match for these filters.' : 'This project has none yet.'}
+            {q || status || type || assignee || sprint || label || jql ? 'No match for these filters.' : 'This project has none yet.'}
           </EmptyState>
         ) : (
           <>

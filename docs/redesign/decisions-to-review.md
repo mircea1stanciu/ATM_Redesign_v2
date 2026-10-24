@@ -143,3 +143,12 @@ own judgement calls at the end of this file.
 | The no-project banner shows for everyone who has no project and cannot create one | Only for Viewers | `NoProjectBanner.tsx` |
 | Only the upgrade's automatic memberships are removed; memberships given by a lead stay | Remove every membership of project-based users and Viewers | `0012_no_automatic_memberships.py` |
 
+## Phase 16: work filters and workspace (from the review)
+
+| Decision | Alternative | To reverse |
+|---|---|---|
+| Saved filters belong to a user and a project | One list per user for every project | `SavedFilter`, `saved-filters` endpoints in `work/router.py` |
+| The advanced JQL clause is ANDed with the other filters, inside the project | Free JQL replacing everything | `build_jql` in `work/service.py` |
+| The sprint list shows active, future and the last five closed sprints of up to three boards | Every sprint | `jira_sprints`, `CLOSED_SPRINTS_SHOWN` |
+| The workspace tab is called "Repository" | "Explorer", "Code" | `WorkspacePage.tsx` |
+

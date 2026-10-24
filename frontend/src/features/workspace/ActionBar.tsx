@@ -50,12 +50,13 @@ export default function ActionBar({ projectId, workItem, layout, onLayoutChange,
   const branch = status.data?.current_branch ?? ''
   const changed = uncommitted.data?.files.length ?? 0
   const email = useAppStore(s => s.user?.email)
-  // My last run: the project's runs are shared with everyone, the workspace is mine.
+  // The project's last run, whoever started it (phase 16).
   const lastRun = useMemo(
-    () => runs.filter(r => r.triggered_by === email)
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0],
-    [runs, email],
+    () => [...runs].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0],
+    [runs],
   )
+  const startedBy = !lastRun?.triggered_by ? '' : lastRun.triggered_by === email ? 'you'
+    : lastRun.triggered_by === 'schedule' ? 'a schedule' : lastRun.triggered_by.split('@')[0]
   const running = lastRun && ['running', 'pending'].includes(lastRun.status)
 
   // Keep the last run's status live while it runs.
@@ -104,6 +105,7 @@ export default function ActionBar({ projectId, workItem, layout, onLayoutChange,
       {lastRun && (
         <Link to="?view=runs" className="flex min-w-0 items-center gap-2 text-xs text-fg-muted hover:text-fg" aria-label="Last run">
           <span className="truncate">{runDisplayName(lastRun)}</span>
+          {startedBy && <span className="hidden truncate sm:inline">by {startedBy}</span>}
           <StatusPill status={lastRun.status} />
           {lastRun.total_tests > 0 && <span>{lastRun.passed_tests}/{lastRun.total_tests}</span>}
         </Link>

@@ -30,13 +30,15 @@ test('the inbox lists the project\'s stories and opens one in the detail panel',
   const list = page.getByRole('list', { name: 'Jira stories' })
   await expect(list.getByRole('button', { name: /E2E-1/ })).toBeVisible()
   await expect(list.getByRole('button', { name: /E2E-2/ })).toBeVisible()
+  await expect(list.getByRole('button', { name: /E2E-3/ })).toBeVisible() // phase 16: every issue type by default
+  await page.getByLabel('Type').selectOption('stories')
   await expect(list.getByRole('button', { name: /E2E-3/ })).toHaveCount(0) // a bug, not a story
 
   await page.getByRole('textbox', { name: 'Search stories' }).fill('checkout')
   await expect(page).toHaveURL(/q=checkout/)
   await expect(list.getByRole('button')).toHaveCount(1)
   await page.getByRole('textbox', { name: 'Search stories' }).fill('')
-  await page.getByLabel('Type').selectOption('all')
+  await page.getByLabel('Type').selectOption('')
   await expect(list.getByRole('button', { name: /E2E-3/ })).toBeVisible()
 
   await list.getByRole('button', { name: /E2E-1/ }).click()

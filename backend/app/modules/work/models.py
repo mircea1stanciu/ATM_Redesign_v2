@@ -3,7 +3,7 @@ import enum
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import JSON, Column, DateTime, Enum, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -82,3 +82,17 @@ class TraceLink(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
     work_item: Mapped[WorkItem] = relationship(back_populates="links")
+
+
+class SavedFilter(Base):
+    """An inbox filter saved under a name, per user and project (phase 16); one of them can open the inbox."""
+    __tablename__ = "saved_filters"
+    __table_args__ = (UniqueConstraint("user_id", "project_id", "name", name="uq_saved_filter_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    project_id: Mapped[int] = mapped_column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    filters: Mapped[dict] = mapped_column(JSON, default=dict)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
