@@ -449,6 +449,26 @@ They touch different modules, so their PRs do not conflict (see section 6.4).
   - Notification to the user.
 - **UI tests:** a Lead promotes a Trainee to User; the user's navigation and permissions change at the next page
   load.
+- **Decided while building phase 14** (T4 was still open; the suggested default, listed in
+  [decisions-to-review.md](decisions-to-review.md)):
+  - **Evidence (T4):** the readiness page of a person shows their path and its progress, lessons done, quizzes passed,
+    practice approved (and waiting), work items done (and in review / in progress), pull requests opened from ATM and
+    how many were approved in an ATM review by someone else, and their runs (passed, failed). No thresholds: ATM never
+    promotes anyone by itself; the lead decides.
+  - **Requests:** a Trainee or User asks for a readiness review (Learning › Readiness), or a mentor asks for them; one
+    open request at a time. The person's lead is notified, and sees open requests on Home and in Learning ›
+    Readiness.
+  - **Decision** (`readiness.decide`: Super Admin, Lead) with a required note: "Promote to …" (only higher roles that
+    footnote 3 allows: a lead promotes their own people up to Senior) or "Not yet". The role changes at once; since
+    the role is read from the server on every request, the person's navigation and permissions follow at their next
+    page load. The person is notified with the note (promotion, or the new kind "Readiness reviews").
+  - **Audit log** (`audit_log`, migration `0011`, Admin › Audit with `audit.view`): promotions and "not yet"
+    decisions, role changes made in Admin › Users, report publications and deployment webhook calls. A super admin
+    sees everything; a lead sees what they did, what was done to their people, and what happened in the projects they
+    see (webhook calls, which belong to no project, only super admins).
+  - The UI tests promote a trainee seeded only for them, so the shared trainee keeps its role for the other tests.
+- **Left for later:** "merged" pull requests (needs GitHub per project; ATM counts approvals), stepping someone back
+  from the readiness page (Admin › Users does it), and exporting the audit log.
 
 ## 6.3 Phase size and order
 
