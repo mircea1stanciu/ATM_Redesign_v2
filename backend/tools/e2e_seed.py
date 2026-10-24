@@ -36,6 +36,7 @@ from app.modules.settings.connections import set_secret  # noqa: E402
 
 SAMPLE_PROJECT_KEY = "E2E"
 CANDIDATE = "promotion_candidate"
+SECRETS_TESTER = "secrets_tester"
 SAMPLE_GITHUB_TOKEN = "e2e-github-token"
 PUBLISHING_ROLES = {UserRole.SUPER_ADMIN, UserRole.AUTOMATION_USER}
 SCOPE_TAGS = {
@@ -117,6 +118,21 @@ def seed(sessions_path: str) -> None:
             db.add(ProjectMember(project_id=project.id, user_id=candidate.id))
         db.commit()
         sessions[CANDIDATE] = {"username": CANDIDATE, "token": create_access_token(data={"user_id": candidate.id})}
+        # An automation user with their own checkout, for the phase 17 secret variable test.
+        tester = db.query(User).filter(User.username == SECRETS_TESTER).first()
+        if not tester:
+            tester = User(username=SECRETS_TESTER, email=f"{SECRETS_TESTER}@e2e.test", full_name="E2E Secrets Tester",
+                          hashed_password=User.hash_password(password), role=UserRole.AUTOMATION_USER,
+                          scope_tag="project_base", organization_id=org.id, is_active=True, assigned_lead_id=lead.id)
+            db.add(tester)
+            db.flush()
+            db.add(ProjectMember(project_id=project.id, user_id=tester.id))
+        db.commit()
+        sessions[SECRETS_TESTER] = {"username": SECRETS_TESTER,
+                                    "token": create_access_token(data={"user_id": tester.id})}
+        secrets_checkout = os.getenv("E2E_SECRETS_CHECKOUT_DIR")
+        if secrets_checkout:
+            save_linked_path(db, tester, project.id, secrets_checkout)
 
         fake_url = os.getenv("E2E_FAKE_URL")
         if fake_url:

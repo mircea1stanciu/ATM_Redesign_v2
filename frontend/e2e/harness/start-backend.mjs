@@ -73,6 +73,10 @@ git(['remote', 'set-url', 'origin', repoUrl], seniorCheckout)
 const traineeCheckout = join(workDir, 'checkout-trainee')
 git(['clone', bareRepo, traineeCheckout])
 git(['remote', 'set-url', 'origin', repoUrl], traineeCheckout)
+// The secrets tester's own checkout (phase 17): the spec adds a test file there without racing other specs.
+const secretsCheckout = join(workDir, 'checkout-secrets')
+git(['clone', bareRepo, secretsCheckout])
+git(['remote', 'set-url', 'origin', repoUrl], secretsCheckout)
 const realPython = execFileSync(python, ['-c', 'import sys; print(sys.executable)']).toString().trim()
 mkdirSync(join(traineeCheckout, '.venv', 'bin'), { recursive: true })
 writeFileSync(join(traineeCheckout, '.venv', 'bin', 'python'), `#!/bin/sh\nexec "${realPython}" "$@"\n`)
@@ -133,6 +137,7 @@ const env = {
   E2E_CHECKOUT_DIR: checkout,
   E2E_SENIOR_CHECKOUT_DIR: seniorCheckout,
   E2E_TRAINEE_CHECKOUT_DIR: traineeCheckout,
+  E2E_SECRETS_CHECKOUT_DIR: secretsCheckout,
   // The "GitHub Copilot" AI provider answers from the fake services.
   ATM_GITHUB_MODELS_BASE_URL: `http://127.0.0.1:${fakePort}/models`,
   E2E_FAKE_URL: `http://127.0.0.1:${fakePort}`,
