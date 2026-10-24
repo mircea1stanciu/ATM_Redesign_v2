@@ -31,6 +31,8 @@ class Project(Base):
     # Where the project's stories and requirement pages live (Work area).
     jira_project_key = Column(String(50))
     confluence_space_key = Column(String(100))
+    # Test report pages are published under this Confluence page (phase 10).
+    confluence_parent_page_id = Column(String(64))
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -121,6 +123,23 @@ class AnalyticsRun(Base):
         Integer, ForeignKey("test_environments.id", ondelete="SET NULL"), nullable=True)
     trigger: Mapped[str] = mapped_column(String(20), default="manual", server_default="manual",
                                          nullable=False)  # manual | schedule
+
+
+class ReportPublication(Base):
+    """A run's report published to Confluence: the page, its version, and whether it worked."""
+    __tablename__ = "report_publications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    run_id: Mapped[int] = mapped_column(Integer, ForeignKey("analytics_runs.id", ondelete="CASCADE"), index=True)
+    project_id: Mapped[int] = mapped_column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    status: Mapped[str] = mapped_column(String(20))  # published | failed
+    page_id: Mapped[Optional[str]] = mapped_column(String(64))
+    page_url: Mapped[Optional[str]] = mapped_column(String(1024))
+    page_version: Mapped[Optional[int]] = mapped_column(Integer)
+    attachment: Mapped[Optional[str]] = mapped_column(String(255))
+    error: Mapped[Optional[str]] = mapped_column(String(1000))
+    published_by_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
+    published_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
 
 class TestEnvironment(Base):

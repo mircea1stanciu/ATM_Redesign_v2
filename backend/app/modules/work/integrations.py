@@ -101,15 +101,18 @@ class _Client:
         raise NotImplementedError
 
     async def request(self, method: str, path: str, *, params: Optional[dict] = None,
-                      json: Optional[dict] = None) -> Any:
-        """Call the REST API, trying each API base in turn when one answers 404 (Cloud vs Server/DC)."""
-        headers = {"Authorization": f"Bearer {self.connection.token}", "Accept": "application/json"}
+                      json: Optional[dict] = None, files: Optional[dict] = None,
+                      headers: Optional[dict] = None) -> Any:
+        """Call the REST API, trying each API base in turn when one answers 404 (Cloud vs Server/DC).
+        ``files`` sends a multipart upload (Confluence attachments)."""
+        headers = {"Authorization": f"Bearer {self.connection.token}", "Accept": "application/json",
+                   **(headers or {})}
         last: Optional[httpx.Response] = None
         async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS, transport=HTTP_TRANSPORT) as client:
             for base in self._bases():
                 try:
                     response = await client.request(method, f"{base}{path}", params=params, json=json,
-                                                    headers=headers)
+                                                    files=files, headers=headers)
                 except httpx.RequestError as exc:
                     raise IntegrationError(502, f"Could not reach {self.name} at {self.connection.base_url}: "
                                                 f"{exc.__class__.__name__}.") from exc

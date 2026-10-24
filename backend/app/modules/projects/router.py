@@ -53,6 +53,7 @@ class ProjectUpdate(BaseModel):
     is_active: Optional[bool] = None
     jira_project_key: Optional[str] = None
     confluence_space_key: Optional[str] = None
+    confluence_parent_page_id: Optional[str] = None
 
 
 # Project Endpoints
@@ -78,6 +79,7 @@ def _project_response(project: Project) -> dict:
         "git_repo_url": project.github_repo_url or "",
         "jira_project_key": project.jira_project_key,
         "confluence_space_key": project.confluence_space_key,
+        "confluence_parent_page_id": project.confluence_parent_page_id,
         "git_provider": "github",
         "default_branch": "main",
         "framework": None,
@@ -160,9 +162,11 @@ async def update_project(
     # Choosing a project's lead is people management, not configuration.
     if "lead_user_id" in changes and changes["lead_user_id"] != project.lead_user_id:
         ensure(db, current_user, "project.members.manage", project_id)
-    for key in ("jira_project_key", "confluence_space_key"):
+    for key in ("jira_project_key", "confluence_space_key", "confluence_parent_page_id"):
         if key in changes:
             changes[key] = (changes[key] or "").strip() or None
+    if changes.get("confluence_parent_page_id") and not changes["confluence_parent_page_id"].isdigit():
+        raise HTTPException(status_code=400, detail="The Confluence parent page is its numeric page id.")
     if changes.get("jira_project_key"):
         changes["jira_project_key"] = changes["jira_project_key"].upper()
     for field, value in changes.items():

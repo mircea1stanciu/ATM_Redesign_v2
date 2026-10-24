@@ -7,7 +7,7 @@ import mimetypes
 import time
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -15,9 +15,17 @@ from app.core.config import settings
 from app.core.db import get_db
 from app.core.permissions import require
 from app.modules.identity.models import User
-from app.modules.projects.models import AllureReport, AnalyticsRun, AnalyticsSuite, TestEnvironment
+from app.modules.projects.models import (
+    AllureReport,
+    AnalyticsRun,
+    AnalyticsSuite,
+    ReportPublication,
+    TestEnvironment,
+)
 from app.modules.projects.service import get_project_or_404
 from app.modules.reporting import allure
+from app.modules.reporting.confluence_publisher import publication_response, publish_run
+from app.modules.work.integrations import IntegrationError
 
 router = APIRouter(prefix="/api", tags=["Reports"])
 
@@ -141,6 +149,11 @@ async def list_reports(project_id: int, suite_id: Optional[int] = None, limit: i
     if suite_id is not None:
         query = query.filter(AnalyticsRun.suite_id == suite_id)
     runs = query.order_by(AnalyticsRun.created_at.desc(), AnalyticsRun.id.desc()).limit(limit).all()
+    # The latest publication of each run: "published" or "failed".
+    published: dict[int, str] = {}
+    for publication in (db.query(ReportPublication).filter(ReportPublication.run_id.in_([r.id for r in runs]))
+                        .order_by(ReportPublication.published_at)):
+        published[publication.run_id] = publication.status
     return [{
         "run_id": f"manual-{run.id}",
         "name": run.name or run.collection or f"Run #{run.id}",
@@ -157,6 +170,7 @@ async def list_reports(project_id: int, suite_id: Optional[int] = None, limit: i
         "branch": run.branch,
         "trigger": run.trigger,
         "report": ((run.details_json or {}).get("report") or {}).get("status") or "none",
+        "confluence": published.get(run.id),
     } for run in runs]
 
 
@@ -194,3 +208,34 @@ async def suite_trends(project_id: int, suite_id: int,
     return {"suite_id": str(suite.id), "suite": suite.name, "test_type": suite.test_type, "points": points,
             "flaky_tests": flaky}
 
+
+
+# ── Confluence ────────────────────────────────────────────────────────────────
+
+
+@router.post("/runs/{run_id}/publish")
+async def publish_report(run_id: str, request: Request,
+                         current_user: User = Depends(require("report.publish", project_from="run_id")),
+                         db: Session = Depends(get_db)):
+    """Publish the run's report to Confluence: the suite's page (created or updated) and the report as a zip."""
+    run, _ = _run_and_suite(db, run_id)
+    # Links on the page point back to ATM as the publisher sees it.
+    atm_url = settings.ATM_PUBLIC_URL or request.headers.get("origin") or str(request.base_url)
+    try:
+        publication = await publish_run(db, current_user, run, atm_url)
+    except IntegrationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    return publication_response(publication, current_user.full_name or current_user.username)
+
+
+@router.get("/runs/{run_id}/publications")
+async def list_publications(run_id: str, current_user: User = Depends(require("report.view", project_from="run_id")),
+                            db: Session = Depends(get_db)):
+    """The run's publications to Confluence, newest first (failed ones too, with the reason)."""
+    run, _ = _run_and_suite(db, run_id)
+    publications = (db.query(ReportPublication).filter(ReportPublication.run_id == run.id)
+                    .order_by(ReportPublication.published_at.desc(), ReportPublication.id.desc()).all())
+    names = {u.id: u.full_name or u.username for u in db.query(User).filter(
+        User.id.in_([p.published_by_id for p in publications if p.published_by_id]))}
+    return [publication_response(p, names.get(p.published_by_id) if p.published_by_id else None)
+            for p in publications]

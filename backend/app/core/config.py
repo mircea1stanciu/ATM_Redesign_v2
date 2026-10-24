@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     # Suite schedules: checked every N seconds by the in-process scheduler (off in the backend tests).
     ATM_SCHEDULER_ENABLED: bool = True
     ATM_SCHEDULER_INTERVAL_SECONDS: int = 30
+    # How people reach ATM (for links in Confluence pages). Empty: the address the publisher used.
+    ATM_PUBLIC_URL: str = ""
 
     # Creates the first super admin "admin" on a database without one (development only).
     ATM_DEV_ADMIN_PASSWORD: str = ""
