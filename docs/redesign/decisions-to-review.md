@@ -4,6 +4,10 @@ All 14 phases are built. These are the judgement calls made while implementing t
 Each entry says what was decided, the main alternative, and what reversing it involves. The full context is in the
 "Decided while building" notes of each phase in [06-implementation-plan.md](06-implementation-plan.md).
 
+**Reviewed on 2026-10-24.** The changes asked for in that review are planned as phases 15–22 in
+[08-review-updates-plan.md](08-review-updates-plan.md); decisions not mentioned there are kept. New phases add their
+own judgement calls at the end of this file.
+
 ## Phase 04: roles and permissions
 
 | Decision | Alternative | To reverse |

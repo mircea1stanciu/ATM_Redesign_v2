@@ -11,6 +11,7 @@ This folder holds the plan for redesigning ATM (AutomationTestManager). Read the
 | 5 | [05-design.md](05-design.md) | The new look and the interaction design: navigation, screens, components |
 | 6 | [06-implementation-plan.md](06-implementation-plan.md) | The phases, their branches, what each delivers and how it is tested |
 | 7 | [07-delivery-workflow.md](07-delivery-workflow.md) | How each phase is built, tested with UI tests, and delivered as a PR |
+| 8 | [08-review-updates-plan.md](08-review-updates-plan.md) | Phases 15–22: the changes asked for in the review of the decisions |
 
 The plan is a living document. When a phase changes the plan, it updates these files in the same PR.
 
