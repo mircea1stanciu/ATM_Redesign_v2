@@ -26,6 +26,8 @@ const UsersPage = lazy(() => import('@/pages/UsersPage'))
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'))
 const AdminProjectsPage = lazy(() => import('@/features/admin/AdminProjectsPage'))
 const InboxPage = lazy(() => import('@/features/work/InboxPage'))
+const SuitesPage = lazy(() => import('@/features/testing/SuitesPage'))
+const EnvironmentsPage = lazy(() => import('@/features/testing/EnvironmentsPage'))
 const BoardPage = lazy(() => import('@/features/work/BoardPage'))
 
 const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000
@@ -264,6 +266,8 @@ export default function App() {
             <Route path="tests" element={<RequirePermission any={['run.view']}><TestsLayout /></RequirePermission>}>
               <Route index element={<Navigate to="runs" replace />} />
               <Route path="runs" element={<RunsPage />} />
+              <Route path="suites" element={<SuitesPage />} />
+              <Route path="environments" element={<EnvironmentsPage />} />
               <Route path="project" element={<OverviewTab />} />
               <Route path="scripts" element={<ScriptsPage />} />
               <Route path="libraries" element={<LibraryTab />} />

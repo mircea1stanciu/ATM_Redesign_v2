@@ -23,7 +23,7 @@ export const AREAS: Area[] = [
   { id: 'work', label: 'Work', to: '/work', icon: ClipboardList, permissions: ['work.view'], shortcut: 'w',
     description: 'Jira stories and Confluence pages, the board and the workspace' },
   { id: 'tests', label: 'Tests', to: '/tests', icon: PlayCircle, permissions: ['run.view'], shortcut: 't',
-    description: 'Runs, the project overview, scripts and libraries' },
+    description: 'Runs, suites, environments, the project overview, scripts and libraries' },
   { id: 'reports', label: 'Reports', to: '/reports', icon: BarChart3, permissions: ['report.view'], shortcut: 'r',
     description: 'Results, trends and Allure reports' },
   { id: 'reviews', label: 'Reviews', to: '/reviews', icon: GitPullRequest, permissions: ['pr.view'], shortcut: 'v',
@@ -67,6 +67,8 @@ export const AREA_TABS: Record<string, AreaTab[]> = {
   ],
   tests: [
     { to: '/tests/runs', label: 'Runs' },
+    { to: '/tests/suites', label: 'Suites' },
+    { to: '/tests/environments', label: 'Environments' },
     { to: '/tests/project', label: 'Project' },
     { to: '/tests/scripts', label: 'Scripts' },
     { to: '/tests/libraries', label: 'Libraries' },

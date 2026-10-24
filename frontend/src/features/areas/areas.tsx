@@ -1,10 +1,13 @@
 import { Navigate, useSearchParams } from 'react-router-dom'
-import { GitPullRequest, Rocket, Terminal } from 'lucide-react'
+import { useState } from 'react'
+import { GitPullRequest, Play, Rocket, Terminal } from 'lucide-react'
+import { usePermission } from '@/hooks/usePermission'
+import RunDialog from '@/features/testing/RunDialog'
 import LocalScriptsPanel from '@/pages/projects/LocalScriptsPanel'
 import { useAppStore } from '@/store/useAppStore'
 import ProjectOpenInIde from '@/components/ai/ProjectOpenInIde'
 import { visibleTabs } from '@/app/navigation'
-import { Card, EmptyState, PageHeader } from '@/ui'
+import { Button, Card, EmptyState, PageHeader } from '@/ui'
 import AreaLayout from './AreaLayout'
 
 export function WorkLayout() {
@@ -20,7 +23,15 @@ export function WorkLayout() {
 }
 
 export function TestsLayout() {
-  return <AreaLayout areaId="tests" title="Tests" description="Runs, the project's test setup, scripts and libraries." />
+  const canRun = usePermission('run.execute')
+  const [running, setRunning] = useState(false)
+  return (
+    <>
+      <AreaLayout areaId="tests" title="Tests" description="Runs, suites, environments and the project's test setup."
+        actions={canRun && <Button variant="primary" icon={<Play size={14} />} onClick={() => setRunning(true)}>Run tests</Button>} />
+      {running && <RunDialog open onOpenChange={setRunning} />}
+    </>
+  )
 }
 
 export function ReportsLayout() {
