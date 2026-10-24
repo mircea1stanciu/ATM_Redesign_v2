@@ -56,7 +56,8 @@ export default function ReportsListPage() {
                     <th className="px-2 py-2 font-medium">Duration</th>
                     <th className="px-2 py-2 font-medium">Environment</th>
                     <th className="px-2 py-2 font-medium">Branch</th>
-                    <th className="px-4 py-2 font-medium">Report</th>
+                    <th className="px-2 py-2 font-medium">Report</th>
+                    <th className="px-4 py-2 font-medium">Confluence</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line">
@@ -72,10 +73,14 @@ export default function ReportsListPage() {
                       <td className="px-2 py-2">{formatDuration(row.duration_seconds)}</td>
                       <td className="px-2 py-2">{row.environment ?? '—'}</td>
                       <td className="px-2 py-2"><code className="text-xs">{row.branch ?? '—'}</code></td>
-                      <td className="px-4 py-2">
+                      <td className="px-2 py-2">
                         {row.report === 'ready'
                           ? <Link to={`/reports/runs/${row.run_id}`} className="font-semibold text-accent hover:underline" aria-label={`Open the report of ${row.name}`}>Open report</Link>
                           : <Badge tone={row.report === 'none' ? 'neutral' : 'warning'}>{REPORT_LABEL[row.report]}</Badge>}
+                      </td>
+                      <td className="px-4 py-2">
+                        {row.confluence === 'published' ? <Badge tone="success">Published</Badge>
+                          : row.confluence === 'failed' ? <Badge tone="danger">Failed</Badge> : <span className="text-xs text-fg-muted">—</span>}
                       </td>
                     </tr>
                   ))}

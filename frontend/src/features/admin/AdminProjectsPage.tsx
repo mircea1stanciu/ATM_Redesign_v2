@@ -31,6 +31,7 @@ export default function AdminProjectsPage() {
   const [editing, setEditing] = useState<Project | null>(null)
   const [jiraKey, setJiraKey] = useState('')
   const [spaceKey, setSpaceKey] = useState('')
+  const [parentPage, setParentPage] = useState('')
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
@@ -38,6 +39,7 @@ export default function AdminProjectsPage() {
     setEditing(project)
     setJiraKey(project.jira_project_key ?? '')
     setSpaceKey(project.confluence_space_key ?? '')
+    setParentPage(project.confluence_parent_page_id ?? '')
     setSaveError(null)
   }
 
@@ -47,7 +49,9 @@ export default function AdminProjectsPage() {
     setSaving(true)
     setSaveError(null)
     try {
-      const updated = await apiService.updateProject(editing.id, { jira_project_key: jiraKey, confluence_space_key: spaceKey })
+      const updated = await apiService.updateProject(editing.id, {
+        jira_project_key: jiraKey, confluence_space_key: spaceKey, confluence_parent_page_id: parentPage,
+      })
       useAppStore.setState(state => ({
         projects: state.projects.map(p => p.id === updated.id ? { ...p, ...updated } : p),
       }))
@@ -167,6 +171,9 @@ export default function AdminProjectsPage() {
             help="Empty: the team's Jira project from Settings › Connections." />
           <Input label="Confluence space key" placeholder="REQ" value={spaceKey} onChange={e => setSpaceKey(e.target.value)}
             help="Empty: the team's Confluence space from Settings › Connections." />
+          <Input label="Confluence parent page id (test reports)" placeholder="123456" value={parentPage}
+            onChange={e => setParentPage(e.target.value)} inputMode="numeric"
+            help="Test report pages are published under this page (its number is in the page's URL)." />
           {saveError && <p role="alert" className="text-[13px] text-danger">{saveError}</p>}
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>

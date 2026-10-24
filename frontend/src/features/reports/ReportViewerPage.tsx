@@ -5,6 +5,7 @@ import { ArrowLeft, ExternalLink, Maximize2 } from 'lucide-react'
 import { apiService } from '@/services/api'
 import { Button, ErrorState, Skeleton, buttonStyles } from '@/ui'
 import { reportKeys, reportsApi } from './api'
+import PublishPanel from './PublishPanel'
 
 /** The run's Allure report, embedded; it can go full screen or open in its own tab. */
 export default function ReportViewerPage() {
@@ -19,6 +20,7 @@ export default function ReportViewerPage() {
         <Link to="/reports/list" className={buttonStyles('ghost', 'sm')}><ArrowLeft size={14} aria-hidden /> All reports</Link>
         <span className="text-[13px] text-fg-muted">Report of <code>{runId}</code></span>
         <span className="flex-1" />
+        <PublishPanel runId={runId} />
         {link.data && (
           <>
             <Button size="sm" icon={<Maximize2 size={13} />} onClick={() => void frame.current?.requestFullscreen()}>Full screen</Button>
