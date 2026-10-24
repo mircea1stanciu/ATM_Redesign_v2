@@ -140,6 +140,10 @@ def seed(sessions_path: str) -> None:
             for user in db.query(User).filter(User.role.in_(PUBLISHING_ROLES)).all():
                 save_linked_path(db, user, project.id, checkout)
                 set_project_github_token(db, user, project.id, SAMPLE_GITHUB_TOKEN)
+            # Pull requests are read with each person's own GitHub token: the senior reviews with their own account
+            # (the fake answers its own login), the viewer reads with the shared one.
+            set_project_github_token(db, users[UserRole.AUTOMATION_SENIOR], project.id, f"{SAMPLE_GITHUB_TOKEN}-senior")
+            set_project_github_token(db, users[UserRole.VIEWER], project.id, SAMPLE_GITHUB_TOKEN)
     finally:
         db.close()
 

@@ -1,13 +1,15 @@
 // Stand-ins for GitHub, Jira and Confluence so UI tests never call real services.
 //
 //   /<owner>/<repo>.git/...     git over HTTP for the bare repositories in E2E_FAKE_ROOT (git http-backend)
-//   /api/v3/...                 GitHub REST: repository, branches (read from the bare repository), pull requests
+//   /api/v3/...                 GitHub REST: user, repository, branches (read from the bare repository), pull requests
+//                               (list, detail, files from git diff, comments, reviews, check runs)
 //   /jira/rest/api/{2,3}/...    Jira: myself, projects, issue search and detail, comments, links, transitions
 //   /confluence/rest/api/...    Confluence: current user, spaces, page search and detail; report pages (create,
 //                               update, attachments)
 //   /models/...                 GitHub Models (the "GitHub Copilot" AI provider): catalog and chat completions
 //   /teams/hook                 a Microsoft Teams workflow webhook (deployment cards)
 //   /__e2e/requests             what ATM sent (tests inspect it); /__e2e/health for the harness
+//   POST /__e2e/pull-request    a pull request opened on GitHub outside ATM: a commit on a new branch of the bare repo
 import { execFileSync, spawn } from 'node:child_process'
 import { createServer } from 'node:http'
 import { join } from 'node:path'
@@ -21,6 +23,8 @@ if (!port || !root) {
 
 const requests = []
 const pullRequests = []
+// Reviews ATM submitted to GitHub (event, body, line comments with path, line and side).
+const reviewWrites = []
 // Comments, remote links and transitions ATM wrote to Jira, with their bodies.
 const jiraWrites = []
 // Report pages ATM created or updated in Confluence, and the attachments it uploaded.
@@ -153,6 +157,60 @@ function gitHttpBackend(req, res, url) {
   child.stderr.on('data', data => process.stderr.write(data))
 }
 
+// The GitHub user of a token: the seeded tokens are e2e-github-token (a shared bot) and e2e-github-token-senior.
+function loginOf(req) {
+  const token = (req.headers.authorization || '').split(' ').pop()
+  return token === 'e2e-github-token-senior' ? 'e2e-senior' : 'e2e-bot'
+}
+
+function bareGit(owner, repo, args, input, env = {}) {
+  return execFileSync('git', args, {
+    cwd: join(root, owner, `${repo}.git`), input,
+    env: { ...process.env, GIT_AUTHOR_NAME: 'E2E', GIT_AUTHOR_EMAIL: 'e2e@e2e.test', GIT_COMMITTER_NAME: 'E2E', GIT_COMMITTER_EMAIL: 'e2e@e2e.test', ...env },
+  }).toString()
+}
+
+// A commit on a new branch, written straight into the bare repository (no working tree).
+function commitToBranch(owner, repo, branch, path, content, message) {
+  const blob = bareGit(owner, repo, ['hash-object', '-w', '--stdin'], content).trim()
+  const index = { GIT_INDEX_FILE: join(root, `index-${branch.replace(/\W/g, '_')}-${Date.now()}`) }
+  bareGit(owner, repo, ['read-tree', 'main'], undefined, index)
+  bareGit(owner, repo, ['update-index', '--add', '--cacheinfo', `100644,${blob},${path}`], undefined, index)
+  const tree = bareGit(owner, repo, ['write-tree'], undefined, index).trim()
+  const commit = bareGit(owner, repo, ['commit-tree', tree, '-p', 'main', '-m', message]).trim()
+  bareGit(owner, repo, ['update-ref', `refs/heads/${branch}`, commit])
+  return commit
+}
+
+// The files of a pull request as GitHub lists them: status, counts and the patch (hunks only).
+function filesOf(owner, repo, base, head) {
+  const diff = bareGit(owner, repo, ['diff', '-U3', `${base}...${head}`])
+  return diff.split(/^diff --git /m).filter(Boolean).map(chunk => {
+    const lines = chunk.split('\n')
+    const filename = lines[0].split(' b/').pop()
+    const start = lines.findIndex(line => line.startsWith('@@'))
+    const patch = start < 0 ? '' : lines.slice(start).join('\n').replace(/\n$/, '')
+    const body = start < 0 ? [] : lines.slice(start)
+    return {
+      filename,
+      status: chunk.includes('\nnew file mode') ? 'added' : chunk.includes('\ndeleted file mode') ? 'removed' : 'modified',
+      additions: body.filter(l => l.startsWith('+')).length,
+      deletions: body.filter(l => l.startsWith('-')).length,
+      patch,
+    }
+  })
+}
+
+function pullJson(owner, repo, pr) {
+  return {
+    number: pr.number, title: pr.title, body: pr.body || '', state: 'open', draft: Boolean(pr.draft), merged: false,
+    html_url: `http://127.0.0.1:${port}/${owner}/${repo}/pull/${pr.number}`,
+    user: { login: pr.author }, head: { ref: pr.head, sha: pr.sha }, base: { ref: pr.base },
+    requested_reviewers: (pr.requested || []).map(login => ({ login })),
+    created_at: pr.created_at, updated_at: pr.updated_at,
+  }
+}
+
 function branchesOf(owner, repo) {
   const out = execFileSync('git', ['for-each-ref', '--format=%(refname:short) %(objectname)', 'refs/heads'], {
     cwd: join(root, owner, `${repo}.git`),
@@ -164,6 +222,7 @@ function branchesOf(owner, repo) {
 }
 
 async function github(req, res, url) {
+  if (url.pathname === '/api/v3/user') return json(res, 200, { login: loginOf(req) })
   const match = url.pathname.match(/^\/api\/v3\/repos\/([^/]+)\/([^/]+)(\/.*)?$/)
   if (!match) return json(res, 404, { message: 'Not Found' })
   const [, owner, repo, rest = ''] = match
@@ -174,10 +233,54 @@ async function github(req, res, url) {
   if (req.method === 'POST' && rest === '/pulls') {
     const body = JSON.parse(await readBody(req))
     const number = pullRequests.length + 1
-    pullRequests.push({ number, ...body, authorization: req.headers.authorization || '' })
+    const now = new Date().toISOString()
+    let sha = ''
+    try { sha = bareGit(owner, repo, ['rev-parse', body.head]).trim() } catch { /* branch not pushed */ }
+    pullRequests.push({ number, ...body, authorization: req.headers.authorization || '', author: loginOf(req), sha,
+      requested: [], reviews: [], comments: [], issueComments: [], created_at: now, updated_at: now })
     return json(res, 201, {
       number, state: 'open', title: body.title, html_url: `http://127.0.0.1:${port}/${owner}/${repo}/pull/${number}`,
     })
+  }
+  if (req.method === 'GET' && rest === '/pulls') {
+    if (Number(url.searchParams.get('page') || 1) > 1) return json(res, 200, [])
+    return json(res, 200, pullRequests.filter(pr => pr.sha).map(pr => pullJson(owner, repo, pr)).reverse())
+  }
+  const pull = rest.match(/^\/(pulls|issues)\/(\d+)(\/[a-z]+)?$/)
+  const pr = pull && pullRequests.find(p => p.number === Number(pull[2]))
+  if (pull && !pr) return json(res, 404, { message: 'Not Found' })
+  if (pr) {
+    const [, kind, , action = ''] = pull
+    const page = Number(url.searchParams.get('page') || 1)
+    const list = items => json(res, 200, page > 1 ? [] : items)
+    if (req.method === 'GET' && kind === 'pulls' && action === '') return json(res, 200, pullJson(owner, repo, pr))
+    if (req.method === 'GET' && kind === 'pulls' && action === '/files') return list(filesOf(owner, repo, pr.base, pr.sha))
+    if (req.method === 'GET' && kind === 'pulls' && action === '/comments') return list(pr.comments)
+    if (req.method === 'GET' && kind === 'pulls' && action === '/reviews') return list(pr.reviews)
+    if (req.method === 'GET' && kind === 'issues' && action === '/comments') return list(pr.issueComments)
+    const body = JSON.parse((await readBody(req)) || '{}')
+    const user = { login: loginOf(req) }
+    const now = new Date().toISOString()
+    if (req.method === 'POST' && kind === 'pulls' && action === '/reviews') {
+      const id = 1000 + reviewWrites.length
+      const state = { APPROVE: 'APPROVED', REQUEST_CHANGES: 'CHANGES_REQUESTED', COMMENT: 'COMMENTED' }[body.event]
+      reviewWrites.push({ number: pr.number, login: user.login, ...body })
+      pr.reviews.push({ id, state, body: body.body || '', user, submitted_at: now })
+      for (const c of body.comments || []) {
+        pr.comments.push({ id: id * 100 + pr.comments.length, path: c.path, line: c.line, side: c.side, position: 1, body: c.body, user, created_at: now })
+      }
+      pr.requested = pr.requested.filter(login => login !== user.login)
+      return json(res, 200, { id, state })
+    }
+    if (req.method === 'POST' && kind === 'issues' && action === '/comments') {
+      const comment = { id: 5000 + pr.issueComments.length, body: body.body, user, created_at: now }
+      pr.issueComments.push(comment)
+      return json(res, 201, comment)
+    }
+  }
+  const checks = rest.match(/^\/commits\/([0-9a-f]+)\/check-runs$/)
+  if (req.method === 'GET' && checks) {
+    return json(res, 200, { check_runs: [{ name: 'unit tests', status: 'completed', conclusion: 'success', html_url: null }] })
   }
   return json(res, 404, { message: 'Not Found' })
 }
@@ -269,14 +372,21 @@ const AI_ANSWER = [
   '```',
 ].join('\n')
 const aiRequests = []
+const AI_REVIEW = JSON.stringify([
+  { path: 'tests/test_login_error.py', line: 4, body: 'Compare with the exact text the page shows instead of the length.' },
+  { path: 'tests/test_login_error.py', line: 40, body: 'Not a line of this diff.' },
+])
 
 async function models(req, res, url) {
   const path = url.pathname.replace(/^\/models/, '')
   if (path === '/catalog/models') return json(res, 200, [{ id: 'openai/gpt-4.1', name: 'GPT-4.1', supported_output_modalities: ['text'] }])
   if (path === '/inference/chat/completions' && req.method === 'POST') {
     const body = JSON.parse((await readBody(req)) || '{}')
-    aiRequests.push({ messages: body.messages?.length ?? 0, last: body.messages?.at(-1)?.content ?? '' })
-    return json(res, 200, { choices: [{ message: { role: 'assistant', content: AI_ANSWER } }] })
+    const last = body.messages?.at(-1)?.content ?? ''
+    aiRequests.push({ messages: body.messages?.length ?? 0, last })
+    // A pull request review: one suggestion on a line of the diff, and one outside it (ATM drops that one).
+    const content = last.startsWith('Review this pull request') ? AI_REVIEW : AI_ANSWER
+    return json(res, 200, { choices: [{ message: { role: 'assistant', content } }] })
   }
   return json(res, 404, { message: 'Not Found' })
 }
@@ -292,7 +402,18 @@ async function teams(req, res) {
 createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${port}`)
   if (url.pathname === '/__e2e/health') return json(res, 200, { ok: true })
-  if (url.pathname === '/__e2e/requests') return json(res, 200, { requests, pullRequests, jiraWrites, aiRequests, confluenceWrites, teamsPosts })
+  if (url.pathname === '/__e2e/pull-request' && req.method === 'POST') {
+    // { branch, path, content, title, author, requested } → a commit on the branch and an open pull request.
+    const body = JSON.parse(await readBody(req))
+    const sha = commitToBranch('e2e', 'sample', body.branch, body.path, body.content, body.title)
+    const now = new Date().toISOString()
+    const number = pullRequests.length + 1
+    pullRequests.push({ number, title: body.title, body: body.body || '', head: body.branch, base: 'main', sha,
+      author: body.author || 'e2e-user', requested: body.requested || [], reviews: [], comments: [], issueComments: [],
+      created_at: now, updated_at: now })
+    return json(res, 201, { number })
+  }
+  if (url.pathname === '/__e2e/requests') return json(res, 200, { requests, pullRequests, jiraWrites, aiRequests, confluenceWrites, teamsPosts, reviewWrites })
   requests.push({ method: req.method, path: url.pathname, authorization: Boolean(req.headers.authorization) })
   if (/^\/[^/]+\/[^/]+\.git\//.test(url.pathname)) return gitHttpBackend(req, res, url)
   if (url.pathname.startsWith('/api/v3/')) return github(req, res, url)

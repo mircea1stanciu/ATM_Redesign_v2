@@ -68,7 +68,7 @@ test('the report list shows the publication; users see it but cannot publish', a
   await login(page, 'automation_user')
   await page.goto('/reports/list')
   const row = page.getByRole('table', { name: 'Reports' }).getByRole('row').filter({ hasText: 'Login regression' }).first()
-  await expect(row).toContainText('Published')
+  await expect(row).toContainText('Published', { timeout: 15_000 }) // the list is slower while every spec runs
   await page.goto(`/reports/runs/${runId}`)
   await expect(page.getByRole('button', { name: 'Confluence publications' })).toContainText('Published · v2')
   await expect(page.getByRole('button', { name: 'Publish to Confluence' })).toHaveCount(0)
