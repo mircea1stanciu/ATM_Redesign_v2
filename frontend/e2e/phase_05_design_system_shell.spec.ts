@@ -47,7 +47,7 @@ test('every area and tab loads', async ({ page }) => {
     ['/tests/runs', 'Tests'], ['/tests/project', 'Tests'], ['/tests/libraries', 'Tests'],
     ['/reports/list', 'Reports'], ['/reports/trends', 'Reports'], ['/reports/overview', 'Reports'],
     ['/reports/analytics', 'Reports'],
-    ['/reviews', 'Reviews'], ['/deployments/timeline', 'Deploys'], ['/deployments/services', 'Deploys'],
+    ['/reviews/waiting', 'Reviews'], ['/reviews/open', 'Reviews'], ['/deployments/timeline', 'Deploys'], ['/deployments/services', 'Deploys'],
     ['/admin/users', 'Admin'], ['/admin/projects', 'Admin'],
   ]
   for (const [url, title] of screens) {
