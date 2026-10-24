@@ -65,3 +65,15 @@ notes of each phase in [06-implementation-plan.md](06-implementation-plan.md).
 | Reports are stored centrally under `ARTIFACTS_DIR/reports` and kept forever | A retention period (for example 90 days or the last N runs per suite) | A clean-up job in the scheduler |
 | A report link is valid for one hour | Longer, or links that never expire for sharing | `LINK_TTL_SECONDS` in `reports_router.py` |
 | Flaky tests = passed in some and failed in others of the suite's last 30 runs | Allure's own flaky marks (retries) | `suite_trends` |
+
+## Phase 10: Confluence reports (open topic T1, suggested default)
+
+| Decision | Alternative | To reverse |
+|---|---|---|
+| One page per project and suite, under a parent page set per project, updated on each publication | One page per run, or one page per project | `page_title` and `_upsert_page` in `reporting/confluence_publisher.py` |
+| Leads and Seniors publish by hand; nothing is published automatically | Publish after each run or nightly | Call `publish_run` from `testing/runs.py` or the scheduler |
+| Publishing uses the publisher's own Confluence token | A shared service account | `confluence_connection` in `publish_run` |
+| The Allure report is attached as a zip on every publication (Confluence keeps attachment versions) | No attachment, only the link to ATM | `publish_run` |
+| The link back to ATM uses `ATM_PUBLIC_URL`, otherwise the browser's address | Always require `ATM_PUBLIC_URL` | `publish` in `reports_router.py` |
+| Imported Allure results cannot be published | Publish them too (no suite: page per project) | `PublishPanel.tsx`, `publish` endpoint |
+
