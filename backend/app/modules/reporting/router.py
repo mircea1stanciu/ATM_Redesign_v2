@@ -4,10 +4,8 @@ import zipfile
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app.core.config import BACKEND_DIR
 from app.core.db import get_db
 from app.core.permissions import require
 from app.modules.projects.checkouts import (
@@ -25,7 +23,6 @@ from app.modules.reporting.service import (
     _allure_results_from_json_entries,
     _save_allure_report,
 )
-from app.modules.testing.runs import _write_manual_allure_report
 
 router = APIRouter(prefix="/api/projects", tags=["Reporting"])
 
@@ -45,40 +42,6 @@ async def list_allure_reports(
         .all()
     )
     return [_allure_report_response(report) for report in reports]
-
-
-@router.get("/{project_id}/allure/reports/{report_id}/html")
-async def get_imported_allure_report_html(
-    project_id: int,
-    report_id: int,
-    current_user=Depends(require("report.view", project_from="project_id")),
-    db: Session = Depends(get_db),
-):
-    """Generate the interactive Allure-style HTML view for an imported report."""
-    get_project_or_404(db, project_id)
-    report = db.query(AllureReport).filter(
-        AllureReport.id == report_id,
-        AllureReport.project_id == project_id,
-    ).first()
-    if not report:
-        raise HTTPException(status_code=404, detail="Allure report not found")
-
-    artifact_dir = (
-        BACKEND_DIR / "uploads" / "allure-reports" / str(project_id) / str(report_id)
-    )
-    results = [
-        {
-            "test_name": item.get("name") or "Unnamed test",
-            "class_name": item.get("class_name"),
-            "status": item.get("status") or "error",
-            "duration_ms": item.get("duration_ms") or 0,
-            "error_message": item.get("message"),
-        }
-        for item in (report.results_json or [])
-        if isinstance(item, dict)
-    ]
-    _write_manual_allure_report(artifact_dir, f"allure-{report.id}", report.name, results)
-    return FileResponse(artifact_dir / "allure-report" / "index.html", media_type="text/html")
 
 
 @router.post("/{project_id}/allure/import/local")

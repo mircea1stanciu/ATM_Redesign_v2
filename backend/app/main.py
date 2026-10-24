@@ -21,6 +21,7 @@ from app.modules.identity.service import get_default_organization, seed_dev_admi
 from app.modules.identity.users_router import router as users_router
 from app.modules.learning.community_router import router as community_router
 from app.modules.projects.router import router as projects_router
+from app.modules.reporting.reports_router import router as reports_router
 from app.modules.reporting.router import router as reporting_router
 from app.modules.settings.account_router import router as account_settings_router
 from app.modules.settings.router import router as connections_router
@@ -70,12 +71,15 @@ app.add_middleware(
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
-    response.headers["X-Frame-Options"] = "DENY"
+    # Allure reports are shown in an iframe inside ATM and bring their own (sandboxing) policy.
+    report_file = request.url.path.startswith("/api/reports/view/")
+    response.headers["X-Frame-Options"] = "SAMEORIGIN" if report_file else "DENY"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-XSS-Protection"] = "1; mode=block"
-    response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline';"
-    )
+    if not report_file:
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline';"
+        )
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
     return response
@@ -88,6 +92,7 @@ app.include_router(workspace_router)
 app.include_router(testing_router)
 app.include_router(reporting_router)
 app.include_router(suites_router)
+app.include_router(reports_router)
 app.include_router(runs_router)
 app.include_router(assistant_router)
 # Account settings (security, preferences, filters, Confluence) are matched before the connection settings.

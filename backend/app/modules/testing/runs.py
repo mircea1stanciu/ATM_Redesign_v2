@@ -3,7 +3,7 @@ import asyncio
 import json
 import os
 import shutil
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.core.db import SessionLocal
 from app.core.permissions import ensure
 from app.modules.projects.models import AnalyticsRun, AnalyticsSuite, TestEnvironment
-from app.modules.reporting.report_template import render_report_html
+from app.modules.reporting import allure
 
 manual_run_sockets: dict[str, set[WebSocket]] = {}
 
@@ -205,51 +205,6 @@ def _append_manual_run_artifact_log(artifact_dir: Path, payload: dict) -> None:
         log_file.write(f"[{timestamp}] {message}\n")
 
 
-def _write_manual_allure_report(artifact_dir: Path, run_id: str, run_name: str, results: list[dict]) -> None:
-    allure_results_dir = artifact_dir / "allure-results"
-    allure_results_dir.mkdir(parents=True, exist_ok=True)
-    for index, result in enumerate(results):
-        status = str(result.get("status") or "error").lower()
-        allure_status = (
-            "passed"
-            if status == "passed"
-            else "skipped"
-            if status == "skipped"
-            else "failed"
-            if status == "failed"
-            else "broken"
-        )
-        payload = {
-            "uuid": f"{run_id}-{index}",
-            "name": result.get("test_name") or "Unnamed test",
-            "fullName": result.get("class_name") or result.get("test_name") or "Unnamed test",
-            "status": allure_status,
-            "statusDetails": {"message": result.get("error_message") or ""},
-            "start": 0,
-            "stop": int(result.get("duration_ms") or 0),
-        }
-        (allure_results_dir / f"{run_id}-{index}-result.json").write_text(
-            json.dumps(payload, indent=2), encoding="utf-8"
-        )
-
-    raw_reporter_results: list[dict] = []
-    reporter_path = artifact_dir / "results.json"
-    if reporter_path.is_file():
-        try:
-            raw_payload = json.loads(reporter_path.read_text(encoding="utf-8"))
-            for batch in raw_payload if isinstance(raw_payload, list) else []:
-                raw_reporter_results.extend(batch.get("results", []) if isinstance(batch, dict) else [])
-        except (OSError, ValueError):
-            pass
-
-    embedded_results = json.dumps(raw_reporter_results, ensure_ascii=False).replace("</", "<\\/")
-    report_dir = artifact_dir / "allure-report"
-    report_dir.mkdir(parents=True, exist_ok=True)
-    fallback_results = json.dumps(results, ensure_ascii=False).replace("</", "<\\/")
-    report_html = render_report_html(embedded_results, fallback_results, run_name)
-    (report_dir / "index.html").write_text(report_html, encoding="utf-8")
-
-
 def _bruno_run_details(argv: list, collection: str, environment: str, started: datetime, exit_code,
                        artifact_dir: Path, report_files) -> dict:
     from app.services.appium_project_service import store_reports
@@ -422,19 +377,12 @@ async def _execute_manual_run_background(
                 run.details_json = _bruno_run_details(argv, run_collection, run_environment, bruno_started,
                                                       exit_code, artifact_dir, (junit_path, json_path))
                 db.commit()
-                _write_manual_allure_report(
-                    artifact_dir, run_id, run.collection or run_collection, parsed_results["test_results"]
-                )
         finally:
             db.close()
-        for source_dir in (collection_dir / "allure-results", repo_path / "allure-results"):
-            if source_dir.is_dir():
-                target_dir = artifact_dir / "allure-results"
-                if target_dir.exists():
-                    shutil.rmtree(target_dir)
-                shutil.copytree(source_dir, target_dir)
-                await log(f"$ Saved Allure results: {target_dir}")
-                break
+        report = await allure.build_run_report(
+            manual_run_id, allure.adapter_sources(repo_path, [collection_dir / "allure-results"]),
+            bruno_started.replace(tzinfo=timezone.utc).timestamp())
+        await log(f"$ Allure report: {report['message']}")
         if exit_code == 0:
             await log("$ ✓ Tests PASSED")
             await set_status("passed")
@@ -700,12 +648,10 @@ async def _follow_appium_run(
                 run.failed_tests = parsed["failed_tests"]
                 run.skipped_tests = parsed["skipped_tests"]
                 db.commit()
-                _write_manual_allure_report(artifact_dir, run_id, run.collection or label, parsed["test_results"])
         finally:
             db.close()
-        copied = appium.copy_new_allure_results(repo_path, started, artifact_dir / "allure-results")
-        if copied:
-            await logger.log(f"$ Saved {copied} Allure result files: {artifact_dir / 'allure-results'}")
+        report = await allure.build_run_report(manual_run_id, allure.adapter_sources(repo_path), started)
+        await logger.log(f"$ Allure report: {report['message']} ({report.get('source', '')})")
         await _record_appium_run_details(run_id, manual_run_id, repo_path, artifact_dir, started, exit_code,
                                          seed or {}, logger)
     except Exception as exc:
@@ -750,10 +696,10 @@ async def _finish_framework_run(repo_path: Path, manual_run_id: int, artifact_di
                 run.skipped_tests = parsed["skipped_tests"]
                 run.details_json = details
                 db.commit()
-                _write_manual_allure_report(artifact_dir, f"manual-{manual_run_id}", run.collection or "Run",
-                                            parsed["test_results"])
         finally:
             db.close()
+        report = await allure.build_run_report(manual_run_id, allure.adapter_sources(repo_path), started)
+        await logger.log(f"$ Allure report: {report['message']} ({report.get('source', '')})")
     except Exception as exc:
         await logger.log(f"$ Could not collect results: {exc}", "stderr")
         await logger.finish("error")
