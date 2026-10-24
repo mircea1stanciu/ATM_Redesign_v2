@@ -47,7 +47,7 @@ test('every area and tab loads', async ({ page }) => {
     ['/tests/runs', 'Tests'], ['/tests/project', 'Tests'], ['/tests/libraries', 'Tests'],
     ['/reports/list', 'Reports'], ['/reports/trends', 'Reports'], ['/reports/overview', 'Reports'],
     ['/reports/analytics', 'Reports'],
-    ['/reviews', 'Reviews'], ['/deployments', 'Deploys'],
+    ['/reviews', 'Reviews'], ['/deployments/timeline', 'Deploys'], ['/deployments/services', 'Deploys'],
     ['/admin/users', 'Admin'], ['/admin/projects', 'Admin'],
   ]
   for (const [url, title] of screens) {
@@ -187,6 +187,8 @@ test('project switcher searches projects; the bell opens the notification panel'
   await expect(page.getByText('Recent', { exact: true })).toBeVisible()
   await page.keyboard.press('Escape')
 
-  await page.getByRole('button', { name: 'Notifications' }).click()
-  await expect(page.getByText('No notifications yet')).toBeVisible()
+  // Phase 11 sends notifications, so the panel may hold some: check the panel, not its content.
+  await page.getByRole('button', { name: /^Notifications/ }).click()
+  await expect(page.getByRole('heading', { name: 'Notifications' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'All notifications and settings' })).toBeVisible()
 })

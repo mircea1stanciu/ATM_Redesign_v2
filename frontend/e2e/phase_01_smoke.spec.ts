@@ -54,7 +54,7 @@ test.describe('main screens', () => {
       { link: 'Tests', url: /\/tests\/runs$/ },
       { link: 'Reports', url: /\/reports\/list$/ },
       { link: 'Reviews', url: /\/reviews$/ },
-      { link: 'Deploys', url: /\/deployments$/ },
+      { link: 'Deploys', url: /\/deployments\/timeline$/ },
       { link: 'Learning', url: /\/learning$/ },
       { link: 'Admin', url: /\/admin\/users$/ },
       { link: 'Settings', url: /\/settings$/ },
