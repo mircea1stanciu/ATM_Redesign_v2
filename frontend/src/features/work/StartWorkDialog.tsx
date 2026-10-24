@@ -62,7 +62,7 @@ export default function StartWorkDialog({ open, onOpenChange, projectId, source,
         tone: item.warning ? 'warning' : 'success',
       })
       onOpenChange(false)
-      navigate(`/work/workspace?tab=assistant&item=${item.id}`)
+      navigate(`/work/workspace?view=editor&item=${item.id}`)
     },
   })
 

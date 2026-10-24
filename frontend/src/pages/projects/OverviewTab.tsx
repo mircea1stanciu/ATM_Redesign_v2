@@ -373,7 +373,7 @@ export default function OverviewTab() {
           </Card>
 
           <Card title="Local checkout" icon={<HardDrive size={15} />}
-            action={<Link to="/work/repository" className="text-xs font-medium text-blue-600 hover:underline dark:text-blue-400">Manage</Link>}>
+            action={<Link to="/work/workspace?view=three-panel" className="text-xs font-medium text-blue-600 hover:underline dark:text-blue-400">Manage</Link>}>
             {local?.is_git_repo ? (
               <div className="space-y-3">
                 <p className="truncate font-mono text-xs text-gray-600 dark:text-gray-300" title={local.path}>{local.path}</p>
@@ -388,7 +388,7 @@ export default function OverviewTab() {
               </div>
             ) : (
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                No local clone yet. Use <Link to="/work/repository" className="font-medium text-blue-600 hover:underline dark:text-blue-400">Repository</Link> to clone or link one, so runs can execute on this station.
+                No local clone yet. Use <Link to="/work/workspace?view=three-panel" className="font-medium text-blue-600 hover:underline dark:text-blue-400">Work › Workspace › 3-Panel</Link> to clone or link one, so runs can execute on this station.
               </p>
             )}
           </Card>

@@ -1,4 +1,5 @@
 // The ATM component kit (docs/redesign/05-design.md, section 5.6).
+// CodeEditor and DiffReview (CodeMirror) are imported by path and lazily, so they are not part of this barrel.
 export { cn } from './cn'
 export { Button, IconButton, buttonStyles } from './Button'
 export type { ButtonProps } from './Button'
@@ -16,6 +17,8 @@ export { PageHeader, Card, Section } from './Layout'
 export { EmptyState, Skeleton, ErrorState } from './States'
 export { Hint } from './Hint'
 export { SafeHtml } from './SafeHtml'
+export { SplitPane } from './SplitPane'
+export type { Pane } from './SplitPane'
 export { Kbd } from './Kbd'
 export { CommandPalette } from './CommandPalette'
 export type { CommandGroup, CommandItem } from './CommandPalette'

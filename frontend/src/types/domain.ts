@@ -444,6 +444,8 @@ export interface LocalPushResult {
   branch: string
   pushed: boolean
   status: LocalRepoStatus
+  /** Test files of the push traced to the branch's work item. */
+  linked_tests?: number
 }
 
 export interface PullRequestResult {

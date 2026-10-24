@@ -30,7 +30,7 @@ function WorkItemActions({ item }: { item: WorkItem }) {
         <KanbanSquare size={14} aria-hidden /> Board
       </Link>
       {item.branch && (
-        <Link to={`/work/workspace?tab=assistant&item=${item.id}`} className={buttonStyles('primary', 'sm')}>
+        <Link to={`/work/workspace?view=editor&item=${item.id}`} className={buttonStyles('primary', 'sm')}>
           Open workspace
         </Link>
       )}

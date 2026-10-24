@@ -165,7 +165,7 @@ export default function WorkItemPanel({ projectId, itemId, onClose }: {
           {item.branch && (
             <div className="flex items-center gap-2 rounded-lg border border-line bg-surface-2 px-3 py-2">
               <code className="min-w-0 flex-1 truncate text-xs text-fg">{item.branch}</code>
-              <Link to={`/work/workspace?tab=assistant&item=${item.id}`} className={buttonStyles('primary', 'sm')}>Open workspace</Link>
+              <Link to={`/work/workspace?view=editor&item=${item.id}`} className={buttonStyles('primary', 'sm')}>Open workspace</Link>
             </div>
           )}
 
