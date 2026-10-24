@@ -36,7 +36,7 @@ test('Publish: branch, commit, push to the repository and open a pull request', 
   expect(saved.ok()).toBeTruthy()
 
   await login(page, 'super_admin')
-  await page.goto('/projects/repository')
+  await page.goto('/work/repository')
   await page.getByRole('button', { name: 'Publish', exact: true }).click()
 
   await page.getByLabel('New branch name').fill(branch)
@@ -65,7 +65,7 @@ test('Publish: branch, commit, push to the repository and open a pull request', 
 
 test('Scripts: run a script from the checkout and see its output', async ({ page }) => {
   await login(page, 'super_admin')
-  await page.goto('/projects/repository')
+  await page.goto('/work/repository')
   await page.getByRole('button', { name: 'Scripts', exact: true }).click()
 
   await expect(page.getByText('hello.sh', { exact: true })).toBeVisible()

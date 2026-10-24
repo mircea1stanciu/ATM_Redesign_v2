@@ -20,7 +20,7 @@ test.describe('login', () => {
     await page.getByRole('button', { name: 'Sign in' }).click()
 
     await expect(page).toHaveURL(/\/$/)
-    await expect(page.getByRole('heading', { name: /^Recent Runs/ })).toBeVisible()
+    await expect(page.getByRole('heading', { name: /^Good (morning|afternoon|evening)/ })).toBeVisible()
   })
 
   test('rejects a wrong password', async ({ page }) => {
@@ -41,35 +41,40 @@ test.describe('main screens', () => {
     await login(page, 'super_admin')
   })
 
-  test('Home shows the dashboard', async ({ page }) => {
+  test('Reports shows the dashboard', async ({ page }) => {
+    await page.goto('/reports/overview')
     await expect(page.getByRole('heading', { name: 'Pass Rate Trend' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Recent Runs (0)' })).toBeVisible()
   })
 
-  test('top navigation opens every area', async ({ page }) => {
+  test('the side bar opens every area', async ({ page }) => {
     const areas = [
-      { link: 'Projects', url: /\/projects$/ },
-      { link: 'Jira and Confluence', url: /\/jira-confluence\/jira$/ },
-      { link: 'Upskilling', url: /\/upskilling$/ },
-      { link: 'Users', url: /\/users$/ },
+      { link: 'Work', url: /\/work\/jira$/ },
+      { link: 'Tests', url: /\/tests\/runs$/ },
+      { link: 'Reports', url: /\/reports\/overview$/ },
+      { link: 'Reviews', url: /\/reviews$/ },
+      { link: 'Deploys', url: /\/deployments$/ },
+      { link: 'Learning', url: /\/learning$/ },
+      { link: 'Admin', url: /\/admin\/users$/ },
       { link: 'Settings', url: /\/settings$/ },
-      { link: 'Dashboard', url: /\/$/ },
+      { link: 'Home', url: /\/$/ },
     ]
-    const nav = page.getByRole('navigation').first()
+    const nav = page.getByRole('navigation', { name: 'Main' })
     for (const area of areas) {
       await nav.getByRole('link', { name: area.link, exact: true }).click()
       await expect(page).toHaveURL(area.url)
     }
   })
 
-  test('Projects shows the selected project', async ({ page }) => {
-    await page.goto('/projects')
+  test('Tests › Project shows the selected project', async ({ page }) => {
+    await page.goto('/tests/project')
     await expect(page.getByRole('heading', { name: 'E2E Sample Project' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'New Project' })).toBeVisible()
+    await page.goto('/admin/projects')
+    await expect(page.getByRole('button', { name: 'New project' })).toBeVisible()
   })
 
   test('Test Runs lists runs and run sources', async ({ page }) => {
-    await page.goto('/projects/runs')
+    await page.goto('/tests/runs')
     await expect(page.getByRole('heading', { name: 'Project Runs (0 of 0)' })).toBeVisible()
     for (const source of ['Local', 'GitHub Action', 'Devices']) {
       await expect(page.getByRole('button', { name: source, exact: true })).toBeVisible()
@@ -77,9 +82,9 @@ test.describe('main screens', () => {
   })
 
   test('AI Assistant opens for the project', async ({ page }) => {
-    await page.goto('/projects/ai')
+    await page.goto('/work/workspace')
     await page.getByRole('button', { name: 'AI Assistant' }).click()
-    await expect(page).toHaveURL(/\/projects\/ai\?tab=assistant$/)
+    await expect(page).toHaveURL(/\/work\/workspace\?tab=assistant$/)
     // The sample project's checkout is linked (seed), so the workspace opens; no AI provider is connected.
     await expect(page.getByText('README.md', { exact: true })).toBeVisible()
     await expect(page.getByText('Connect an AI provider first')).toBeVisible()
@@ -97,13 +102,13 @@ test.describe('main screens', () => {
 })
 
 test.describe('roles', () => {
-  test('a user without user-management rights does not see Users', async ({ page }) => {
+  test('a user without user-management rights does not see Admin', async ({ page }) => {
     await login(page, 'automation_user')
-    const nav = page.getByRole('navigation').first()
-    await expect(nav.getByRole('link', { name: 'Projects', exact: true })).toBeVisible()
-    await expect(nav.getByRole('link', { name: 'Users', exact: true })).toHaveCount(0)
+    const nav = page.getByRole('navigation', { name: 'Main' })
+    await expect(nav.getByRole('link', { name: 'Tests', exact: true })).toBeVisible()
+    await expect(nav.getByRole('link', { name: 'Admin', exact: true })).toHaveCount(0)
 
-    await page.goto('/users')
+    await page.goto('/admin/users')
     await expect(page).toHaveURL(/\/$/)
   })
 })
