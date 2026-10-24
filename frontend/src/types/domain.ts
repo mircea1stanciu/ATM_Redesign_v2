@@ -148,6 +148,8 @@ export interface Project {
   /** Where the project's stories and requirement pages live (Work area). */
   jira_project_key?: string | null
   confluence_space_key?: string | null
+  /** Test report pages are published under this Confluence page. */
+  confluence_parent_page_id?: string | null
   git_provider: string
   default_branch: string
   framework: string | null

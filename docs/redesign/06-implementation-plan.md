@@ -316,6 +316,20 @@ They touch different modules, so their PRs do not conflict (see section 6.4).
 - **Delivers:** the publishing flow agreed in open topic T1: target space and page per project, page template,
   attachments, history of publications.
 - **UI tests:** publish to a mocked Confluence; check the request content and the status in ATM.
+- **Decided while building phase 10** (T1 was still open; these are the suggested defaults, listed in
+  [decisions-to-review.md](decisions-to-review.md)):
+  - One Confluence page per suite, "<project> · <suite> · Test report", under a parent page set per project
+    (Admin › Projects › "Confluence parent page id"), in the project's Confluence space. Each publication updates the
+    page to a new version; Confluence keeps the older versions.
+  - The page shows the latest run (result, pass rate, tests, duration, test type, environment, branch, who
+    published), its failed tests, the suite's last 10 runs and a link back to the run in ATM. The Allure report is
+    attached as `allure-report-run-<id>.zip`.
+  - Leads and Seniors (`report.publish`) publish by hand from the run's report page ("Publish to Confluence"); nothing
+    is published automatically. They publish with their own Confluence token (Settings › Connections).
+  - Every publication, also a failed one, is recorded (`report_publications`): the report page shows the status and
+    the history, the Reports list a Confluence column.
+  - The link back to ATM uses `ATM_PUBLIC_URL` when set, otherwise the address the browser used.
+  - Imported Allure results (`allure-` reports, not runs of a suite) cannot be published.
 
 ### Phase 11: `feature/phase_11_deployments_notifications`
 - **Goal:** know when to test.
