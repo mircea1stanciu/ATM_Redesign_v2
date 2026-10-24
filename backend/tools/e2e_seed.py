@@ -110,6 +110,7 @@ def seed(sessions_path: str) -> None:
         if fake_url:
             project.jira_project_key = "E2E"
             project.confluence_space_key = "E2E"
+            project.confluence_parent_page_id = "900"
             for role, user in users.items():
                 if role == UserRole.SUPER_ADMIN:
                     continue  # the phase 03 tests connect the super admin through the UI

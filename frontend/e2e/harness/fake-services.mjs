@@ -3,7 +3,8 @@
 //   /<owner>/<repo>.git/...     git over HTTP for the bare repositories in E2E_FAKE_ROOT (git http-backend)
 //   /api/v3/...                 GitHub REST: repository, branches (read from the bare repository), pull requests
 //   /jira/rest/api/{2,3}/...    Jira: myself, projects, issue search and detail, comments, links, transitions
-//   /confluence/rest/api/...    Confluence: current user, spaces, page search and detail
+//   /confluence/rest/api/...    Confluence: current user, spaces, page search and detail; report pages (create,
+//                               update, attachments)
 //   /models/...                 GitHub Models (the "GitHub Copilot" AI provider): catalog and chat completions
 //   /__e2e/requests             what ATM sent (tests inspect it); /__e2e/health for the harness
 import { execFileSync, spawn } from 'node:child_process'
@@ -21,6 +22,9 @@ const requests = []
 const pullRequests = []
 // Comments, remote links and transitions ATM wrote to Jira, with their bodies.
 const jiraWrites = []
+// Report pages ATM created or updated in Confluence, and the attachments it uploaded.
+const confluenceWrites = []
+const reportPages = {}
 
 // The E2E Jira project: two stories and a bug (the inbox lists stories by default).
 const issues = {
@@ -206,8 +210,33 @@ async function jira(req, res, url) {
   return json(res, 404, { errorMessages: ['Not Found'] })
 }
 
-function confluence(req, res, url) {
+async function confluence(req, res, url) {
   const path = url.pathname.replace(/^\/confluence(\/wiki)?\/rest\/api/, '')
+  if (path === '/content' && req.method === 'GET') {
+    const title = url.searchParams.get('title')
+    return json(res, 200, { results: Object.values(reportPages).filter(p => p.title === title) })
+  }
+  if (path === '/content' && req.method === 'POST') {
+    const body = JSON.parse(await readBody(req))
+    const id = String(9000 + Object.keys(reportPages).length)
+    reportPages[id] = { id, title: body.title, version: { number: 1 }, _links: { webui: `/pages/${id}` } }
+    confluenceWrites.push({ action: 'create', id, title: body.title, space: body.space, ancestors: body.ancestors, body: body.body.storage.value })
+    return json(res, 200, reportPages[id])
+  }
+  const update = path.match(/^\/content\/(\d+)$/)
+  if (update && req.method === 'PUT' && reportPages[update[1]]) {
+    const body = JSON.parse(await readBody(req))
+    reportPages[update[1]].version = { number: body.version.number }
+    confluenceWrites.push({ action: 'update', id: update[1], version: body.version.number, body: body.body.storage.value })
+    return json(res, 200, reportPages[update[1]])
+  }
+  const attach = path.match(/^\/content\/(\d+)\/child\/attachment$/)
+  if (attach && req.method === 'POST') {
+    const raw = await new Promise(resolve => { const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => resolve(Buffer.concat(chunks))) })
+    const filename = (raw.toString('latin1').match(/filename="([^"]+)"/) || [])[1]
+    confluenceWrites.push({ action: 'attach', id: attach[1], filename, bytes: raw.length, token: req.headers['x-atlassian-token'] })
+    return json(res, 200, { results: [{ id: `att-${confluenceWrites.length}`, title: filename }] })
+  }
   if (path === '/user/current') return json(res, 200, { displayName: 'E2E Confluence User' })
   if (path === '/space') return json(res, 200, { results: [{ id: '1', key: 'E2E', name: 'E2E Space' }] })
   if (path === '/content/search') {
@@ -252,7 +281,7 @@ async function models(req, res, url) {
 createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${port}`)
   if (url.pathname === '/__e2e/health') return json(res, 200, { ok: true })
-  if (url.pathname === '/__e2e/requests') return json(res, 200, { requests, pullRequests, jiraWrites, aiRequests })
+  if (url.pathname === '/__e2e/requests') return json(res, 200, { requests, pullRequests, jiraWrites, aiRequests, confluenceWrites })
   requests.push({ method: req.method, path: url.pathname, authorization: Boolean(req.headers.authorization) })
   if (/^\/[^/]+\/[^/]+\.git\//.test(url.pathname)) return gitHttpBackend(req, res, url)
   if (url.pathname.startsWith('/api/v3/')) return github(req, res, url)
