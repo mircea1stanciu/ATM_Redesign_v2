@@ -218,6 +218,37 @@ They touch different modules, so their PRs do not conflict (see section 6.4).
   - The Repository screens merged into it (3-Panel, Compare and Editor become views of the workspace).
 - **UI tests:** edit and save a file, run changed tests, commit and push to a local bare repository, open a PR
   against a mocked GitHub, review an AI proposal using a mocked provider.
+- **Decided while building phase 07:**
+  - Work › Workspace has five URL views: Editor (explorer, tabs, review, assistant and the action bar), 3-Panel,
+    Compare, Analysis (the assistant's project analysis and the GitHub repository analyzer) and Runs. Links with the old
+    `?tab=` and `/work/repository?view=…` open the matching view.
+  - The Repository tab is gone: its Editor is the workspace editor, Publish is the action bar (New branch, Commit &
+    push, Open PR), Scripts moved to Tests › Scripts, and Structure was dropped because the 3-Panel view shows the
+    GitHub tree.
+  - The explorer and the assistant can be resized (keyboard too) and hidden; the layout is remembered per browser.
+    `SplitPane`, `CodeEditor` and `DiffReview` are in `src/ui/`.
+  - Standard hints run in the browser on the open file: a test without an assertion, `.only`, fixed waits,
+    hard-coded passwords or tokens, brittle selectors. They are on by default and switched off with the Hints switch
+    (per browser until Learning brings the preference in phase 13). Without an AI provider the assistant panel shows
+    the hints, general tips and a link to connect one.
+  - Open PR is prefilled from the branch's work item (title, story link, linked test files) and can add the PR link to
+    the Jira issue. A push links the test files it changed to the branch's work item (the phase 06 promise).
+  - Trainees could not run tests in a project without a suite (creating the "Default Suite" needs `suite.manage`).
+    `POST /api/suites/projects/{id}/default-suite` returns or creates it with `run.execute`.
+  - Run artifacts (`.automationtestmanager/`) are added to the checkout's `.git/info/exclude`, so Commit & push never
+    commits them.
+  - SQLite now runs in WAL mode with a 30 s busy timeout, and the connection pool is larger and configurable
+    (`ATM_DB_POOL_SIZE`, `ATM_DB_MAX_OVERFLOW`). Before, a run could fail to save its result ("database is locked")
+    and stay "running". The pre-migration backup uses SQLite's backup API.
+  - "Start work" creates the branch before it writes to the database, and runs write their logs and status from a
+    worker thread: a write transaction held across an `await` plus a synchronous write on the event loop could stall
+    the whole server until SQLite's busy timeout.
+  - The GitHub Models base URL is a setting (`ATM_GITHUB_MODELS_BASE_URL`); the UI tests point it at a fake provider.
+- **Left for later phases:**
+  - The other resizable screens (Runs, Jira tools, Confluence, Compare) still have their own splitters; they move to
+    `SplitPane` when their areas are reworked.
+  - Requests still hold their database connection while they wait for GitHub or Jira; releasing it earlier is a
+    clean-up for the Testing phase.
 
 ### Phase 08: `feature/phase_08_testing_suites`
 - **Goal:** all test types.
