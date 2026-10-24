@@ -447,7 +447,9 @@ def _split_extra(extra_args: str | None) -> list[str]:
         raise ValueError(f"Could not parse the extra arguments: {exc}") from exc
 
 
-def build_plan(repo: Path, target_id: str, artifact_dir: Path, extra_args: str | None = None) -> RunPlan:
+def build_plan(repo: Path, target_id: str, artifact_dir: Path, extra_args: str | None = None,
+               extra_env: dict[str, str] | None = None) -> RunPlan:
+    """How to run a target. ``extra_env`` are the variables of the run's environment (BASE_URL, …)."""
     repo = repo.resolve()
     framework = next((f for f in detect(repo) if target_id in f.recipes), None)
     if not framework:
@@ -459,6 +461,7 @@ def build_plan(repo: Path, target_id: str, artifact_dir: Path, extra_args: str |
     extra = _split_extra(extra_args)
     junit_dir = artifact_dir / "junit"
     env = scaffold_service.job_environment()
+    env.update({key: str(value) for key, value in (extra_env or {}).items()})
     seed: dict = {
         "kind": "framework", "framework": framework.name, "framework_id": framework.id, "language": framework.language,
         "runner": framework.runner, "stacks": framework.stacks, "target": target_id, "target_label": target.label,
@@ -714,6 +717,36 @@ def parse_k6_summary(path: Path) -> list[dict]:
     return results
 
 
+def k6_performance(path: Path) -> dict | None:
+    """Response times, throughput and errors from a k6 --summary-export file, for the run view."""
+    try:
+        metrics = json.loads(path.read_text(encoding="utf-8")).get("metrics") or {}
+    except (OSError, ValueError, AttributeError):
+        return None
+    duration = metrics.get("http_req_duration") or {}
+    requests = metrics.get("http_reqs") or {}
+    failed = metrics.get("http_req_failed") or {}
+    vus = metrics.get("vus_max") or {}
+    if not duration and not requests:
+        return None
+
+    def number(value) -> float | None:
+        return round(float(value), 2) if isinstance(value, (int, float)) else None
+
+    return {
+        "p95_ms": number(duration.get("p(95)")),
+        "p90_ms": number(duration.get("p(90)")),
+        "avg_ms": number(duration.get("avg")),
+        "max_ms": number(duration.get("max")),
+        "requests": int(requests.get("count") or 0),
+        "requests_per_second": number(requests.get("rate")),
+        # http_req_failed is a rate: "value" in the summary export (older k6: "rate").
+        "error_rate": number(failed.get("value", failed.get("rate"))),
+        "virtual_users": int(vus.get("max") or vus.get("value") or 0),
+        "iterations": int((metrics.get("iterations") or {}).get("count") or 0),
+    }
+
+
 def collect_results(seed: dict, artifact_dir: Path, started: float, exit_code: int | None) -> tuple[dict, dict]:
     """Return (counts + per-test results, run details) for a finished framework run."""
     log_path = artifact_dir / "process.log"
@@ -786,6 +819,8 @@ def collect_results(seed: dict, artifact_dir: Path, started: float, exit_code: i
         "reports": stored,
         "artifact_dir": str(artifact_dir),
     }
+    if seed.get("k6_summary"):
+        details["performance"] = k6_performance(Path(seed["k6_summary"]))
     return parsed, details
 
 

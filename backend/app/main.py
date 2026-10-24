@@ -1,4 +1,5 @@
 """The ATM backend: one FastAPI application that mounts every module's router."""
+import asyncio
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -27,6 +28,8 @@ from app.modules.testing.devices_router import router as devices_router
 from app.modules.testing.router import router as testing_router
 from app.modules.testing.router import runs_router
 from app.modules.testing.runs import resume_orphaned_manual_runs
+from app.modules.testing.scheduler import scheduler_loop
+from app.modules.testing.suites_router import router as suites_router
 from app.modules.work.router import router as work_router
 from app.modules.work.tasks_router import router as tasks_router
 from app.modules.work.test_manager_router import router as test_manager_router
@@ -84,6 +87,7 @@ app.include_router(projects_router)
 app.include_router(workspace_router)
 app.include_router(testing_router)
 app.include_router(reporting_router)
+app.include_router(suites_router)
 app.include_router(runs_router)
 app.include_router(assistant_router)
 # Account settings (security, preferences, filters, Confluence) are matched before the connection settings.
@@ -113,14 +117,26 @@ def prepare_database() -> None:
         db.close()
 
 
+_background_tasks: set[asyncio.Task] = set()
+
+
 @app.on_event("startup")
 async def startup_event():
-    """Prepare the database and re-attach long-running executions started before a restart."""
+    """Prepare the database, re-attach executions started before a restart and start the suite scheduler."""
     prepare_database()
     try:
         await resume_orphaned_manual_runs()
     except Exception as exc:
         print(f"❌ Failed to resume running executions: {exc}")
+    if settings.ATM_SCHEDULER_ENABLED:
+        task = asyncio.create_task(scheduler_loop())
+        _background_tasks.add(task)  # keep a reference: the loop must not be garbage collected
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    for task in _background_tasks:
+        task.cancel()
 
 
 # Serve the built React app (Docker image). Registered last so it never shadows an API route.

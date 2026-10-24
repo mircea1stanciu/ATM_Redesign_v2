@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     ATM_DATABASE_PATH: str = ""
     ATM_DB_POOL_SIZE: int = 10
     ATM_DB_MAX_OVERFLOW: int = 20
+    # Suite schedules: checked every N seconds by the in-process scheduler (off in the backend tests).
+    ATM_SCHEDULER_ENABLED: bool = True
+    ATM_SCHEDULER_INTERVAL_SECONDS: int = 30
 
     # Creates the first super admin "admin" on a database without one (development only).
     ATM_DEV_ADMIN_PASSWORD: str = ""

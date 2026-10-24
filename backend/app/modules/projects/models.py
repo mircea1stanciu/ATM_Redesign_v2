@@ -67,43 +67,74 @@ class AllureReport(Base):
 
 
 class AnalyticsSuite(Base):
-    """Legacy suite metadata used by the Vite Runs and Analytics views."""
+    """A project's suite: what to run (test type, framework target), where (environment) and when (schedule)."""
     __tablename__ = "analytics_suites"
 
-    id = Column(Integer, primary_key=True, index=True)
-    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
-    name = Column(String(255), nullable=False)
-    tags = Column(JSON, default=list, nullable=False)
-    cron_expression = Column(String(100))
-    active = Column(Boolean, default=True, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    created_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    project_id: Mapped[int] = mapped_column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    tags: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    cron_expression: Mapped[Optional[str]] = mapped_column(String(100))
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_by_user_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    # What the suite runs (phase 08): its test type, the framework target from the checkout, the environment,
+    # an optional GitHub Actions workflow, and who the schedule runs as.
+    test_type: Mapped[str] = mapped_column(String(20), default="functional", server_default="functional",
+                                           nullable=False)
+    target: Mapped[Optional[str]] = mapped_column(String(512))
+    environment_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("test_environments.id", ondelete="SET NULL"), nullable=True)
+    ci_workflow: Mapped[Optional[str]] = mapped_column(String(255))
+    schedule_user_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    last_scheduled_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
 
 
 class AnalyticsRun(Base):
-    """Legacy manually-created run metadata for the Vite Runs workflow."""
+    """A local run of a suite (or of a single target): status, counts, logs, results and execution details."""
     __tablename__ = "analytics_runs"
 
-    id = Column(Integer, primary_key=True, index=True)
-    suite_id = Column(Integer, ForeignKey("analytics_suites.id"), nullable=False, index=True)
-    status = Column(String(30), default="pending", nullable=False)
-    branch = Column(String(255))
-    commit_sha = Column(String(40))
-    triggered_by = Column(String(255))
-    name = Column(String(255))
-    collection = Column(String(255))
-    collection_path = Column(String(512))
-    environment = Column(String(255))
-    started_at = Column(DateTime)
-    finished_at = Column(DateTime)
-    total_tests = Column(Integer, default=0, nullable=False)
-    passed_tests = Column(Integer, default=0, nullable=False)
-    failed_tests = Column(Integer, default=0, nullable=False)
-    skipped_tests = Column(Integer, default=0, nullable=False)
-    logs_json = Column(JSON, default=list, nullable=False)
-    results_json = Column(JSON, default=list, nullable=False)
-    details_json = Column(JSON)  # execution details: app version, device, technology, reports
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    suite_id: Mapped[int] = mapped_column(Integer, ForeignKey("analytics_suites.id"), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(30), default="pending", nullable=False)
+    branch: Mapped[Optional[str]] = mapped_column(String(255))
+    commit_sha: Mapped[Optional[str]] = mapped_column(String(40))
+    triggered_by: Mapped[Optional[str]] = mapped_column(String(255))
+    name: Mapped[Optional[str]] = mapped_column(String(255))
+    collection: Mapped[Optional[str]] = mapped_column(String(255))
+    collection_path: Mapped[Optional[str]] = mapped_column(String(512))
+    environment: Mapped[Optional[str]] = mapped_column(String(255))
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    total_tests: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    passed_tests: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    failed_tests: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    skipped_tests: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    logs_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    results_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    details_json: Mapped[Optional[dict]] = mapped_column(JSON)  # app version, device, technology, reports, performance
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    environment_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("test_environments.id", ondelete="SET NULL"), nullable=True)
+    trigger: Mapped[str] = mapped_column(String(20), default="manual", server_default="manual",
+                                         nullable=False)  # manual | schedule
+
+
+class TestEnvironment(Base):
+    """A project's environment: variables handed to the runner (BASE_URL, …) and an optional Bruno environment."""
+    __tablename__ = "test_environments"
+    __test__ = False  # not a pytest test class
+    __table_args__ = (UniqueConstraint("project_id", "name", name="uq_test_environment_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    project_id: Mapped[int] = mapped_column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False,
+                                            index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    variables: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    bruno_environment: Mapped[Optional[str]] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
 
 class ProjectMember(Base):

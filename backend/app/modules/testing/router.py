@@ -60,12 +60,6 @@ class GitHubRunsSyncRequest(BaseModel):
     limit: int = 100
 
 
-class AnalyticsSuiteCreate(BaseModel):
-    name: str
-    tags: list[str] = []
-    active: bool = True
-
-
 class AnalyticsRunCreate(BaseModel):
     suite_id: str
     branch: Optional[str] = None
@@ -77,102 +71,6 @@ class AnalyticsRunCreate(BaseModel):
 
 class AnalyticsRunRename(BaseModel):
     name: Optional[str] = None
-
-
-@runs_router.get("/suites/projects/{project_id}")
-async def list_analytics_suites(
-    project_id: int,
-    current_user=Depends(require("run.view", project_from="project_id")),
-    db: Session = Depends(get_db),
-):
-    """Expose imported Allure results as a virtual suite to the Analytics client."""
-    get_project_or_404(db, project_id)
-    suites = (
-        db.query(AnalyticsSuite)
-        .filter(AnalyticsSuite.project_id == project_id)
-        .order_by(AnalyticsSuite.created_at.desc())
-        .all()
-    )
-    response = [{
-        "id": str(suite.id),
-        "project_id": str(project_id),
-        "name": suite.name,
-        "tags": suite.tags or [],
-        "cron_expression": suite.cron_expression,
-        "active": suite.active,
-        "created_at": suite.created_at.isoformat() if suite.created_at else None,
-    } for suite in suites]
-    if db.query(AllureReport.id).filter(AllureReport.project_id == project_id).first():
-        response.insert(0, {
-            "id": f"allure-suite-{project_id}",
-            "project_id": str(project_id),
-            "name": "Allure Reports",
-            "tags": ["allure"],
-            "cron_expression": None,
-            "active": True,
-            "created_at": datetime.utcnow().isoformat(),
-        })
-    return response
-
-
-@runs_router.post("/suites/projects/{project_id}/suites")
-async def create_analytics_suite(
-    project_id: int,
-    payload: AnalyticsSuiteCreate,
-    current_user=Depends(require("suite.manage", project_from="project_id")),
-    db: Session = Depends(get_db),
-):
-    """Create legacy suite metadata for a project."""
-    get_project_or_404(db, project_id)
-    name = payload.name.strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="Suite name is required.")
-    suite = AnalyticsSuite(
-        project_id=project_id,
-        name=name,
-        tags=[tag.strip() for tag in payload.tags if tag.strip()],
-        active=payload.active,
-        created_by_user_id=current_user.id,
-    )
-    db.add(suite)
-    db.commit()
-    db.refresh(suite)
-    return _suite_response(suite)
-
-
-def _suite_response(suite: AnalyticsSuite) -> dict:
-    return {
-        "id": str(suite.id),
-        "project_id": str(suite.project_id),
-        "name": suite.name,
-        "tags": suite.tags or [],
-        "cron_expression": suite.cron_expression,
-        "active": suite.active,
-        "created_at": suite.created_at.isoformat() if suite.created_at else None,
-    }
-
-
-DEFAULT_SUITE_NAME = "Default Suite"
-
-
-@runs_router.post("/suites/projects/{project_id}/default-suite")
-async def get_or_create_default_suite(
-    project_id: int,
-    current_user=Depends(require("run.execute", project_from="project_id")),
-    db: Session = Depends(get_db),
-):
-    """The suite ad-hoc runs are filed under: the project's first suite, or a new "Default Suite". Anyone who may run
-    tests may use it (creating other suites needs suite.manage)."""
-    get_project_or_404(db, project_id)
-    suite = (db.query(AnalyticsSuite).filter(AnalyticsSuite.project_id == project_id)
-             .order_by(AnalyticsSuite.id).first())
-    if suite is None:
-        suite = AnalyticsSuite(project_id=project_id, name=DEFAULT_SUITE_NAME, tags=[], active=True,
-                               created_by_user_id=current_user.id)
-        db.add(suite)
-        db.commit()
-        db.refresh(suite)
-    return _suite_response(suite)
 
 
 @runs_router.get("/runs/projects/{project_id}")
@@ -241,7 +139,7 @@ async def create_analytics_run(
         suite_id=suite.id,
         branch=payload.branch,
         commit_sha=payload.commit_sha,
-        triggered_by=payload.triggered_by,
+        triggered_by=current_user.email,  # the signed-in user, whatever the browser sends
         name=_clean_run_name(payload.name),
         collection=payload.collection,
         collection_path=payload.collection,
