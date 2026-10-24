@@ -15,10 +15,10 @@ const EVERYONE = ['Home', 'Work', 'Tests', 'Reports', 'Reviews', 'Deploys', 'Lea
 const NAVIGATION: Record<Role, string[]> = {
   super_admin: [...EVERYONE, 'Admin', 'Settings'],
   automation_lead: [...EVERYONE, 'Admin', 'Settings'],
-  automation_senior: [...EVERYONE, 'Admin', 'Settings'],
+  automation_senior: [...EVERYONE, 'Settings'], // phase 15: no Admin
   automation_user: [...EVERYONE, 'Settings'],
   automation_trainee: [...EVERYONE, 'Settings'],
-  viewer: [...EVERYONE, 'Settings'],
+  viewer: ['Home', 'Tests', 'Reports', 'Reviews', 'Deploys', 'Settings'], // phase 15: no Work, no Learning
 }
 
 const HOME_SECTIONS: Record<Role, string> = {

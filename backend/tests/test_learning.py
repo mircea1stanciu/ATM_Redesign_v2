@@ -127,7 +127,8 @@ def test_practice_is_handed_in_and_reviewed(client, team):
 
 
 def test_hint_library(client, team):
-    hints = client.get("/api/learning/hints", headers=team["viewer"]["headers"]).json()
+    assert client.get("/api/learning/hints", headers=team["viewer"]["headers"]).status_code == 403  # no Learning
+    hints = client.get("/api/learning/hints", headers=team["trainee"]["headers"]).json()
     assert {"no-assertion", "fixed-wait", "bruno-environments"} <= {h["id"] for h in hints}
     body = {"title": "Name tests after behaviour", "text": "Say what the test checks.", "topics": ["playwright"]}
     url = "/api/learning/hints/test-names"

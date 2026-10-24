@@ -319,6 +319,12 @@ export const apiService = {
     await api.delete(`/users/${userId}`)
   },
 
+  /** A lead takes on someone without a lead (phase 15). */
+  async claimUser(userId: string): Promise<UserResponse> {
+    const response = await api.post<any>(`/users/${userId}/claim`)
+    return normalizeUserResponse(response.data)
+  },
+
   // Admin: settings
   async getSettings(): Promise<{ github_token_set: boolean; github_token_preview: string; github_mcp_base_url: string }> {
     const response = await api.get('/settings')

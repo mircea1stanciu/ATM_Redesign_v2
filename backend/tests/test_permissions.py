@@ -28,16 +28,16 @@ ROLES = ["super_admin", "automation_lead", "automation_senior", "automation_user
 PLAN = {
     "project.view": "111111", "project.create": "110000", "project.delete": "110000",
     "project.configure": "111000", "project.members.manage": "110000",
-    "work.view": "111111", "work.start": "111110", "work.assign": "111000", "jira.write": "111100",
+    "work.view": "111110", "work.start": "111110", "work.assign": "111000", "jira.write": "111100",
     "code.edit": "111110", "code.push": "111110", "pr.create": "111110", "ai.use": "111110",
     "run.view": "111111", "run.execute": "111110", "run.execute.ci": "111100", "suite.manage": "111100",
     "environment.manage": "111000", "device.manage": "111110",
     "report.view": "111111", "report.publish": "111000",
     "pr.view": "111111", "pr.comment": "111110", "pr.review": "111000",
     "deployment.view": "111111", "deployment.configure": "110000",
-    "learning.use": "111111", "learning.mentor": "111000", "learning.manage": "110000",
+    "learning.use": "111110", "learning.mentor": "111000", "learning.manage": "110000",
     "readiness.decide": "110000",
-    "user.view": "111000", "user.manage": "110000", "settings.system": "100000", "audit.view": "110000",
+    "user.view": "110000", "user.manage": "110000", "settings.system": "100000", "audit.view": "110000",
 }
 
 # Endpoints any signed-in user may call: their own profile, password, 2FA and personal connection settings.
@@ -271,7 +271,7 @@ def test_existing_users_are_migrated_and_logged(tmp_path):
                                {"id": i, "u": f"u{i}", "e": f"u{i}@x.test", "r": role, "s": json.dumps({})})
     with engine.begin() as connection:
         config.attributes["connection"] = connection
-        command.upgrade(config, "head")
+        command.upgrade(config, "0011_readiness_audit")
 
     with engine.connect() as connection:
         users = dict(connection.execute(sa.text("select id, role || '/' || coalesce(scope_tag, '-') from users")).all())
@@ -282,4 +282,10 @@ def test_existing_users_are_migrated_and_logged(tmp_path):
         "AUTOMATION_USER/project_base", "AUTOMATION_USER/project_base", "VIEWER/-",
     ]
     assert logged == 8
-    assert members == {6, 7, 8}  # project_base users and viewers keep seeing today's projects
+    assert members == {6, 7, 8}  # until phase 15, project_base users and viewers kept seeing today's projects
+    with engine.begin() as connection:
+        config.attributes["connection"] = connection
+        command.upgrade(config, "head")
+    with engine.connect() as connection:
+        # Phase 15: those automatic memberships are gone; leads assign projects.
+        assert connection.execute(sa.text("select count(*) from project_members")).scalar() == 0

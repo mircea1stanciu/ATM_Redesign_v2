@@ -10,9 +10,11 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.core.deps import get_current_user
 from app.core.permissions import (
+    LEAD_ASSIGNABLE_ROLES,
     LEAD_ROLES,
     SCOPE_TAGS,
     TAGGED_ROLES,
+    can_see_user,
     check_role_change,
     ensure,
     permission_denied,
@@ -160,7 +162,31 @@ def _set_projects(db: Session, actor: User, user: User, project_ids: list[int]) 
 
 @router.get("/users")
 async def list_users(current_user: User = Depends(require("user.view")), db: Session = Depends(get_db)):
-    return [_user_response(db, user) for user in db.query(User).order_by(User.full_name, User.username).all()]
+    """The people below oneself in the hierarchy (and oneself); a super admin sees everyone."""
+    users = db.query(User).order_by(User.full_name, User.username).all()
+    return [_user_response(db, user) for user in users if can_see_user(current_user, user)]
+
+
+@router.post("/users/{user_id}/claim")
+async def claim_user(user_id: int, current_user: User = Depends(require("user.manage")),
+                     db: Session = Depends(get_db)):
+    """A lead takes on someone who has no lead yet (phase 15)."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user or not can_see_user(current_user, user):
+        raise HTTPException(status_code=404, detail="User not found.")
+    if current_user.role != UserRole.AUTOMATION_LEAD:
+        raise HTTPException(status_code=400, detail="Only leads take people on; a super admin assigns a lead.")
+    if user.assigned_lead_id is not None:
+        raise HTTPException(status_code=400, detail="This person already has a lead.")
+    if user.role not in LEAD_ASSIGNABLE_ROLES:
+        raise permission_denied("Leads take on Seniors, Users, Trainees and Viewers.")
+    user.assigned_lead_id = current_user.id
+    db.commit()
+    db.refresh(user)
+    actor = current_user.full_name or current_user.username
+    record(db, "user.claim", f"{actor} took on {user.full_name or user.username}", actor_id=current_user.id,
+           subject_user_id=user.id)
+    return _user_response(db, user)
 
 
 @router.post("/users", status_code=201)

@@ -155,7 +155,7 @@ def test_suggestions_rank_matching_test_files(project):
 
 
 def test_inbox_detail_and_confluence(client, project, atlassian):
-    viewer = _user("viewer", project["id"])
+    viewer = _user("automation_user", project["id"], tag="project_base")  # phase 15: viewers have no Work
     base = f"/api/projects/{project['id']}/work"
     inbox = client.get(f"{base}/jira/issues", params={"q": "login"}, headers=viewer["headers"])
     assert inbox.status_code == 200, inbox.text
@@ -177,7 +177,7 @@ def test_inbox_detail_and_confluence(client, project, atlassian):
 
 
 def test_jira_errors_are_explained(client, project, atlassian):
-    viewer = _user("viewer", project["id"])
+    viewer = _user("automation_user", project["id"], tag="project_base")
     atlassian.jira_status = 401
     response = client.get(f"/api/projects/{project['id']}/work/jira/issues", headers=viewer["headers"])
     assert response.status_code == 400 and "refused your token" in response.json()["detail"]
@@ -245,10 +245,11 @@ def test_board_permissions_and_trace_links(client, project, atlassian):
         db.query(WorkItem).filter_by(id=item["id"]).update({"status": "in_progress"})
         db.commit()
         service.link_pull_request(db, project["id"], "feature/SHOP-7-trainee", "https://gh/pr/5", "PR 5")
-    board = client.get(f"{base}/items", headers=viewer["headers"]).json()["items"]
+    assert client.get(f"{base}/items", headers=viewer["headers"]).status_code == 403  # phase 15: viewers have no Work
+    board = client.get(f"{base}/items", headers=user["headers"]).json()["items"]
     mine = next(i for i in board if i["id"] == item["id"])
     assert mine["status"] == "in_review"
-    assert client.get(url, headers=viewer["headers"]).json()["links"][0]["target_type"] == "pull_request"
+    assert client.get(url, headers=user["headers"]).json()["links"][0]["target_type"] == "pull_request"
 
 
 def test_jira_write_back(client, project, atlassian):

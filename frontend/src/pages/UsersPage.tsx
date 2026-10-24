@@ -113,6 +113,19 @@ export default function UsersPage() {
   const canDeleteUser = (u: UserResponse) => u.id !== currentUser?.id && canEditUser(u)
 
   const fetchUsers = () => queryClient.invalidateQueries({ queryKey: queryKeys.users })
+  const [claimingId, setClaimingId] = useState<string | null>(null)
+  const claim = async (u: UserResponse) => {
+    setClaimingId(u.id)
+    try {
+      await apiService.claimUser(u.id)
+      await fetchUsers()
+      setSuccessId(u.id)
+    } catch (error) {
+      setError(apiService.errorMessage(error))
+    } finally {
+      setClaimingId(null)
+    }
+  }
   const [confirmDelete, setConfirmDelete] = useState<UserResponse | null>(null)
 
   useEffect(() => {
@@ -306,7 +319,7 @@ export default function UsersPage() {
         <div className="text-center">
           <Shield size={40} className="mx-auto mb-3 text-gray-300 dark:text-gray-600" />
           <p className="text-base font-semibold text-gray-700 dark:text-gray-300">Access Denied</p>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Only Super Admin, Automation Lead and Automation Senior can see users.</p>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Only Super Admins and Automation Leads see users.</p>
         </div>
       </div>
     )
@@ -705,6 +718,18 @@ export default function UsersPage() {
                     {/* Success tick */}
                     {successId === u.id && (
                       <CheckCircle2 size={16} className="shrink-0 text-emerald-500" />
+                    )}
+
+                    {/* A lead takes on someone without a lead */}
+                    {isLead && canManage && hasLead(u.role) && !u.assigned_lead_id && (
+                      <button
+                        onClick={() => void claim(u)}
+                        disabled={claimingId === u.id}
+                        className="btn-ghost !px-2.5 !py-1.5 shrink-0 text-xs font-semibold"
+                        aria-label={`Assign ${u.full_name || u.email} to me`}
+                      >
+                        {claimingId === u.id ? <Loader2 size={13} className="animate-spin" /> : 'Assign to me'}
+                      </button>
                     )}
 
                     {/* Edit button */}

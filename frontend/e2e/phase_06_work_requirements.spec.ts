@@ -129,13 +129,11 @@ test('Confluence pages are in the inbox too', async ({ page }) => {
   await expect(panel.getByRole('button', { name: 'Start work' })).toBeVisible()
 })
 
-test('a viewer reads stories but cannot start work', async ({ page }) => {
+test('a viewer has no Work area (phase 15)', async ({ page }) => {
   await login(page, 'viewer')
+  await expect(page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Work', exact: true })).toHaveCount(0)
   await page.goto('/work/inbox?item=E2E-2')
-  const panel = page.getByRole('dialog', { name: /E2E-2 · Checkout API/ })
-  await expect(panel.getByText('POST /orders answers 201 with the new order id.')).toBeVisible()
-  await expect(panel.getByRole('button', { name: 'Start work' })).toHaveCount(0)
-  await expect(panel.getByRole('button', { name: 'Add to board' })).toHaveCount(0)
+  await expect(page).toHaveURL(/\/$/)
 })
 
 test('a lead sees the project\'s Jira project and Confluence space in Admin › Projects', async ({ page }) => {
