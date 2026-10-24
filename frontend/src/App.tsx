@@ -8,7 +8,7 @@ import { Button, Skeleton } from '@/ui'
 import LoginPage from '@/pages/LoginPage'
 import HomePage from '@/features/home/HomePage'
 import {
-  AdminIndex, AdminLayout, DeploymentsPage, ReportsLayout, RepositoryRedirect, ReviewsPage, ScriptsPage, TestsLayout,
+  AdminIndex, AdminLayout, DeploymentsLayout, ReportsLayout, RepositoryRedirect, ReviewsPage, ScriptsPage, TestsLayout,
   WorkLayout,
 } from '@/features/areas/areas'
 
@@ -28,6 +28,10 @@ const AdminProjectsPage = lazy(() => import('@/features/admin/AdminProjectsPage'
 const InboxPage = lazy(() => import('@/features/work/InboxPage'))
 const SuitesPage = lazy(() => import('@/features/testing/SuitesPage'))
 const ReportsListPage = lazy(() => import('@/features/reports/ReportsListPage'))
+const TimelinePage = lazy(() => import('@/features/deployments/TimelinePage'))
+const DeploymentPage = lazy(() => import('@/features/deployments/DeploymentPage'))
+const ServicesPage = lazy(() => import('@/features/deployments/ServicesPage'))
+const NotificationsPage = lazy(() => import('@/features/notifications/NotificationsPage'))
 const TrendsPage = lazy(() => import('@/features/reports/TrendsPage'))
 const ReportViewerPage = lazy(() => import('@/features/reports/ReportViewerPage'))
 const EnvironmentsPage = lazy(() => import('@/features/testing/EnvironmentsPage'))
@@ -284,7 +288,13 @@ export default function App() {
               <Route path="analytics" element={<AnalyticsPage />} />
             </Route>
             <Route path="reviews" element={<RequirePermission any={['pr.view']}><ReviewsPage /></RequirePermission>} />
-            <Route path="deployments" element={<RequirePermission any={['deployment.view']}><DeploymentsPage /></RequirePermission>} />
+            <Route path="deployments" element={<RequirePermission any={['deployment.view']}><DeploymentsLayout /></RequirePermission>}>
+              <Route index element={<Navigate to="timeline" replace />} />
+              <Route path="timeline" element={<TimelinePage />} />
+              <Route path="services" element={<ServicesPage />} />
+              <Route path=":deploymentId" element={<DeploymentPage />} />
+            </Route>
+            <Route path="notifications" element={<NotificationsPage />} />
             <Route path="learning" element={<RequirePermission any={['learning.use']}><UpskillingPage /></RequirePermission>} />
             {/* Community is hidden until phase 13 decides whether Q&A stays inside Learning; /community now
                 falls through to Home. Its code stays in pages/CommunityPage.tsx and components/community/. */}

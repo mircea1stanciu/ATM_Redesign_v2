@@ -210,7 +210,7 @@ export const apiService = {
     return response.data
   },
 
-  async updateProject(projectId: string, data: { jira_project_key?: string | null; confluence_space_key?: string | null; confluence_parent_page_id?: string | null }): Promise<Project> {
+  async updateProject(projectId: string, data: { jira_project_key?: string | null; confluence_space_key?: string | null; confluence_parent_page_id?: string | null; teams_webhook?: string }): Promise<Project> {
     const response = await api.patch<{ project: Project }>(`/projects/${projectId}`, data)
     return response.data.project
   },

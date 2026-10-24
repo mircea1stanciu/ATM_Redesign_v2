@@ -79,6 +79,10 @@ export const AREA_TABS: Record<string, AreaTab[]> = {
     { to: '/reports/overview', label: 'Overview' },
     { to: '/reports/analytics', label: 'Analytics' },
   ],
+  deployments: [
+    { to: '/deployments/timeline', label: 'Timeline' },
+    { to: '/deployments/services', label: 'Services' },
+  ],
   admin: [
     { to: '/admin/users', label: 'Users', permissions: ['user.view'] },
     { to: '/admin/projects', label: 'Projects', permissions: ['project.create'] },
