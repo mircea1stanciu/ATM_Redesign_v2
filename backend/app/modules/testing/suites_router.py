@@ -27,6 +27,11 @@ VARIABLE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
 WORKFLOW_FILE = re.compile(r"^[\w.-]+\.ya?ml$|^\d+$")
 
 
+def _name_of(db: Session, user_id: Optional[int]) -> Optional[str]:
+    user = db.query(User).filter(User.id == user_id).first() if user_id else None
+    return (user.full_name or user.username) if user else None
+
+
 def suite_response(db: Session, suite: AnalyticsSuite) -> dict:
     last = (db.query(AnalyticsRun).filter(AnalyticsRun.suite_id == suite.id)
             .order_by(AnalyticsRun.created_at.desc(), AnalyticsRun.id.desc()).first())
@@ -44,6 +49,8 @@ def suite_response(db: Session, suite: AnalyticsSuite) -> dict:
         "created_by_user_id": str(suite.created_by_user_id) if suite.created_by_user_id else None,
         "created_at": suite.created_at.isoformat() if suite.created_at else None,
         "archived_at": suite.archived_at.isoformat() if suite.archived_at else None,
+        "auto_publish": bool(suite.auto_publish_by_id),
+        "auto_publish_by": _name_of(db, suite.auto_publish_by_id),
         "last_run": {"id": f"manual-{last.id}", "status": last.status, "trigger": last.trigger,
                      "created_at": last.created_at.isoformat() if last.created_at else None} if last else None,
     }

@@ -934,6 +934,9 @@ export interface TestSuite {
   last_run?: { id: string; status: RunStatus; trigger: string; created_at: string | null } | null
   /** Archived suites keep their runs and reports and can be restored (phase 17). */
   archived_at?: string | null
+  /** Every finished run's report goes to Confluence, with the token of who switched it on (phase 19). */
+  auto_publish?: boolean
+  auto_publish_by?: string | null
 }
 
 export interface TestEnvironment {

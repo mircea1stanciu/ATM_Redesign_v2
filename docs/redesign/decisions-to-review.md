@@ -170,3 +170,13 @@ own judgement calls at the end of this file.
 | Deployment checks keep running as the tester the lead picked | Use the service account for checks too | `start_checks` in `deployments/service.py` |
 | Only a token that can clone the repository is saved | Save it and report the error later | `set_service_account` |
 
+## Phase 19: reports (from the review)
+
+| Decision | Alternative | To reverse |
+|---|---|---|
+| One permission (`report.manage`, Lead and Super Admin) for deleting reports, revoking share links and installing Allure | Separate permissions | `PERMISSIONS` in `app/core/permissions.py` |
+| Share links are made by those who publish reports (Super Admin, Lead, Senior) | Everyone who sees the report | `create_share_link` (`report.publish`) |
+| ATM installs Allure but not Java; the page says what is missing | Download a Java runtime too | `station_tools_service._install_allure` |
+| Auto-publish uses the token of whoever switched it on, and stops if they may no longer publish | A shared Confluence service account | `auto_publish.after_run` |
+| Deleting a report keeps the run and its results | Delete the run too | `delete_report` |
+

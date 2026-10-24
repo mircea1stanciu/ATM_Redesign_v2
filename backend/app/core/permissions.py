@@ -53,6 +53,8 @@ PERMISSIONS: dict[str, frozenset[UserRole]] = {
     # Reporting
     "report.view": ALL,
     "report.publish": frozenset({SA, LEAD, SENIOR}),
+    # phase 19: delete reports permanently, revoke share links, install Allure on the station
+    "report.manage": frozenset({SA, LEAD}),
     # Reviews
     "pr.view": ALL,
     "pr.comment": BUILDERS,

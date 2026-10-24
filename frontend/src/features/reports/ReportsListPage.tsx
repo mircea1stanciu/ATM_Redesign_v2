@@ -6,10 +6,11 @@ import { apiService } from '@/services/api'
 import { testingApi, testingKeys } from '@/features/testing/api'
 import { Badge, Card, EmptyState, ErrorState, Select, Skeleton, StatusPill, TestTypeChip } from '@/ui'
 import { reportKeys, reportsApi } from './api'
+import AllureBanner from './AllureBanner'
 import type { ReportRow } from './api'
 
 const REPORT_LABEL: Record<ReportRow['report'], string> = {
-  ready: 'Open report', unavailable: 'Allure not installed', failed: 'Report failed', none: 'No report',
+  ready: 'Open report', unavailable: 'Allure not installed', failed: 'Report failed', none: 'No report', deleted: 'Deleted',
 }
 
 function formatDuration(seconds: number | null): string {
@@ -33,6 +34,7 @@ export default function ReportsListPage() {
 
   return (
     <div className="flex flex-col gap-3">
+      <AllureBanner />
       <div className="w-64">
         <Select label="Suite" value={suiteId}
           onChange={e => setParams(p => { if (e.target.value) p.set('suite', e.target.value); else p.delete('suite'); return p }, { replace: true })}>

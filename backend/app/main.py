@@ -79,7 +79,7 @@ app.add_middleware(
 async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
     # Allure reports are shown in an iframe inside ATM and bring their own (sandboxing) policy.
-    report_file = request.url.path.startswith("/api/reports/view/")
+    report_file = request.url.path.startswith(("/api/reports/view/", "/api/reports/shared/"))
     response.headers["X-Frame-Options"] = "SAMEORIGIN" if report_file else "DENY"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-XSS-Protection"] = "1; mode=block"

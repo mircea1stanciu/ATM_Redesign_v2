@@ -105,6 +105,10 @@ class AnalyticsSuite(Base):
     # Phase 17: archived suites keep their runs and reports, leave the lists and schedules, and can be restored.
     archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     archived_by_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
+    # Phase 19: publish every finished run's report to Confluence, with the token of the person who switched it on
+    # (and links back to ATM as they saw it).
+    auto_publish_by_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
+    auto_publish_origin: Mapped[Optional[str]] = mapped_column(String(255))
 
 
 class AnalyticsRun(Base):
@@ -154,6 +158,20 @@ class ReportPublication(Base):
     error: Mapped[Optional[str]] = mapped_column(String(1000))
     published_by_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
     published_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ReportShareLink(Base):
+    """A link to a run's report that does not expire (phase 19); revoked only by leads and super admins."""
+    __tablename__ = "report_share_links"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    run_id: Mapped[int] = mapped_column(Integer, ForeignKey("analytics_runs.id", ondelete="CASCADE"), index=True)
+    project_id: Mapped[int] = mapped_column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    created_by_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    views: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_viewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
 
 
 class TestEnvironment(Base):
