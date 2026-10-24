@@ -55,7 +55,8 @@ test('edit and save a file; the standard hint asks for an assertion', async ({ p
   await page.getByRole('button', { name: 'Show assistant' }).click()
 })
 
-test('run changed tests: the changed pytest file runs and passes', async ({ page }) => {
+test('run changed tests: the changed pytest file runs and passes', async ({ page, request }) => {
+  const projectId = await sampleProjectId(request)
   await login(page, 'automation_trainee')
   await page.goto('/work/workspace')
   await page.getByRole('button', { name: 'Run changed tests' }).click()
@@ -65,10 +66,14 @@ test('run changed tests: the changed pytest file runs and passes', async ({ page
   await drawer.getByRole('button', { name: 'Run', exact: true }).click()
   await page.keyboard.press('Escape')
 
-  const lastRun = page.getByRole('link', { name: 'Last run' })
-  // One pytest test ran (the changed file) and passed.
-  await expect(lastRun).toContainText('Passed', { timeout: 60_000 })
-  await expect(lastRun).toContainText('1/1')
+  // One pytest test ran (the changed file) and passed. Phase 16: the action bar shows the project's last run, which
+  // may be another spec's, so the trainee's own run is checked through the API.
+  const mine = async () => (await (await request.get(`/api/runs/projects/${projectId}`, { headers: authHeaders('automation_trainee') })).json())
+    .filter((r: { triggered_by: string }) => r.triggered_by === 'e2e_automation_trainee@e2e.test')
+    .sort((a: { created_at: string }, b: { created_at: string }) => b.created_at.localeCompare(a.created_at))[0]
+  await expect.poll(async () => (await mine())?.status, { timeout: 60_000 }).toBe('passed')
+  expect(await mine()).toMatchObject({ passed_tests: 1, total_tests: 1 })
+  await expect(page.getByRole('link', { name: 'Last run' })).toBeVisible()
 })
 
 test('new branch, commit & push to the repository, open a pull request', async ({ page, request }) => {
