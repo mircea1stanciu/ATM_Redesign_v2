@@ -1,45 +1,19 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   ArrowLeft,
   ArrowRight,
-  Award,
-  BookOpen,
   Check,
   CheckCircle2,
-  ChevronDown,
   ChevronRight,
-  Circle,
   Clock,
   Copy,
-  ExternalLink,
   GitBranch,
-  GraduationCap,
   HelpCircle,
-  Layers,
-  Lock,
-  PlayCircle,
-  Target,
   Terminal,
-  Wrench,
 } from 'lucide-react'
-import { MODULE_QUIZZES, PROGRAMS, type Lesson, type Level, type Module, type Program } from './upskillingData'
+import { MODULE_QUIZZES, type Lesson, type Level, type Module, type Program, type QuizQuestion } from './content'
 
-type Track = 'frameworks' | 'languages'
-
-const TRACK_OPTIONS: Array<{ id: Track; title: string; subtitle: string }> = [
-  {
-    id: 'frameworks',
-    title: 'Upskilling Automation Frameworks',
-    subtitle: 'Bruno, Appium and framework-specific test engineering tracks',
-  },
-  {
-    id: 'languages',
-    title: 'Upskilling Programming Languages',
-    subtitle: 'JavaScript, Java and Python paths focused on automation testing',
-  },
-]
-
-const LEVEL_STYLES: Record<Level, string> = {
+export const LEVEL_STYLES: Record<Level, string> = {
   Beginner: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300',
   Intermediate: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300',
   Advanced: 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300',
@@ -60,48 +34,8 @@ const ACCENT_STYLES: Record<string, { active: string; icon: string; bar: string;
   },
 }
 
-function getAccentStyles(accent: string) {
+export function getAccentStyles(accent: string) {
   return ACCENT_STYLES[accent] ?? ACCENT_STYLES.orange
-}
-
-const STORAGE_KEY = 'upskilling.completedLessons'
-const QUIZ_STORAGE_KEY = 'upskilling.passedModuleQuizzes'
-const QUIZ_GRADE_STORAGE_KEY = 'upskilling.moduleQuizGrades'
-
-interface ModuleQuizGrade {
-  score: number
-  total: number
-  passed: boolean
-  attempts: number
-  bestScore: number
-  updatedAt: number
-}
-
-function loadCompleted(): Record<string, boolean> {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? (JSON.parse(raw) as Record<string, boolean>) : {}
-  } catch {
-    return {}
-  }
-}
-
-function loadQuizPassed(): Record<string, boolean> {
-  try {
-    const raw = localStorage.getItem(QUIZ_STORAGE_KEY)
-    return raw ? (JSON.parse(raw) as Record<string, boolean>) : {}
-  } catch {
-    return {}
-  }
-}
-
-function loadQuizGrades(): Record<string, ModuleQuizGrade> {
-  try {
-    const raw = localStorage.getItem(QUIZ_GRADE_STORAGE_KEY)
-    return raw ? (JSON.parse(raw) as Record<string, ModuleQuizGrade>) : {}
-  } catch {
-    return {}
-  }
 }
 
 const COMMENT_CLASS = 'text-emerald-400/80'
@@ -296,13 +230,30 @@ function EditorChrome({ code, fileName, color }: { code: string; fileName: strin
   )
 }
 
-function StepVisual({ code }: { code: string }) {
+export function StepVisual({ code }: { code: string }) {
   const v = detectVisual(code)
   if (v.kind === 'editor') {
     return <EditorChrome code={code} fileName={v.fileName || 'file'} color={v.color || 'bg-yellow-400'} />
   }
   if (v.kind === 'git') return <TerminalChrome code={code} git />
   return <TerminalChrome code={code} />
+}
+
+function shuffled<T>(items: T[]): T[] {
+  const copy = [...items]
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[copy[i], copy[j]] = [copy[j], copy[i]]
+  }
+  return copy
+}
+
+/** The questions in a new order, each with its options in a new order (the correct index follows its option). */
+export function shuffleQuiz(questions: QuizQuestion[]): QuizQuestion[] {
+  return shuffled(questions).map(question => {
+    const order = shuffled(question.options.map((_, index) => index))
+    return { ...question, options: order.map(i => question.options[i]), correctIndex: order.indexOf(question.correctIndex) }
+  })
 }
 
 interface QuizViewProps {
@@ -312,9 +263,9 @@ interface QuizViewProps {
   onFinish: (result: { score: number; total: number; passed: boolean }) => void
 }
 
-function QuizView({ program, module, onBack, onFinish }: QuizViewProps) {
+export function QuizView({ program, module, onBack, onFinish }: QuizViewProps) {
   const accent = getAccentStyles(program.accent)
-  const questions = MODULE_QUIZZES[module.id] ?? [
+  const source: QuizQuestion[] = MODULE_QUIZZES[module.id] ?? [
     {
       type: 'theoretical',
       question: module.quiz.question,
@@ -323,6 +274,8 @@ function QuizView({ program, module, onBack, onFinish }: QuizViewProps) {
       explanation: module.quiz.explanation,
     },
   ]
+  // Shuffled on every attempt: the order of the questions and of each question's options.
+  const [questions, setQuestions] = useState(() => shuffleQuiz(source))
   const totalQuestions = questions.length
   const passThreshold = Math.min(7, totalQuestions)
   const theoreticalCount = questions.filter(q => q.type === 'theoretical').length
@@ -378,6 +331,7 @@ function QuizView({ program, module, onBack, onFinish }: QuizViewProps) {
     setScore(0)
     setFinished(false)
     setFeedback(null)
+    setQuestions(shuffleQuiz(source))
     attemptSavedRef.current = false
   }
 
@@ -398,7 +352,7 @@ function QuizView({ program, module, onBack, onFinish }: QuizViewProps) {
           onClick={onBack}
           className="mb-3 inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 transition hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
         >
-          <ArrowLeft size={14} /> Back to {program.name} learning path
+          <ArrowLeft size={14} /> Back to the path
         </button>
         <div className="flex items-center gap-2 text-[11px] font-medium text-gray-400">
           <span>{program.name}</span>
@@ -460,7 +414,7 @@ function QuizView({ program, module, onBack, onFinish }: QuizViewProps) {
               </div>
             )}
 
-            <div className="mt-3 space-y-2">
+            <div className="mt-3 space-y-2" role="group" aria-label={currentQuestion.question}>
               {currentQuestion.options.map((opt, i) => {
                 const isChosen = selected === i
                 const showCorrect = selected !== null && i === currentQuestion.correctIndex
@@ -553,7 +507,7 @@ interface CourseViewerProps {
   onComplete: () => void
 }
 
-function CourseViewer({ program, module, lesson, isCompleted, onBack, onComplete }: CourseViewerProps) {
+export function CourseViewer({ program, module, lesson, isCompleted, onBack, onComplete }: CourseViewerProps) {
   const accent = getAccentStyles(program.accent)
   const total = lesson.steps.length
   const [current, setCurrent] = useState(0)
@@ -575,7 +529,7 @@ function CourseViewer({ program, module, lesson, isCompleted, onBack, onComplete
           onClick={onBack}
           className="mb-3 inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 transition hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
         >
-          <ArrowLeft size={14} /> Back to {program.name} learning path
+          <ArrowLeft size={14} /> Back to the path
         </button>
         <div className="flex items-center gap-2 text-[11px] font-medium text-gray-400">
           <span>{program.name}</span>
@@ -679,530 +633,6 @@ function CourseViewer({ program, module, lesson, isCompleted, onBack, onComplete
             Next <ArrowRight size={15} />
           </button>
         )}
-      </div>
-    </div>
-  )
-}
-
-export default function UpskillingPage() {
-  const [activeTrack, setActiveTrack] = useState<Track>('frameworks')
-  const [activeId, setActiveId] = useState<string>(PROGRAMS.find(p => p.track === 'frameworks')?.id || PROGRAMS[0].id)
-  const [completed, setCompleted] = useState<Record<string, boolean>>(() => loadCompleted())
-  const [quizPassed, setQuizPassed] = useState<Record<string, boolean>>(() => loadQuizPassed())
-  const [quizGrades, setQuizGrades] = useState<Record<string, ModuleQuizGrade>>(() => loadQuizGrades())
-  const [openModules, setOpenModules] = useState<Record<string, boolean>>({})
-  const [activeLessonId, setActiveLessonId] = useState<string | null>(null)
-  const [quizModuleId, setQuizModuleId] = useState<string | null>(null)
-
-  const trackPrograms = useMemo(() => PROGRAMS.filter(p => p.track === activeTrack), [activeTrack])
-  const fallbackProgram = trackPrograms[0] ?? PROGRAMS[0]
-  const program = trackPrograms.find(p => p.id === activeId) ?? fallbackProgram
-  const accent = getAccentStyles(program.accent)
-
-  useEffect(() => {
-    if (!trackPrograms.some(p => p.id === activeId)) {
-      setActiveId(fallbackProgram.id)
-      setActiveLessonId(null)
-    }
-  }, [activeId, fallbackProgram.id, trackPrograms])
-
-  useEffect(() => {
-    const firstModuleId = program.modules[0]?.id
-    if (!firstModuleId) return
-    if (!Object.keys(openModules).length) {
-      setOpenModules({ [firstModuleId]: true })
-    }
-  }, [program, openModules])
-
-  const allLessonIds = useMemo(
-    () => program.modules.flatMap(m => m.lessons.map(l => l.id)),
-    [program],
-  )
-  const doneCount = allLessonIds.filter(id => completed[id]).length
-  const totalLessons = allLessonIds.length
-  const progress = totalLessons ? Math.round((doneCount / totalLessons) * 100) : 0
-  const totalMinutes = useMemo(
-    () =>
-      program.modules.reduce(
-        (sum, m) => sum + m.lessons.reduce((s, l) => s + (parseInt(l.duration, 10) || 0), 0),
-        0,
-      ),
-    [program],
-  )
-
-  const setLessonComplete = (id: string, value: boolean) => {
-    setCompleted(prev => {
-      const next = { ...prev, [id]: value }
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
-      } catch {
-        /* ignore persistence errors */
-      }
-      return next
-    })
-  }
-
-  const toggleLesson = (id: string) => setLessonComplete(id, !completed[id])
-  const toggleModule = (id: string) => setOpenModules(prev => ({ ...prev, [id]: !prev[id] }))
-
-  const setModuleQuizPassed = (id: string, value: boolean) => {
-    setQuizPassed(prev => {
-      const next = { ...prev, [id]: value }
-      try {
-        localStorage.setItem(QUIZ_STORAGE_KEY, JSON.stringify(next))
-      } catch {
-        /* ignore persistence errors */
-      }
-      return next
-    })
-  }
-
-  const setModuleQuizResult = (id: string, score: number, total: number, passed: boolean) => {
-    setQuizGrades(prev => {
-      const current = prev[id]
-      const nextGrade: ModuleQuizGrade = {
-        score,
-        total,
-        passed,
-        attempts: (current?.attempts ?? 0) + 1,
-        bestScore: Math.max(current?.bestScore ?? 0, score),
-        updatedAt: Date.now(),
-      }
-      const next = { ...prev, [id]: nextGrade }
-      try {
-        localStorage.setItem(QUIZ_GRADE_STORAGE_KEY, JSON.stringify(next))
-      } catch {
-        /* ignore persistence errors */
-      }
-      return next
-    })
-    setModuleQuizPassed(id, passed)
-  }
-
-  const hasPassedModuleQuiz = (moduleId: string) => quizGrades[moduleId]?.passed ?? !!quizPassed[moduleId]
-
-  // Modules unlock gradually: the first module is always open, and each
-  // following module unlocks only once the previous module's quiz is passed.
-  const isModuleUnlocked = (modIndex: number) =>
-    modIndex === 0 || hasPassedModuleQuiz(program.modules[modIndex - 1].id)
-  const isModuleLessonsComplete = (mod: Module) => mod.lessons.every(l => !!completed[l.id])
-
-  const moduleCountWithQuiz = program.modules.length
-  const attemptedQuizCount = program.modules.filter(m => !!quizGrades[m.id]).length
-  const passedQuizCount = program.modules.filter(m => hasPassedModuleQuiz(m.id)).length
-  const averageBestQuizPercent = (() => {
-    const grades = program.modules.map(m => quizGrades[m.id]).filter(Boolean) as ModuleQuizGrade[]
-    if (!grades.length) return 0
-    const sum = grades.reduce((acc, g) => acc + Math.round((g.bestScore / g.total) * 100), 0)
-    return Math.round(sum / grades.length)
-  })()
-
-  // Module quiz view
-  if (quizModuleId) {
-    const quizModule = program.modules.find(m => m.id === quizModuleId)
-    if (quizModule) {
-      return (
-        <QuizView
-          program={program}
-          module={quizModule}
-          onBack={() => setQuizModuleId(null)}
-          onFinish={({ score, total, passed }) => setModuleQuizResult(quizModule.id, score, total, passed)}
-        />
-      )
-    }
-  }
-
-  // Step-by-step course view
-  if (activeLessonId) {
-    for (const mod of program.modules) {
-      const lesson = mod.lessons.find(l => l.id === activeLessonId)
-      if (lesson) {
-        return (
-          <CourseViewer
-            program={program}
-            module={mod}
-            lesson={lesson}
-            isCompleted={!!completed[lesson.id]}
-            onBack={() => setActiveLessonId(null)}
-            onComplete={() => setLessonComplete(lesson.id, true)}
-          />
-        )
-      }
-    }
-  }
-
-  return (
-    <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto">
-      {/* Header */}
-      <div className="rounded-2xl border border-gray-200/80 bg-white p-5 shadow-soft dark:border-gray-700/70 dark:bg-gray-800/90">
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-yellow-50 dark:bg-yellow-500/10">
-            <GraduationCap size={22} className="text-yellow-600 dark:text-yellow-400" />
-          </div>
-          <div>
-            <h1 className="text-lg font-bold text-gray-900 dark:text-white">
-              {activeTrack === 'frameworks' ? 'Upskilling · Automation Frameworks' : 'Upskilling · Programming Languages'}
-            </h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              {activeTrack === 'frameworks'
-                ? 'Structured, hands-on learning paths for automation frameworks.'
-                : 'Structured, hands-on language courses built for automation testing.'}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Track selector */}
-      <div className="grid gap-3 md:grid-cols-2">
-        {TRACK_OPTIONS.map(t => {
-          const isActive = t.id === activeTrack
-          return (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => {
-                setActiveTrack(t.id)
-                setActiveLessonId(null)
-                setOpenModules({})
-              }}
-              className={`rounded-2xl border p-4 text-left transition ${
-                isActive
-                  ? 'border-yellow-300 bg-yellow-50 dark:border-yellow-500/40 dark:bg-yellow-500/10'
-                  : 'border-gray-200/80 bg-white hover:border-gray-300 dark:border-gray-700/70 dark:bg-gray-800/90 dark:hover:border-gray-600'
-              }`}
-            >
-              <h2 className="text-sm font-semibold text-gray-900 dark:text-white">{t.title}</h2>
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{t.subtitle}</p>
-            </button>
-          )
-        })}
-      </div>
-
-      {/* Program selector */}
-      <div className="grid gap-3 sm:grid-cols-2">
-        {trackPrograms.map(p => {
-          const Icon = p.icon
-          const pAccent = getAccentStyles(p.accent)
-          const isActive = p.id === activeId
-          const pLessons = p.modules.flatMap(m => m.lessons.map(l => l.id))
-          const pDone = pLessons.filter(id => completed[id]).length
-          return (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => {
-                setActiveId(p.id)
-                setActiveLessonId(null)
-                const firstModuleId = p.modules[0]?.id
-                setOpenModules(firstModuleId ? { [firstModuleId]: true } : {})
-              }}
-              className={`flex items-start gap-3 rounded-2xl border p-4 text-left transition ${
-                isActive
-                  ? pAccent.active
-                  : 'border-gray-200/80 bg-white hover:border-gray-300 dark:border-gray-700/70 dark:bg-gray-800/90 dark:hover:border-gray-600'
-              }`}
-            >
-              <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${pAccent.icon}`}>
-                <Icon size={22} />
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{p.name}</h3>
-                  <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-300">
-                    {p.category}
-                  </span>
-                </div>
-                <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{p.tagline}</p>
-                <p className="mt-2 text-[11px] font-medium text-gray-400 dark:text-gray-500">
-                  {pDone}/{pLessons.length} lessons completed
-                </p>
-                <p className="mt-1 text-[11px] font-medium text-gray-400 dark:text-gray-500">
-                  {p.modules.filter(m => !!quizGrades[m.id]).length}/{p.modules.length} quizzes attempted
-                </p>
-              </div>
-            </button>
-          )
-        })}
-      </div>
-
-      {/* Program overview */}
-      <div className="rounded-2xl border border-gray-200/80 bg-white p-5 shadow-soft dark:border-gray-700/70 dark:bg-gray-800/90">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <BookOpen size={18} className="text-gray-400" />
-            <h2 className="text-base font-bold text-gray-900 dark:text-white">{program.name} Learning Path</h2>
-          </div>
-          <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
-            <span className="flex items-center gap-1">
-              <Layers size={14} /> {program.modules.length} modules
-            </span>
-            <span className="flex items-center gap-1">
-              <BookOpen size={14} /> {totalLessons} lessons
-            </span>
-            <span className="flex items-center gap-1">
-              <HelpCircle size={14} /> {moduleCountWithQuiz} quizzes
-            </span>
-            <span className="flex items-center gap-1">
-              <Clock size={14} /> ~{Math.round((totalMinutes / 60) * 10) / 10}h
-            </span>
-          </div>
-        </div>
-
-        <p className="mt-3 text-sm text-gray-600 dark:text-gray-300">{program.overview}</p>
-        <div className="mt-3 rounded-xl border border-yellow-100 bg-yellow-50 px-3 py-2 text-xs text-yellow-700 dark:border-yellow-500/30 dark:bg-yellow-500/10 dark:text-yellow-300">
-          <span className="font-semibold">Quiz &amp; Grades:</span> {attemptedQuizCount}/{moduleCountWithQuiz} quizzes attempted,
-          {` `}{passedQuizCount}/{moduleCountWithQuiz} passed, average best grade {averageBestQuizPercent}%.
-        </div>
-
-        {/* Progress */}
-        <div className="mt-4">
-          <div className="flex items-center justify-between text-xs font-medium text-gray-500 dark:text-gray-400">
-            <span>Your progress</span>
-            <span>
-              {doneCount}/{totalLessons} · {progress}%
-            </span>
-          </div>
-          <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
-            <div className={`h-full rounded-full transition-all ${accent.bar}`} style={{ width: `${progress}%` }} />
-          </div>
-        </div>
-
-        {/* Prereqs & outcomes */}
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-700/30">
-            <div className="mb-2 flex items-center gap-2">
-              <Wrench size={14} className="text-gray-400" />
-              <h3 className="text-xs font-semibold text-gray-700 dark:text-gray-200">Prerequisites</h3>
-            </div>
-            <ul className="space-y-1.5">
-              {program.prerequisites.map(item => (
-                <li key={item} className="flex gap-2 text-xs text-gray-600 dark:text-gray-300">
-                  <Circle size={6} className="mt-1.5 shrink-0 fill-current text-gray-400" />
-                  {item}
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-700/30">
-            <div className="mb-2 flex items-center gap-2">
-              <Target size={14} className="text-gray-400" />
-              <h3 className="text-xs font-semibold text-gray-700 dark:text-gray-200">What you&apos;ll be able to do</h3>
-            </div>
-            <ul className="space-y-1.5">
-              {program.outcomes.map(item => (
-                <li key={item} className="flex gap-2 text-xs text-gray-600 dark:text-gray-300">
-                  <CheckCircle2 size={12} className="mt-0.5 shrink-0 text-emerald-500" />
-                  {item}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      </div>
-
-      {/* Modules & lessons */}
-      <div className="space-y-3">
-        {program.modules.map((mod, modIndex) => {
-          const modLessonIds = mod.lessons.map(l => l.id)
-          const modDone = modLessonIds.filter(id => completed[id]).length
-          const unlocked = isModuleUnlocked(modIndex)
-          const passed = hasPassedModuleQuiz(mod.id)
-          const grade = quizGrades[mod.id]
-          const lessonsComplete = isModuleLessonsComplete(mod)
-          const isOpen = unlocked && (openModules[mod.id] ?? false)
-          return (
-            <div
-              key={mod.id}
-              className={`overflow-hidden rounded-2xl border shadow-soft transition ${
-                unlocked
-                  ? 'border-gray-200/80 bg-white dark:border-gray-700/70 dark:bg-gray-800/90'
-                  : 'border-gray-200/60 bg-gray-50/60 dark:border-gray-700/50 dark:bg-gray-800/40'
-              }`}
-            >
-              <button
-                type="button"
-                onClick={() => unlocked && toggleModule(mod.id)}
-                disabled={!unlocked}
-                className={`flex w-full items-center gap-3 p-4 text-left transition ${
-                  unlocked ? 'hover:bg-gray-50 dark:hover:bg-gray-700/30' : 'cursor-not-allowed opacity-70'
-                }`}
-              >
-                <div
-                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-sm font-bold ${
-                    unlocked ? accent.icon : 'bg-gray-200 text-gray-400 dark:bg-gray-700 dark:text-gray-500'
-                  }`}
-                >
-                  {unlocked ? modIndex + 1 : <Lock size={15} />}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{mod.title}</h3>
-                    {passed && (
-                      <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300">
-                        <Award size={11} /> Passed
-                      </span>
-                    )}
-                    {grade && (
-                      <span className="rounded-full bg-yellow-50 px-2 py-0.5 text-[10px] font-medium text-yellow-700 dark:bg-yellow-500/15 dark:text-yellow-300">
-                        Grade {grade.score}/{grade.total} · Best {grade.bestScore}/{grade.total}
-                      </span>
-                    )}
-                  </div>
-                  <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
-                    {unlocked ? mod.description : 'Locked — complete the previous module\'s quiz to unlock'}
-                  </p>
-                </div>
-                <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-300">
-                  {modDone}/{mod.lessons.length}
-                </span>
-                {unlocked && (
-                  <ChevronDown
-                    size={18}
-                    className={`shrink-0 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
-                  />
-                )}
-              </button>
-
-              {isOpen && (
-                <div className="border-t border-gray-100 dark:border-gray-700/70">
-                  {mod.lessons.map(lesson => {
-                    const isDone = !!completed[lesson.id]
-                    return (
-                      <div
-                        key={lesson.id}
-                        className="border-b border-gray-100 p-4 last:border-b-0 dark:border-gray-700/50"
-                      >
-                        <div className="flex items-start gap-3">
-                          <button
-                            type="button"
-                            onClick={() => toggleLesson(lesson.id)}
-                            className="mt-0.5 shrink-0"
-                            aria-label={isDone ? 'Mark as not completed' : 'Mark as completed'}
-                          >
-                            {isDone ? (
-                              <CheckCircle2 size={20} className="text-emerald-500" />
-                            ) : (
-                              <Circle size={20} className="text-gray-300 transition hover:text-gray-400 dark:text-gray-600" />
-                            )}
-                          </button>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <h4
-                                className={`text-sm font-semibold ${
-                                  isDone
-                                    ? 'text-gray-400 line-through dark:text-gray-500'
-                                    : 'text-gray-900 dark:text-white'
-                                }`}
-                              >
-                                {lesson.title}
-                              </h4>
-                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${LEVEL_STYLES[lesson.level]}`}>
-                                {lesson.level}
-                              </span>
-                              <span className="flex items-center gap-1 text-[10px] text-gray-400">
-                                <Clock size={11} /> {lesson.duration}
-                              </span>
-                              <span className="flex items-center gap-1 text-[10px] text-gray-400">
-                                <Layers size={11} /> {lesson.steps.length} steps
-                              </span>
-                            </div>
-                            <p className="mt-1 text-xs text-gray-600 dark:text-gray-300">{lesson.summary}</p>
-
-                            <div className="mt-2.5">
-                              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Objectives</p>
-                              <ul className="mt-1 space-y-1">
-                                {lesson.objectives.map(obj => (
-                                  <li key={obj} className="flex gap-2 text-xs text-gray-600 dark:text-gray-300">
-                                    <Circle size={5} className="mt-1.5 shrink-0 fill-current text-gray-400" />
-                                    {obj}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-
-                            <div className="mt-2.5 rounded-lg border border-dashed border-gray-200 bg-gray-50 p-2.5 dark:border-gray-700 dark:bg-gray-700/20">
-                              <p className="text-[11px] font-semibold uppercase tracking-wide text-yellow-500 dark:text-yellow-400">
-                                Hands-on
-                              </p>
-                              <p className="mt-0.5 text-xs text-gray-600 dark:text-gray-300">{lesson.practice}</p>
-                            </div>
-
-                            <button
-                              type="button"
-                              onClick={() => setActiveLessonId(lesson.id)}
-                              className={`mt-3 inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-white transition ${accent.solid}`}
-                            >
-                              <PlayCircle size={15} />
-                              {isDone ? 'Review step-by-step course' : 'Start step-by-step course'}
-                              <ArrowRight size={14} />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-
-                  {/* Module quiz gate: appears once every lesson is complete */}
-                  {lessonsComplete && (
-                    <div className="border-t border-dashed border-gray-200 p-4 dark:border-gray-700">
-                      <div
-                        className={`flex flex-wrap items-center justify-between gap-3 rounded-xl px-3 py-2.5 ${
-                          passed
-                            ? 'border border-emerald-200 bg-emerald-50 dark:border-emerald-500/30 dark:bg-emerald-500/10'
-                            : 'border border-amber-200 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/10'
-                        }`}
-                      >
-                        <div className={`flex flex-col gap-1 text-xs ${passed ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300'}`}>
-                          <div className="flex items-center gap-2 font-medium">
-                            {passed ? <Award size={15} /> : <HelpCircle size={15} />}
-                            {passed
-                              ? 'Module quiz passed — next module unlocked.'
-                              : 'All lessons complete — finish all 10 quiz questions and score at least 7/10 to unlock the next module.'}
-                          </div>
-                          {grade && (
-                            <div>
-                              Latest grade: {grade.score}/{grade.total} ({Math.round((grade.score / grade.total) * 100)}%) · Best:{' '}
-                              {grade.bestScore}/{grade.total} ({Math.round((grade.bestScore / grade.total) * 100)}%) · Attempts: {grade.attempts}
-                            </div>
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setQuizModuleId(mod.id)}
-                          className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-white transition ${accent.solid}`}
-                        >
-                          <HelpCircle size={14} /> {grade ? 'Retry quiz' : 'Take 10-question quiz'}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
-
-      {/* Resources */}
-      <div className="rounded-2xl border border-gray-200/80 bg-white p-5 shadow-soft dark:border-gray-700/70 dark:bg-gray-800/90">
-        <div className="mb-3 flex items-center gap-2">
-          <ExternalLink size={16} className="text-gray-400" />
-          <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Reference &amp; Documentation</h2>
-        </div>
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {program.resources.map(res => (
-            <a
-              key={res.url}
-              href={res.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-between gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-xs font-medium text-gray-700 transition hover:border-yellow-300 hover:text-yellow-600 dark:border-gray-700 dark:bg-gray-700/30 dark:text-gray-300 dark:hover:border-yellow-500/50 dark:hover:text-yellow-400"
-            >
-              <span className="truncate">{res.label}</span>
-              <ExternalLink size={14} className="shrink-0" />
-            </a>
-          ))}
-        </div>
       </div>
     </div>
   )

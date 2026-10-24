@@ -1,6 +1,7 @@
 /**
  * Standard hints for test files: the same short advice a senior would give in a review. They need no AI and run in
- * the browser on the open file.
+ * the browser on the open file. The rules below detect them; their text comes from the hint library (Learning ›
+ * Hints, edited by leads) when it is loaded, otherwise from the text here.
  */
 export interface EditorHint {
   id: string
@@ -49,9 +50,10 @@ export function isTestFile(path: string): boolean {
   return TEST_FILE.test(path)
 }
 
-export function hintsFor(path: string, content: string): EditorHint[] {
+export function hintsFor(path: string, content: string, library: Array<{ id: string; text: string }> = []): EditorHint[] {
   const file = { path, content, isTest: isTestFile(path) }
-  return RULES.filter(rule => rule.applies(file)).map(({ id, text }) => ({ id, text }))
+  const texts = new Map(library.map(hint => [hint.id, hint.text]))
+  return RULES.filter(rule => rule.applies(file)).map(({ id, text }) => ({ id, text: texts.get(id) ?? text }))
 }
 
 /** Tips shown in the assistant panel when no AI provider is connected. */

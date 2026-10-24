@@ -15,6 +15,7 @@ import type { UserRole } from '@/types/domain'
 import { runDisplayName } from '@/utils/runName'
 import { workApi, workKeys } from '@/features/work/api'
 import { WORK_STATUS_LABELS } from '@/features/work/types'
+import MyPathCard from '@/features/learning/MyPathCard'
 
 function greeting(): string {
   const hour = new Date().getHours()
@@ -234,8 +235,8 @@ export default function HomePage() {
           <Upcoming title="Open reviews" icon={GitPullRequest} link={{ to: '/reviews', label: 'Reviews' }}>
             Pull requests of your team that wait for a review will show here.
           </Upcoming>
-          <Upcoming title="Trainees' progress" icon={GraduationCap} link={{ to: '/learning', label: 'Learning' }}>
-            Lessons, practice and readiness requests of your trainees will show here.
+          <Upcoming title="Trainees' progress" icon={GraduationCap} link={{ to: '/learning/mentor', label: 'Mentor view' }}>
+            Your trainees' lessons, quizzes and practice waiting for review are in Learning › Mentor.
           </Upcoming>
         </>
       )
@@ -244,13 +245,7 @@ export default function HomePage() {
       content = (
         <>
           <Section title="My learning path">
-            <EmptyState
-              icon={GraduationCap}
-              title="Continue where you left off"
-              action={<Link to="/learning" className={buttonStyles('primary')}>Open Learning</Link>}
-            >
-              Lessons, quizzes and practice tasks that take you from manual testing to automation.
-            </EmptyState>
+            <MyPathCard />
           </Section>
           <WorkItems title="My work items" mine />
           <Section title="Hint for today">

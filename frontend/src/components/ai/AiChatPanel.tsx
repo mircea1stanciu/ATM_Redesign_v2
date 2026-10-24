@@ -6,7 +6,7 @@ import {
   Paperclip, PlayCircle, Plug, Save, Send, Settings2, Square, Trash2, Undo2, User, X, XCircle,
 } from 'lucide-react'
 import { apiService } from '@/services/api'
-import { Markdown } from '@/components/community/Markdown'
+import { Markdown } from '@/components/Markdown'
 import type { AiChange, AiConversation, AiConversationSummary, AiMessage, AiSettings } from '@/types/domain'
 import type { PromptRequest } from './AiAnalysisPanel'
 import OpenInIdeMenu from './OpenInIdeMenu'

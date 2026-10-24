@@ -75,6 +75,10 @@ export function ReviewsLayout() {
   return <AreaLayout areaId="reviews" title="Reviews" description="Pull requests waiting for you, and every open pull request of your projects." />
 }
 
+export function LearningLayout() {
+  return <AreaLayout areaId="learning" title="Learning" description="Paths, lessons, quizzes and practice, from manual testing to automation." />
+}
+
 export function DeploymentsLayout() {
   return <AreaLayout areaId="deployments" title="Deploys" description="Deployments per environment, so you know when to test." />
 }

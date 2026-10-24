@@ -8,7 +8,7 @@ import { Button, Skeleton } from '@/ui'
 import LoginPage from '@/pages/LoginPage'
 import HomePage from '@/features/home/HomePage'
 import {
-  AdminIndex, AdminLayout, DeploymentsLayout, ReportsLayout, RepositoryRedirect, ReviewsLayout, ScriptsPage, TestsLayout,
+  AdminIndex, AdminLayout, DeploymentsLayout, LearningLayout, ReportsLayout, RepositoryRedirect, ReviewsLayout, ScriptsPage, TestsLayout,
   WorkLayout,
 } from '@/features/areas/areas'
 
@@ -21,7 +21,13 @@ const RunsPage = lazy(() => import('@/pages/RunsPage'))
 const WorkspacePage = lazy(() => import('@/features/workspace/WorkspacePage'))
 const LibraryTab = lazy(() => import('@/pages/projects/LibraryTab'))
 const AnalyticsPage = lazy(() => import('@/pages/AnalyticsPage'))
-const UpskillingPage = lazy(() => import('@/pages/UpskillingPage'))
+const PathsPage = lazy(() => import('@/features/learning/PathsPage'))
+const PathPage = lazy(() => import('@/features/learning/PathPage'))
+const LessonPage = lazy(() => import('@/features/learning/LessonPage'))
+const QuizPage = lazy(() => import('@/features/learning/QuizPage'))
+const PracticePage = lazy(() => import('@/features/learning/PracticePage'))
+const HintsPage = lazy(() => import('@/features/learning/HintsPage'))
+const MentorPage = lazy(() => import('@/features/learning/MentorPage'))
 const UsersPage = lazy(() => import('@/pages/UsersPage'))
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'))
 const AdminProjectsPage = lazy(() => import('@/features/admin/AdminProjectsPage'))
@@ -302,9 +308,17 @@ export default function App() {
               <Route path=":deploymentId" element={<DeploymentPage />} />
             </Route>
             <Route path="notifications" element={<NotificationsPage />} />
-            <Route path="learning" element={<RequirePermission any={['learning.use']}><UpskillingPage /></RequirePermission>} />
-            {/* Community is hidden until phase 13 decides whether Q&A stays inside Learning; /community now
-                falls through to Home. Its code stays in pages/CommunityPage.tsx and components/community/. */}
+            <Route path="learning" element={<RequirePermission any={['learning.use']}><LearningLayout /></RequirePermission>}>
+              <Route index element={<Navigate to="paths" replace />} />
+              <Route path="paths" element={<PathsPage />} />
+              <Route path="paths/:pathId" element={<PathPage />} />
+              <Route path="lessons/:lessonId" element={<LessonPage />} />
+              <Route path="quizzes/:moduleId" element={<QuizPage />} />
+              <Route path="practice" element={<PracticePage />} />
+              <Route path="hints" element={<HintsPage />} />
+              <Route path="mentor" element={<RequirePermission any={['learning.mentor']}><MentorPage /></RequirePermission>} />
+            </Route>
+            {/* Community was removed in phase 13 (learners ask the AI tutor and their mentors); /community falls through to Home. */}
             <Route path="admin" element={<RequirePermission any={['user.view', 'project.create']}><AdminLayout /></RequirePermission>}>
               <Route index element={<AdminIndex />} />
               <Route path="users" element={<RequirePermission any={['user.view']}><UsersPage /></RequirePermission>} />
