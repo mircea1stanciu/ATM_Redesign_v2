@@ -44,7 +44,8 @@ test.describe('main screens', () => {
   test('Reports shows the dashboard', async ({ page }) => {
     await page.goto('/reports/overview')
     await expect(page.getByRole('heading', { name: 'Pass Rate Trend' })).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Recent Runs (0)' })).toBeVisible()
+    // Other UI tests may have run tests already: only the heading's shape is checked.
+    await expect(page.getByRole('heading', { name: /^Recent Runs \(\d+\)$/ })).toBeVisible()
   })
 
   test('the side bar opens every area', async ({ page }) => {
@@ -75,16 +76,14 @@ test.describe('main screens', () => {
 
   test('Test Runs lists runs and run sources', async ({ page }) => {
     await page.goto('/tests/runs')
-    await expect(page.getByRole('heading', { name: 'Project Runs (0 of 0)' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: /^Project Runs \(\d+ of \d+\)$/ })).toBeVisible()
     for (const source of ['Local', 'GitHub Action', 'Devices']) {
       await expect(page.getByRole('button', { name: source, exact: true })).toBeVisible()
     }
   })
 
-  test('AI Assistant opens for the project', async ({ page }) => {
+  test('the workspace opens with the AI assistant', async ({ page }) => {
     await page.goto('/work/workspace')
-    await page.getByRole('button', { name: 'AI Assistant' }).click()
-    await expect(page).toHaveURL(/\/work\/workspace\?tab=assistant$/)
     // The sample project's checkout is linked (seed), so the workspace opens; no AI provider is connected.
     await expect(page.getByText('README.md', { exact: true })).toBeVisible()
     await expect(page.getByText('Connect an AI provider first')).toBeVisible()

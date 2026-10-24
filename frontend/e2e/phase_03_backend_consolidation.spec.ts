@@ -35,24 +35,27 @@ test('Publish: branch, commit, push to the repository and open a pull request', 
   })
   expect(saved.ok()).toBeTruthy()
 
+  // Since phase 07 publishing is the workspace's action bar (phase_07_workspace_publish.spec.ts has more).
   await login(page, 'super_admin')
-  await page.goto('/work/repository')
-  await page.getByRole('button', { name: 'Publish', exact: true }).click()
+  await page.goto('/work/workspace')
+  const toolbar = page.getByRole('toolbar', { name: 'Workspace actions' })
+  await toolbar.getByRole('button', { name: 'New branch' }).click()
+  await page.getByRole('dialog', { name: 'New branch' }).getByLabel('Branch name').fill(branch)
+  await page.getByRole('dialog', { name: 'New branch' }).getByRole('button', { name: 'Create branch' }).click()
+  await expect(page.getByRole('dialog', { name: 'New branch' })).toBeHidden({ timeout: 20_000 })
+  await expect(toolbar).toContainText(branch)
 
-  await page.getByLabel('New branch name').fill(branch)
-  await page.getByRole('button', { name: 'Create', exact: true }).click()
-  await expect(page.getByText(`Created and switched to “${branch}”.`)).toBeVisible()
+  await toolbar.getByRole('button', { name: 'Commit & push' }).click()
+  const commit = page.getByRole('dialog', { name: 'Commit & push' })
+  await commit.getByLabel('Commit message').fill('Add a note from the UI test')
+  await commit.getByRole('button', { name: 'Commit & push' }).click()
+  await expect(page.getByText(`Pushed ${branch}`)).toBeVisible({ timeout: 20_000 })
 
-  await page.getByLabel('Commit message').fill('Add a note from the UI test')
-  await page.getByRole('button', { name: 'Commit all changes' }).click()
-  await expect(page.getByText('Changes committed locally.')).toBeVisible()
-
-  await page.getByRole('button', { name: `Push “${branch}” to GitHub` }).click()
-  await expect(page.getByText(`Pushed “${branch}” to GitHub.`)).toBeVisible()
-
-  await page.getByLabel('Pull request title').fill('UI test pull request')
-  await page.getByRole('button', { name: 'Create pull request' }).click()
-  await expect(page.getByText(/Pull request #\d+ created\./)).toBeVisible()
+  await toolbar.getByRole('button', { name: 'Open PR' }).click()
+  const pr = page.getByRole('dialog', { name: 'Open a pull request' })
+  await pr.getByLabel('Title').fill('UI test pull request')
+  await pr.getByRole('button', { name: 'Open pull request' }).click()
+  await expect(page.getByText(/Opened pull request #\d+/)).toBeVisible({ timeout: 20_000 })
 
   // The branch really reached the repository, and GitHub got the pull request request.
   const branches = await (await request.get(`${fakeServicesUrl()}/api/v3/repos/e2e/sample/branches`)).json()
@@ -65,8 +68,7 @@ test('Publish: branch, commit, push to the repository and open a pull request', 
 
 test('Scripts: run a script from the checkout and see its output', async ({ page }) => {
   await login(page, 'super_admin')
-  await page.goto('/work/repository')
-  await page.getByRole('button', { name: 'Scripts', exact: true }).click()
+  await page.goto('/tests/scripts')
 
   await expect(page.getByText('hello.sh', { exact: true })).toBeVisible()
   // The row of hello.sh (the sample repository also has a test file with its own Run button).

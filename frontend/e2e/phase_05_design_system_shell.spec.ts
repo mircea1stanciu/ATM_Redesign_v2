@@ -43,7 +43,7 @@ test('every area and tab loads', async ({ page }) => {
   await login(page, 'super_admin')
   const screens: Array<[string, string]> = [
     ['/work/inbox', 'Work'], ['/work/board', 'Work'], ['/work/jira', 'Work'], ['/work/confluence', 'Work'], ['/work/confluence-analyzer', 'Work'],
-    ['/work/workspace', 'Work'], ['/work/repository', 'Work'],
+    ['/work/workspace', 'Work'],
     ['/tests/runs', 'Tests'], ['/tests/project', 'Tests'], ['/tests/libraries', 'Tests'],
     ['/reports/overview', 'Reports'], ['/reports/analytics', 'Reports'],
     ['/reviews', 'Reviews'], ['/deployments', 'Deploys'],
@@ -69,8 +69,8 @@ test('old URLs redirect to the new ones', async ({ page }) => {
   await login(page, 'super_admin')
   const moved: Array<[string, RegExp]> = [
     ['/projects', /\/tests\/project$/],
-    ['/projects/repository', /\/work\/repository$/],
-    ['/projects/ai?tab=assistant', /\/work\/workspace\?tab=assistant$/],
+    ['/projects/repository', /\/work\/workspace\?view=three-panel$/],
+    ['/projects/ai?tab=assistant', /\/work\/workspace\?view=editor$/],
     ['/projects/runs', /\/tests\/runs$/],
     ['/projects/library', /\/tests\/libraries$/],
     ['/projects/analytics', /\/reports\/analytics$/],
@@ -90,10 +90,10 @@ test('old URLs redirect to the new ones', async ({ page }) => {
 
 test('sub-tabs are in the URL', async ({ page }) => {
   await login(page, 'super_admin')
-  await page.goto('/work/repository?view=publish')
-  await expect(page.getByText('2 · Commit your changes')).toBeVisible()
+  await page.goto('/work/workspace?view=compare')
+  await expect(page.getByRole('tab', { name: 'Compare' })).toHaveAttribute('aria-selected', 'true')
   await page.reload()
-  await expect(page).toHaveURL(/view=publish/)
+  await expect(page).toHaveURL(/view=compare/)
 })
 
 test('command palette jumps to areas, tabs and actions', async ({ page }) => {
