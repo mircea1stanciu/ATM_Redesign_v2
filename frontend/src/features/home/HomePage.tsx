@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
-  BarChart3, CheckCircle2, CircleDashed, ClipboardList, GitPullRequest, GraduationCap, PlayCircle, Users, XCircle,
+  BarChart3, CheckCircle2, CircleDashed, ClipboardList, GitPullRequest, PlayCircle, Users, XCircle,
 } from 'lucide-react'
 import { useAppStore } from '@/store/useAppStore'
 import { apiService } from '@/services/api'
@@ -16,6 +16,7 @@ import { runDisplayName } from '@/utils/runName'
 import { workApi, workKeys } from '@/features/work/api'
 import { WORK_STATUS_LABELS } from '@/features/work/types'
 import MyPathCard from '@/features/learning/MyPathCard'
+import ReadinessRequestsCard from '@/features/learning/ReadinessRequestsCard'
 
 function greeting(): string {
   const hour = new Date().getHours()
@@ -235,9 +236,9 @@ export default function HomePage() {
           <Upcoming title="Open reviews" icon={GitPullRequest} link={{ to: '/reviews', label: 'Reviews' }}>
             Pull requests of your team that wait for a review will show here.
           </Upcoming>
-          <Upcoming title="Trainees' progress" icon={GraduationCap} link={{ to: '/learning/mentor', label: 'Mentor view' }}>
-            Your trainees' lessons, quizzes and practice waiting for review are in Learning › Mentor.
-          </Upcoming>
+          <Section title="Readiness requests">
+            <ReadinessRequestsCard />
+          </Section>
         </>
       )
       break

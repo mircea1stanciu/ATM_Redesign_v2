@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Users } from 'lucide-react'
 import { apiService } from '@/services/api'
@@ -68,7 +69,10 @@ export default function MentorPage() {
                   const stats = path ? pathProgress(path, person.lessons, person.quizzes) : null
                   return (
                     <tr key={person.id}>
-                      <td className="px-4 py-2"><p className="font-medium text-fg">{person.name}</p><p className="text-xs text-fg-muted">{ROLE_LABELS[person.role as UserRole] ?? person.role}</p></td>
+                      <td className="px-4 py-2">
+                        <p className="font-medium text-fg">{person.name}</p>
+                        <p className="text-xs text-fg-muted">{ROLE_LABELS[person.role as UserRole] ?? person.role} · <Link to={`/learning/readiness/${person.id}`} className="font-semibold text-accent hover:underline" aria-label={`Readiness of ${person.name}`}>Readiness</Link></p>
+                      </td>
                       <td className="min-w-[180px] px-2 py-2">
                         {path && stats ? <><p className="text-xs text-fg">{path.title}</p><ProgressBar percent={stats.percent} label={`${person.name} on ${path.title}`} /><p className="text-xs text-fg-muted">{stats.percent} %</p></>
                           : <span className="text-xs text-fg-muted">No path chosen</span>}

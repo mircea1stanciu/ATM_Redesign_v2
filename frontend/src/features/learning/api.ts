@@ -47,6 +47,37 @@ export interface Mentee extends Progress {
 
 export interface WaitingPractice extends Submission { learner: string; learner_id: number; task: string; task_description: string }
 
+export interface ReadinessRequest {
+  id: number
+  user_id: number
+  user: string | null
+  requested_by: string | null
+  note: string | null
+  status: 'open' | 'decided'
+  decision: 'promoted' | 'not_yet' | null
+  from_role: string | null
+  to_role: string | null
+  decision_note: string | null
+  decided_by: string | null
+  requested_at: string
+  decided_at: string | null
+}
+
+export interface Readiness {
+  user: { id: number; name: string; role: string }
+  evidence: Progress & {
+    path_id: string | null
+    practice: { approved: number; submitted: number; changes_requested: number }
+    work_items: { done: number; in_review: number; in_progress: number; todo: number }
+    pull_requests: { opened: number; approved: number }
+    runs: { total: number; passed: number; failed: number; last_at: string | null }
+  }
+  open_request: ReadinessRequest | null
+  history: ReadinessRequest[]
+  can_request: boolean
+  promote_to: string[]
+}
+
 export interface Hint { id: string; title: string; text: string; details: string; topics: string[]; updated_at: string }
 
 /** The Learning area (backend app/modules/learning/router.py). */
@@ -90,6 +121,18 @@ export const learningApi = {
   async deleteHint(id: string): Promise<void> {
     await api.delete(`/learning/hints/${id}`)
   },
+  async readiness(userId: number | string): Promise<Readiness> {
+    return (await api.get(`/readiness/people/${userId}`)).data
+  },
+  async openRequests(): Promise<ReadinessRequest[]> {
+    return (await api.get('/readiness/requests')).data
+  },
+  async requestReadiness(userId: number, note: string): Promise<ReadinessRequest> {
+    return (await api.post(`/readiness/people/${userId}/request`, { note })).data
+  },
+  async decide(userId: number, decision: 'promote' | 'not_yet', note: string, role?: string): Promise<ReadinessRequest> {
+    return (await api.post(`/readiness/people/${userId}/decision`, { decision, note, role })).data
+  },
   async tutor(question: { lesson: string; context: string; question: string; history: { role: 'user' | 'assistant'; content: string }[] }): Promise<string> {
     return (await api.post<{ answer: string }>('/learning/tutor', question)).data.answer
   },
@@ -100,4 +143,6 @@ export const learningKeys = {
   practice: ['learning', 'practice'] as const,
   mentor: ['learning', 'mentor'] as const,
   hints: ['learning', 'hints'] as const,
+  readiness: (userId: number | string) => ['learning', 'readiness', String(userId)] as const,
+  requests: ['learning', 'readiness-requests'] as const,
 }
