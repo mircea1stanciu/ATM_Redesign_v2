@@ -51,6 +51,8 @@ class ProjectUpdate(BaseModel):
     icon: Optional[str] = None
     color: Optional[str] = None
     is_active: Optional[bool] = None
+    jira_project_key: Optional[str] = None
+    confluence_space_key: Optional[str] = None
 
 
 # Project Endpoints
@@ -74,6 +76,8 @@ def _project_response(project: Project) -> dict:
         "name": project.name,
         "description": project.description,
         "git_repo_url": project.github_repo_url or "",
+        "jira_project_key": project.jira_project_key,
+        "confluence_space_key": project.confluence_space_key,
         "git_provider": "github",
         "default_branch": "main",
         "framework": None,
@@ -152,14 +156,21 @@ async def update_project(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
-    # Update fields
-    for field, value in project_data.dict(exclude_unset=True).items():
+    changes = project_data.model_dump(exclude_unset=True)
+    # Choosing a project's lead is people management, not configuration.
+    if "lead_user_id" in changes and changes["lead_user_id"] != project.lead_user_id:
+        ensure(db, current_user, "project.members.manage", project_id)
+    for key in ("jira_project_key", "confluence_space_key"):
+        if key in changes:
+            changes[key] = (changes[key] or "").strip() or None
+    if changes.get("jira_project_key"):
+        changes["jira_project_key"] = changes["jira_project_key"].upper()
+    for field, value in changes.items():
         setattr(project, field, value)
-    
+
     db.commit()
     db.refresh(project)
-    
-    return {"message": "Project updated successfully", "project": project}
+    return {"message": "Project updated successfully", "project": _project_response(project)}
 
 
 @router.delete("/{project_id}")

@@ -13,6 +13,8 @@ import { Badge, buttonStyles, EmptyState, ErrorState, Hint, PageHeader, Section,
 import { ROLE_LABELS } from '@/types/domain'
 import type { UserRole } from '@/types/domain'
 import { runDisplayName } from '@/utils/runName'
+import { workApi, workKeys } from '@/features/work/api'
+import { WORK_STATUS_LABELS } from '@/features/work/types'
 
 function greeting(): string {
   const hour = new Date().getHours()
@@ -68,6 +70,45 @@ function Upcoming({ title, icon, children, link }: {
   return (
     <Section title={title} actions={link && <LinkButton to={link.to}>{link.label}</LinkButton>}>
       <EmptyState icon={icon} title="Nothing here yet">{children}</EmptyState>
+    </Section>
+  )
+}
+
+/** Work items of the selected project: mine (not done), or everything in progress and in review. */
+function WorkItems({ title, mine = false }: { title: string; mine?: boolean }) {
+  const projectId = useAppStore(s => s.selectedProjectId)
+  const me = useAppStore(s => s.user?.id)
+  const query = useQuery({
+    queryKey: workKeys.items(projectId ?? ''),
+    queryFn: () => workApi.items(projectId!),
+    enabled: Boolean(projectId),
+  })
+  const items = (query.data ?? []).filter(item => mine
+    ? item.assignee_id === me && item.status !== 'done'
+    : item.status === 'in_progress' || item.status === 'in_review')
+  return (
+    <Section title={title} actions={<LinkButton to="/work/board">Board</LinkButton>}>
+      {query.isPending && projectId ? <Skeleton className="h-20" /> : query.isError ? (
+        <ErrorState title="Could not load work items">{apiService.errorMessage(query.error)}</ErrorState>
+      ) : items.length === 0 ? (
+        <EmptyState icon={ClipboardList} title={mine ? 'Nothing in progress' : 'No work in progress'}
+          action={<Link to="/work/inbox" className={buttonStyles('secondary', 'sm')}>Open the inbox</Link>}>
+          {mine ? 'Pick a story in Work › Inbox and start work on it.' : 'Nobody has started work on a story yet.'}
+        </EmptyState>
+      ) : (
+        <ul className="divide-y divide-line">
+          {items.slice(0, 6).map(item => (
+            <li key={item.id}>
+              <Link to={`/work/board?item=${item.id}`} className="flex items-center gap-3 py-2 text-[13px] hover:text-accent">
+                <code className="shrink-0 text-xs text-fg-muted">{item.external_key}</code>
+                <span className="min-w-0 flex-1 truncate font-medium text-fg">{item.title}</span>
+                {!mine && <span className="hidden text-xs text-fg-muted sm:inline">{item.assignee_name || 'Unassigned'}</span>}
+                <Badge tone="accent">{WORK_STATUS_LABELS[item.status]}</Badge>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
     </Section>
   )
 }
@@ -188,6 +229,7 @@ export default function HomePage() {
       content = (
         <>
           <MyTeam />
+          <WorkItems title="Work in progress" />
           <LatestRuns title="Failing runs" failedOnly />
           <Upcoming title="Open reviews" icon={GitPullRequest} link={{ to: '/reviews', label: 'Reviews' }}>
             Pull requests of your team that wait for a review will show here.
@@ -210,9 +252,7 @@ export default function HomePage() {
               Lessons, quizzes and practice tasks that take you from manual testing to automation.
             </EmptyState>
           </Section>
-          <Upcoming title="My work items" icon={ClipboardList} link={{ to: '/work/jira', label: 'Jira' }}>
-            The stories you work on will show here. Meanwhile, find them in Work › Jira.
-          </Upcoming>
+          <WorkItems title="My work items" mine />
           <Section title="Hint for today">
             <Hint id={`daily-${new Date().toDateString()}`}>{TRAINEE_HINTS[new Date().getDate() % TRAINEE_HINTS.length]}</Hint>
           </Section>
@@ -234,9 +274,7 @@ export default function HomePage() {
     default:
       content = (
         <>
-          <Upcoming title="My work items" icon={ClipboardList} link={{ to: '/work/jira', label: 'Jira' }}>
-            Stories in progress and in review will show here. Meanwhile, find them in Work › Jira.
-          </Upcoming>
+          <WorkItems title="My work items" mine />
           {role === 'automation_senior' && (
             <Upcoming title="Waiting for my review" icon={GitPullRequest} link={{ to: '/reviews', label: 'Reviews' }}>
               Pull requests where you are a requested reviewer will show here.

@@ -391,6 +391,11 @@ class LocalRepoService:
             raise LocalRepoError(cls._sanitize_remote(err.strip()) or "git fetch failed")
 
     @classmethod
+    async def default_branch(cls, project) -> str:
+        """The remote's default branch (origin/HEAD), else the project's configured one."""
+        return await cls._resolve_default_branch(cls.get_local_path(project), project.default_branch)
+
+    @classmethod
     async def _resolve_default_branch(cls, path: Path, fallback: str | None) -> str:
         rc, out, _ = await cls._run_git(
             ["rev-parse", "--abbrev-ref", "origin/HEAD"], cwd=path

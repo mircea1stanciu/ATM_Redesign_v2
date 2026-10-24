@@ -76,7 +76,7 @@ export function notifyConnectionStatusChanged(kind: 'github' | 'jira' | 'conflue
   window.dispatchEvent(new CustomEvent(CONNECTION_STATUS_CHANGED_EVENT, { detail: { kind } }))
 }
 
-const api = axios.create({
+export const api = axios.create({
   baseURL: '/api',
   timeout: 15000,
 })
@@ -208,6 +208,11 @@ export const apiService = {
   async createProject(payload: { name: string; description?: string; git_repo_url?: string }): Promise<Project> {
     const response = await api.post<Project>('/projects/', payload)
     return response.data
+  },
+
+  async updateProject(projectId: string, data: { jira_project_key?: string | null; confluence_space_key?: string | null }): Promise<Project> {
+    const response = await api.patch<{ project: Project }>(`/projects/${projectId}`, data)
+    return response.data.project
   },
 
   async deleteProject(projectId: string): Promise<void> {
@@ -908,7 +913,7 @@ export const apiService = {
   async streamAiMessage(
     projectId: string,
     conversationId: string,
-    payload: { content: string; attachments: string[]; run_id?: string | null },
+    payload: { content: string; attachments: string[]; run_id?: string | null; work_item_id?: number | null },
     onEvent: (event: AiStreamEvent) => void,
     signal?: AbortSignal,
   ): Promise<void> {

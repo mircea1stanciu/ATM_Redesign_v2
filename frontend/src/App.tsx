@@ -25,6 +25,8 @@ const UpskillingPage = lazy(() => import('@/pages/UpskillingPage'))
 const UsersPage = lazy(() => import('@/pages/UsersPage'))
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'))
 const AdminProjectsPage = lazy(() => import('@/features/admin/AdminProjectsPage'))
+const InboxPage = lazy(() => import('@/features/work/InboxPage'))
+const BoardPage = lazy(() => import('@/features/work/BoardPage'))
 
 const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000
 const INACTIVITY_WARNING_MS = 60 * 1000
@@ -249,7 +251,9 @@ export default function App() {
           <Route element={<AuthGuard><AppShell /></AuthGuard>}>
             <Route index element={<HomePage />} />
             <Route path="work" element={<RequirePermission any={['work.view']}><WorkLayout /></RequirePermission>}>
-              <Route index element={<Navigate to="jira" replace />} />
+              <Route index element={<Navigate to="inbox" replace />} />
+              <Route path="inbox" element={<InboxPage />} />
+              <Route path="board" element={<BoardPage />} />
               <Route path="jira" element={<RequirementsTab />} />
               <Route path="confluence" element={<ConfluenceReleaseManagementTab />} />
               <Route path="confluence-analyzer" element={<ConfluenceReleaseManagementAnalyzerTab />} />

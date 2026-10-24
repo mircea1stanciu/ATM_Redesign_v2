@@ -12,7 +12,7 @@ export function WorkLayout() {
     <AreaLayout
       areaId="work"
       title="Work"
-      description="Requirements from Jira and Confluence, the workspace and the repository."
+      description="Stories and requirement pages, the board, the workspace and the repository."
       actions={project && <ProjectOpenInIde key={project.id} projectId={project.id} projectName={project.name} />}
     />
   )

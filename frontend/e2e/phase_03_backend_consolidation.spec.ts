@@ -69,7 +69,9 @@ test('Scripts: run a script from the checkout and see its output', async ({ page
   await page.getByRole('button', { name: 'Scripts', exact: true }).click()
 
   await expect(page.getByText('hello.sh', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'Run', exact: true }).click()
+  // The row of hello.sh (the sample repository also has a test file with its own Run button).
+  const row = page.locator('div').filter({ hasText: 'hello.sh' }).filter({ hasNotText: 'login_error' })
+  await row.getByRole('button', { name: 'Run', exact: true }).last().click()
   await expect(page.getByText('hello from ATM e2e')).toBeVisible()
 })
 

@@ -28,6 +28,9 @@ class Project(Base):
     is_active = Column(Boolean, default=True)
     is_archived = Column(Boolean, default=False)
     github_repo_url = Column(String(512))
+    # Where the project's stories and requirement pages live (Work area).
+    jira_project_key = Column(String(50))
+    confluence_space_key = Column(String(100))
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)

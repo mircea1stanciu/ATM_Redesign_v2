@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { FolderGit2, Github, Plus, Trash2 } from 'lucide-react'
+import { FolderGit2, Github, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useAppStore } from '@/store/useAppStore'
+import { apiService } from '@/services/api'
 import { usePermission } from '@/hooks/usePermission'
 import { Badge, Button, Card, ConfirmDialog, Dialog, EmptyState, IconButton, Input, Textarea, useToast } from '@/ui'
 import type { Project } from '@/types/domain'
 
-/** Admin › Projects: create and delete projects. Each project's links live in Settings › Connections for now. */
+/** Admin › Projects: create and delete projects, and choose each project's Jira project and Confluence space. */
 export default function AdminProjectsPage() {
   const projects = useAppStore(s => s.projects)
   const selectedProjectId = useAppStore(s => s.selectedProjectId)
@@ -27,6 +28,37 @@ export default function AdminProjectsPage() {
   const [created, setCreated] = useState<Project | null>(null)
   const [toDelete, setToDelete] = useState<Project | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [editing, setEditing] = useState<Project | null>(null)
+  const [jiraKey, setJiraKey] = useState('')
+  const [spaceKey, setSpaceKey] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+
+  const openEdit = (project: Project) => {
+    setEditing(project)
+    setJiraKey(project.jira_project_key ?? '')
+    setSpaceKey(project.confluence_space_key ?? '')
+    setSaveError(null)
+  }
+
+  const handleSave = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!editing) return
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const updated = await apiService.updateProject(editing.id, { jira_project_key: jiraKey, confluence_space_key: spaceKey })
+      useAppStore.setState(state => ({
+        projects: state.projects.map(p => p.id === updated.id ? { ...p, ...updated } : p),
+      }))
+      toast({ title: `Saved ${updated.name}`, tone: 'success' })
+      setEditing(null)
+    } catch (e) {
+      setSaveError(apiService.errorMessage(e))
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const setCreateOpen = (open: boolean) => {
     if (open) {
@@ -73,9 +105,12 @@ export default function AdminProjectsPage() {
                 <FolderGit2 size={16} className="shrink-0 text-fg-muted" aria-hidden />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[13px] font-semibold text-fg">{project.name}</p>
-                  {project.description && <p className="truncate text-xs text-fg-muted">{project.description}</p>}
+                  <p className="truncate text-xs text-fg-muted">
+                    Jira: {project.jira_project_key || '—'} · Confluence: {project.confluence_space_key || '—'}
+                  </p>
                 </div>
                 {project.id === selectedProjectId && <Badge tone="accent">Selected</Badge>}
+                <IconButton label={`Edit ${project.name}`} icon={<Pencil size={14} />} onClick={() => openEdit(project)} />
                 {canDelete && (
                   <IconButton label={`Delete ${project.name}`} icon={<Trash2 size={14} />} onClick={() => setToDelete(project)} />
                 )}
@@ -122,6 +157,22 @@ export default function AdminProjectsPage() {
             </div>
           </form>
         )}
+      </Dialog>
+
+      <Dialog open={editing !== null} onOpenChange={open => { if (!open) setEditing(null) }}
+        title={`Edit ${editing?.name ?? 'project'}`}
+        description="Where the project's stories and requirement pages live. Work › Inbox lists them.">
+        <form onSubmit={handleSave} className="space-y-4">
+          <Input label="Jira project key" placeholder="ABC" value={jiraKey} onChange={e => setJiraKey(e.target.value)}
+            help="Empty: the team's Jira project from Settings › Connections." />
+          <Input label="Confluence space key" placeholder="REQ" value={spaceKey} onChange={e => setSpaceKey(e.target.value)}
+            help="Empty: the team's Confluence space from Settings › Connections." />
+          {saveError && <p role="alert" className="text-[13px] text-danger">{saveError}</p>}
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
+            <Button type="submit" variant="primary" loading={saving}>Save</Button>
+          </div>
+        </form>
       </Dialog>
 
       <ConfirmDialog

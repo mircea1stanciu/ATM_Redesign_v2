@@ -145,6 +145,9 @@ export interface Project {
   name: string
   description: string | null
   git_repo_url: string
+  /** Where the project's stories and requirement pages live (Work area). */
+  jira_project_key?: string | null
+  confluence_space_key?: string | null
   git_provider: string
   default_branch: string
   framework: string | null

@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import axios from 'axios'
 import { Bot, FlaskConical, FolderGit2, Loader2, ScanSearch, Sparkles } from 'lucide-react'
+import StoryContextBar from '@/features/work/StoryContextBar'
 import { usePermission } from '@/hooks/usePermission'
 import { useAppStore } from '@/store/useAppStore'
 import { apiService } from '@/services/api'
@@ -64,6 +65,8 @@ export default function AiImplementationTab() {
   const [params, setParams] = useSearchParams()
   const tab: AiTab = (['analysis', 'assistant', 'test'] as AiTab[]).includes(params.get('tab') as AiTab) ? params.get('tab') as AiTab : 'analysis'
   const setTab = useCallback((next: AiTab) => setParams(p => { p.set('tab', next); return p }, { replace: true }), [setParams])
+  // Work › Start work opens the workspace with ?item=<work item id>: the story is shown and sent to the assistant.
+  const workItemId = Number(params.get('item')) || null
 
   const [settings, setSettings] = useState<AiSettings | null>(null)
   const [analysis, setAnalysis] = useState<AiProjectAnalysis | null>(null)
@@ -126,6 +129,7 @@ export default function AiImplementationTab() {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
+      {workItemId && <StoryContextBar projectId={selectedProjectId} itemId={workItemId} />}
       <div className="flex shrink-0 flex-wrap items-center gap-1 rounded-2xl border border-gray-200/80 bg-white px-2 py-1.5 shadow-soft dark:border-gray-700/70 dark:bg-gray-800/90">
         {TABS.map(({ id, label, icon: Icon }) => (
           <button key={id} onClick={() => setTab(id)}
@@ -169,6 +173,7 @@ export default function AiImplementationTab() {
             onTestFile={path => void testFile(path)}
             onProjectChanged={() => void loadAnalysis(true)}
             onSettingsChange={setSettings}
+            workItemId={workItemId}
           />
         ) : (
           <TestTab onAskAi={askAssistant} />

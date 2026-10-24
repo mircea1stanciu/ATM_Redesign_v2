@@ -228,6 +228,7 @@ export default function AiChatPanel({
   compact = false,
   onReviewChange,
   refreshKey = 0,
+  workItemId = null,
 }: {
   projectId: string
   settings: AiSettings | null
@@ -241,6 +242,8 @@ export default function AiChatPanel({
   onReviewChange?: (conversationId: string, message: AiMessage, change: AiChange) => void
   /** Reload the conversation when this changes (a change was accepted/rejected from the review). */
   refreshKey?: number
+  /** The story being worked on; its description and acceptance criteria go with every message. */
+  workItemId?: number | null
   files: string[]
   canEdit: boolean
   prompt: ChatPrompt | null
@@ -416,7 +419,7 @@ export default function AiChatPanel({
       setError(apiService.errorMessage(e))
       return
     }
-    const payload = { content, attachments, run_id: run?.id ?? null }
+    const payload = { content, attachments, run_id: run?.id ?? null, work_item_id: workItemId }
     setPendingUser({
       id: 'pending', role: 'user', content: content || 'Analyse this run and fix the failure.', created_at: new Date().toISOString(),
       attachments: { files: attachments, run: run ? { id: run.id, name: run.label, status: 'failed', passed: 0, failed: 0, skipped: 0 } : null },

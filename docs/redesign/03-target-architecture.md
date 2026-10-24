@@ -204,6 +204,8 @@ erDiagram
   - A `WORK_ITEM` is one Jira story or Confluence page that someone works on.
   - Its links point to the test files changed, the suites, the runs and the pull request. That answers "which tests
     cover this story, and did they pass?".
+  - Work items and trace links live in `work_items` and `trace_links` (migration `0005`); each project stores its
+    `jira_project_key` and `confluence_space_key`.
 
 ## 3.5 Key flows
 
