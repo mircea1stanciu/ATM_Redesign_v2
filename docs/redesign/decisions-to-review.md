@@ -152,3 +152,12 @@ own judgement calls at the end of this file.
 | The sprint list shows active, future and the last five closed sprints of up to three boards | Every sprint | `jira_sprints`, `CLOSED_SPRINTS_SHOWN` |
 | The workspace tab is called "Repository" | "Explorer", "Code" | `WorkspacePage.tsx` |
 
+## Phase 17: suites and environments (from the review)
+
+| Decision | Alternative | To reverse |
+|---|---|---|
+| Secret values are masked in the streamed run log but not in the raw `process.log` file in the checkout | Rewrite or delete the raw file too | `secrets.mask`, `_ManualRunLogger` in `testing/runs.py` |
+| Only archived suites can be deleted permanently | Leads delete active suites directly | `delete_suite` in `testing/suites_router.py` |
+| Archived suites are skipped by schedules and deployment checks (the check says why) | Archiving also removes the schedule | `scheduler.run_due_suites`, `start_checks` |
+| "Changed tests" applies the project environment to framework targets; Bruno requests keep their Bruno environment | Map the project environment to a Bruno environment | `ChangedTestsPanel.tsx` |
+

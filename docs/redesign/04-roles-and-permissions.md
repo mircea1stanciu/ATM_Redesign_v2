@@ -57,6 +57,7 @@ mark, ✓ still applies only to projects the user can see.
 | `run.execute` (local runs, any test type) | ✓ | ✓ | ✓ | ✓ | ✓ | |
 | `run.execute.ci` (dispatch GitHub Actions) | ✓ | ✓ | ✓ | ✓ | | |
 | `suite.manage` (suites, test types, schedules) | ✓ | ✓ | ✓ | ✓ ² | | |
+| `suite.delete` (permanently, an archived suite and its runs) | ✓ | ✓ | | | | |
 | `environment.manage` | ✓ | ✓ | ✓ | | | |
 | `device.manage` (emulators, simulators) | ✓ | ✓ | ✓ | ✓ | ✓ | |
 | **Reporting** | | | | | | |
