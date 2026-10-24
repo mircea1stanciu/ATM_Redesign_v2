@@ -6,6 +6,7 @@ import { apiService } from '@/services/api'
 import { Button, ErrorState, Skeleton, buttonStyles } from '@/ui'
 import { reportKeys, reportsApi } from './api'
 import PublishPanel from './PublishPanel'
+import ReportActions from './ReportActions'
 
 /** The run's Allure report, embedded; it can go full screen or open in its own tab. */
 export default function ReportViewerPage() {
@@ -23,6 +24,7 @@ export default function ReportViewerPage() {
         <PublishPanel runId={runId} />
         {link.data && (
           <>
+            <ReportActions runId={runId} />
             <Button size="sm" icon={<Maximize2 size={13} />} onClick={() => void frame.current?.requestFullscreen()}>Full screen</Button>
             <a href={link.data} target="_blank" rel="noopener noreferrer" className={buttonStyles('secondary', 'sm')}>
               <ExternalLink size={13} aria-hidden /> Open in a new tab

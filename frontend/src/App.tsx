@@ -36,6 +36,7 @@ const AdminProjectsPage = lazy(() => import('@/features/admin/AdminProjectsPage'
 const InboxPage = lazy(() => import('@/features/work/InboxPage'))
 const SuitesPage = lazy(() => import('@/features/testing/SuitesPage'))
 const ReportsListPage = lazy(() => import('@/features/reports/ReportsListPage'))
+const ShareLinksPage = lazy(() => import('@/features/reports/ShareLinksPage'))
 const TimelinePage = lazy(() => import('@/features/deployments/TimelinePage'))
 const DeploymentPage = lazy(() => import('@/features/deployments/DeploymentPage'))
 const ServicesPage = lazy(() => import('@/features/deployments/ServicesPage'))
@@ -296,6 +297,7 @@ export default function App() {
               <Route path="runs/:runId" element={<ReportViewerPage />} />
               <Route path="overview" element={<DashboardPage />} />
               <Route path="analytics" element={<AnalyticsPage />} />
+              <Route path="share-links" element={<RequirePermission any={['report.manage']}><ShareLinksPage /></RequirePermission>} />
             </Route>
             <Route path="reviews" element={<RequirePermission any={['pr.view']}><ReviewsLayout /></RequirePermission>}>
               <Route index element={<Navigate to="waiting" replace />} />

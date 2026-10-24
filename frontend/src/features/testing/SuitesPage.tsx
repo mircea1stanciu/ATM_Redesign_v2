@@ -9,6 +9,7 @@ import {
 } from '@/ui'
 import type { TestSuite } from '@/types/domain'
 import { describeSchedule, testingApi, testingKeys } from './api'
+import { reportsApi } from '@/features/reports/api'
 import RunDialog from './RunDialog'
 import SuiteDialog from './SuiteDialog'
 
@@ -33,6 +34,7 @@ export default function SuitesPage() {
   const [deleting, setDeleting] = useState<TestSuite | null>(null)
   const show = useTabParam('show', ['active', 'archived'] as const)
   const canDelete = usePermission('suite.delete')
+  const canPublish = usePermission('report.publish')
 
   const suites = useQuery({
     queryKey: show === 'archived' ? testingKeys.archivedSuites(projectId ?? '') : testingKeys.suites(projectId ?? ''),
@@ -57,6 +59,19 @@ export default function SuitesPage() {
     onSuccess: (_, suite) => { refresh(); toast({ title: `Restored ${suite.name}`, tone: 'success' }) },
     onError: error => toast({ title: 'Not restored', description: apiService.errorMessage(error), tone: 'danger' }),
   })
+  const autoPublish = useMutation({
+    mutationFn: ({ suite, enabled }: { suite: TestSuite; enabled: boolean }) => reportsApi.setAutoPublish(suite.id, enabled),
+    onSuccess: (_, { suite, enabled }) => {
+      refresh()
+      toast({ title: enabled ? `${suite.name}: every run is published to Confluence` : `${suite.name}: automatic publishing off`, tone: 'success' })
+    },
+    onError: (error, { suite }) => {
+      setAutoPublishShown(shown => { const next = { ...shown }; delete next[suite.id]; return next })
+      toast({ title: 'Not changed', description: apiService.errorMessage(error), tone: 'danger' })
+    },
+  })
+  // The switch moves at once (before the server answers); it moves back if the server refuses.
+  const [autoPublishShown, setAutoPublishShown] = useState<Record<string, boolean>>({})
   const remove = useMutation({
     mutationFn: (suite: TestSuite) => testingApi.deleteSuite(suite.id),
     onSuccess: (_, suite) => { refresh(); toast({ title: `Deleted ${suite.name} permanently`, tone: 'success' }); setDeleting(null) },
@@ -131,6 +146,18 @@ export default function SuitesPage() {
                         </span>
                       ) : <span className="text-xs text-fg-muted">Never run</span>}
                     </span>
+                    {canPublish && (
+                      <label className="hidden items-center gap-1.5 text-xs text-fg-muted xl:flex" title={suite.auto_publish_by ? `Switched on by ${suite.auto_publish_by}` : undefined}>
+                        <input type="checkbox" checked={autoPublishShown[suite.id] ?? Boolean(suite.auto_publish)}
+                          aria-label={`Publish ${suite.name} to Confluence automatically`}
+                          onChange={e => {
+                            const enabled = e.target.checked
+                            setAutoPublishShown(shown => ({ ...shown, [suite.id]: enabled }))
+                            autoPublish.mutate({ suite, enabled })
+                          }} />
+                        Auto-publish
+                      </label>
+                    )}
                     {canRun && (
                       <Button size="sm" icon={<Play size={13} />} disabled={!suite.target} onClick={() => setRunning(suite)}
                         aria-label={`Run ${suite.name}`}>Run</Button>

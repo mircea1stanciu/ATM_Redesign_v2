@@ -78,6 +78,7 @@ export const AREA_TABS: Record<string, AreaTab[]> = {
     { to: '/reports/trends', label: 'Trends' },
     { to: '/reports/overview', label: 'Overview' },
     { to: '/reports/analytics', label: 'Analytics' },
+    { to: '/reports/share-links', label: 'Share links', permissions: ['report.manage'] },
   ],
   reviews: [
     { to: '/reviews/waiting', label: 'Waiting for me' },
