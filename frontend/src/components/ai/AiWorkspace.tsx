@@ -32,6 +32,7 @@ export default function AiWorkspace({
   onTestFile,
   onProjectChanged,
   onSettingsChange,
+  workItemId = null,
 }: {
   projectId: string
   settings: AiSettings | null
@@ -42,6 +43,8 @@ export default function AiWorkspace({
   onTestFile: (path: string) => void
   onProjectChanged: () => void
   onSettingsChange: (settings: AiSettings) => void
+  /** The story being worked on (Work › Start work); the assistant gets it as context. */
+  workItemId?: number | null
 }) {
   const [openFiles, setOpenFiles] = useState<OpenFile[]>([])
   const [activePath, setActivePath] = useState<string | null>(null)
@@ -238,6 +241,7 @@ export default function AiWorkspace({
           reference={reference}
           onReviewChange={(conversationId, message, change) => void reviewChange(conversationId, message, change)}
           refreshKey={chatRefresh}
+          workItemId={workItemId}
           compact
         />
       </div>
