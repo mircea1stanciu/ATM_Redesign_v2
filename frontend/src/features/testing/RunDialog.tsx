@@ -124,16 +124,16 @@ export default function RunDialog({ open, onOpenChange, initialSuiteId }: {
             </Select>
           )
         )}
+        <Select label="Environment" value={chosenEnvironment} onChange={e => setEnvironmentId(e.target.value)}>
+          <option value="">None</option>
+          {(environments.data ?? []).map(env => <option key={env.id} value={env.id}>{env.name}</option>)}
+        </Select>
         {what === 'changed' ? (
           detection.isPending ? <Skeleton className="h-24" /> : detection.data
-            ? <ChangedTestsPanel projectId={projectId} detection={detection.data} />
+            ? <ChangedTestsPanel projectId={projectId} detection={detection.data} environmentId={chosenEnvironment ? Number(chosenEnvironment) : null} />
             : <ErrorState title="Could not detect the test frameworks">{apiService.errorMessage(detection.error)}</ErrorState>
         ) : (
           <>
-            <Select label="Environment" value={chosenEnvironment} onChange={e => setEnvironmentId(e.target.value)}>
-              <option value="">None</option>
-              {(environments.data ?? []).map(env => <option key={env.id} value={env.id}>{env.name}</option>)}
-            </Select>
             {what === 'suite' && (
               <fieldset className="space-y-1.5">
                 <legend className="mb-1 text-xs font-medium text-fg-muted">Where</legend>

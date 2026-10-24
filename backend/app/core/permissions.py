@@ -46,6 +46,7 @@ PERMISSIONS: dict[str, frozenset[UserRole]] = {
     "run.execute": BUILDERS,
     "run.execute.ci": frozenset({SA, LEAD, SENIOR, USER}),
     "suite.manage": frozenset({SA, LEAD, SENIOR, USER}),  # users: own suites only, see can_manage_suite()
+    "suite.delete": frozenset({SA, LEAD}),  # phase 17: others archive; deleting an archived suite is permanent
     "environment.manage": frozenset({SA, LEAD, SENIOR}),
     "device.manage": BUILDERS,
     # Reporting

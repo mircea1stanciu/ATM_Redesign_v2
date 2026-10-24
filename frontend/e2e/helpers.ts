@@ -11,7 +11,7 @@ export type Role =
   | 'viewer'
 
 /** A seeded user: one per role, and a trainee of the lead seeded only for the promotion tests (phase 14). */
-export type Person = Role | 'promotion_candidate'
+export type Person = Role | 'promotion_candidate' | 'secrets_tester'
 
 type Sessions = Record<Person, { username: string; token: string }>
 

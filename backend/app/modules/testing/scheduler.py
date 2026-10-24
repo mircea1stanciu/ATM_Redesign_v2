@@ -26,7 +26,7 @@ async def run_due_suites(now: datetime | None = None) -> list[int]:
     started: list[int] = []
     db = SessionLocal()
     try:
-        suites = db.query(AnalyticsSuite).filter(AnalyticsSuite.active.is_(True),
+        suites = db.query(AnalyticsSuite).filter(AnalyticsSuite.active.is_(True), AnalyticsSuite.archived_at.is_(None),
                                                  AnalyticsSuite.cron_expression.isnot(None)).all()
         for suite in suites:
             try:

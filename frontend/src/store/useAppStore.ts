@@ -205,7 +205,7 @@ interface AppState {
   createSuite: () => Promise<void>
   createRun: () => Promise<void>
   createAppiumRun: (params: { target: string; label: string; appEnv: string; deviceRunOption: string }) => Promise<void>
-  createFrameworkRun: (params: { target: string; label: string; extraArgs: string }) => Promise<void>
+  createFrameworkRun: (params: { target: string; label: string; extraArgs: string; environmentId?: number | null }) => Promise<void>
   /** Bruno run of only some requests/folders of a collection (e.g. the changed ones). */
   createBrunoSubsetRun: (params: { collection: string; environment: string; requests: string[]; label: string }) => Promise<void>
   executeRun: () => Promise<void>
@@ -745,7 +745,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  createFrameworkRun: async ({ target, label, extraArgs }) => {
+  createFrameworkRun: async ({ target, label, extraArgs, environmentId }) => {
     set({ error: null, runError: null })
     const { selectedSuiteId, suites, user, runBranch, projects, selectedProjectId } = get()
     if (!selectedProjectId || !user?.email) {
@@ -770,6 +770,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         run_type: 'framework',
         framework_target: target,
         extra_args: extraArgs.trim() || undefined,
+        environment_id: environmentId ?? undefined,
       })
       await get().refreshProjectData(selectedProjectId)
     } catch (e) {

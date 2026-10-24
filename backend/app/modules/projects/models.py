@@ -95,6 +95,9 @@ class AnalyticsSuite(Base):
     schedule_user_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     last_scheduled_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    # Phase 17: archived suites keep their runs and reports, leave the lists and schedules, and can be restored.
+    archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    archived_by_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
 
 
 class AnalyticsRun(Base):
@@ -158,6 +161,8 @@ class TestEnvironment(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     variables: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     bruno_environment: Mapped[Optional[str]] = mapped_column(String(100))
+    # Phase 17: secret variables, a JSON object encrypted with app.core.crypto; never sent back to the browser.
+    secrets: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
 

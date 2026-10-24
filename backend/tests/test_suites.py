@@ -149,8 +149,20 @@ def test_suites_and_environments_permissions(client, project):
     assert client.delete(f"{environments}/{uat.json()['id']}", headers=senior["headers"]).status_code == 200
     with SessionLocal() as db:
         assert db.query(AnalyticsSuite).filter_by(id=int(suite["id"])).one().environment_id is None
-    assert client.delete(url, headers=other_user["headers"]).status_code == 403
-    assert client.delete(url, headers=user["headers"]).json()["deleted"] is True
+    # Phase 17: archive instead of delete; only leads and super admins delete an archived suite permanently.
+    lead = _user("automation_lead", project)
+    assert client.post(f"{url}/archive", headers=other_user["headers"]).status_code == 403
+    assert client.post(f"{url}/archive", headers=user["headers"]).json()["archived_at"]
+    listed = client.get(f"/api/suites/projects/{project['id']}", headers=user["headers"]).json()
+    assert suite["id"] not in [s["id"] for s in listed]
+    archived = client.get(f"/api/suites/projects/{project['id']}?archived=true", headers=user["headers"]).json()
+    assert [s["id"] for s in archived] == [suite["id"]]
+    assert client.delete(url, headers=user["headers"]).status_code == 403
+    assert client.delete(url, headers=senior["headers"]).status_code == 403
+    assert client.post(f"{url}/restore", headers=user["headers"]).json()["archived_at"] is None
+    assert client.delete(url, headers=lead["headers"]).status_code == 400  # archive first
+    client.post(f"{url}/archive", headers=lead["headers"])
+    assert client.delete(url, headers=lead["headers"]).json()["deleted"] is True
 
 
 def test_run_a_suite_with_its_environment(client, project):
@@ -173,6 +185,46 @@ def test_run_a_suite_with_its_environment(client, project):
     # GitHub Actions needs a workflow on the suite.
     assert client.post(f"/api/suites/{suite['id']}/runs", headers=senior["headers"],
                        json={"where": "actions"}).status_code == 400
+
+
+def test_secret_variables_reach_the_run_but_never_the_browser(client, project):
+    senior = _user("automation_senior", project, "project_base", checkout=True)
+    trainee = _user("automation_trainee", project, "project_base")
+    secret = "https://uat.example.test"  # the sample test passes only when BASE_URL arrives
+    environments = f"/api/projects/{project['id']}/environments"
+    created = client.post(environments, headers=senior["headers"],
+                          json={"name": "Secret UAT", "variables": {"USER": "qa"}, "secrets": {"BASE_URL": secret}})
+    assert created.status_code == 201, created.text
+    assert created.json()["secret_names"] == ["BASE_URL"] and secret not in created.text
+    listed = client.get(environments, headers=trainee["headers"])
+    assert secret not in listed.text and listed.json()[0]["secret_names"] == ["BASE_URL"]
+    env_id = created.json()["id"]
+    both = client.put(f"{environments}/{env_id}", headers=senior["headers"],
+                      json={"name": "Secret UAT", "variables": {"BASE_URL": "x"}})
+    assert both.status_code == 400  # a name is a variable or a secret, not both
+
+    suite = client.post(f"/api/suites/projects/{project['id']}/suites", headers=senior["headers"], json={
+        "name": "Secret run", "target": _target(client, project, senior), "environment_id": int(env_id)}).json()
+    run = client.post(f"/api/suites/{suite['id']}/runs", headers=senior["headers"], json={}).json()["run"]
+    finished = _wait_for(int(run["id"].removeprefix("manual-")))
+    assert finished.status == "passed", finished.logs_json[-10:]
+    assert secret not in json.dumps(finished.logs_json)
+
+    # Changing other fields keeps the secret; an empty value removes it.
+    kept = client.put(f"{environments}/{env_id}", headers=senior["headers"], json={"name": "Secret UAT 2"}).json()
+    assert kept["secret_names"] == ["BASE_URL"]
+    removed = client.put(f"{environments}/{env_id}", headers=senior["headers"],
+                         json={"name": "Secret UAT 2", "secrets": {"BASE_URL": ""}}).json()
+    assert removed["secret_names"] == []
+    # An archived suite does not run.
+    client.post(f"/api/suites/{suite['id']}/archive", headers=senior["headers"])
+    assert client.post(f"/api/suites/{suite['id']}/runs", headers=senior["headers"], json={}).status_code == 400
+
+
+def test_secret_values_are_masked_in_logs():
+    from app.modules.testing import secrets
+
+    assert secrets.mask("token=abcd1234 and abc", ["abcd1234", "abc"]) == "token=*** and abc"  # short values stay
 
 
 def test_scheduler_starts_due_suites_once_per_minute(client, project):

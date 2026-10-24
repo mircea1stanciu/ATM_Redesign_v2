@@ -143,7 +143,8 @@ test('review and accept a change proposed by the AI assistant (mocked provider)'
   })).json()
   expect(file.content).toContain("assert message.startswith('Wrong')")
   const { aiRequests } = await (await request.get(`${fakeServicesUrl()}/__e2e/requests`)).json()
-  expect(aiRequests.at(-1).last).toContain('Make this test check the message.')
+  // Other specs talk to the fake AI too (reviews, the tutor): look for this prompt, not at the last request.
+  expect(aiRequests.some((r: { last: string }) => r.last.includes('Make this test check the message.'))).toBeTruthy()
 })
 
 test('the Repository screens are views of the workspace now', async ({ page }) => {

@@ -163,6 +163,8 @@ async def start_checks(db: Session, service: Service, deployment: Deployment) ->
         user = _check_user(db, mapping)
         if not suite:
             check.detail = "The smoke suite no longer exists."
+        elif suite.archived_at is not None:
+            check.detail = "The smoke suite is archived. Restore it, or choose another one in Deploys › Services."
         elif not match:
             check.detail = (f"{project.name} has no environment named {deployment.environment}. "
                             "Add it in Tests › Environments.")

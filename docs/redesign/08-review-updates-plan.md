@@ -102,6 +102,19 @@ Decisions kept as they are need no work and are not repeated here.
   - "Changed tests" in the run dialog runs with the chosen environment. (#13)
 - **UI tests:** a secret variable reaches the run but never the page; archive and restore a suite; a Senior cannot
   delete permanently, a Lead can; changed tests with an environment.
+- **Decided while building phase 17:**
+  - Secret variables are one encrypted JSON object per environment (`test_environments.secrets`, migration `0014`,
+    the same key as personal tokens). The API returns only their names (`secret_names`); a save sets the secrets it
+    names, an empty value removes one, and the others stay. A name is a variable or a secret, not both.
+  - The runner gets variables and secrets together. Secret values (of four characters or more) are replaced by `***`
+    in the run log as it streams; the raw `process.log` in the user's checkout (kept out of Git) is not rewritten.
+  - Archive replaces delete for everyone who manages suites; archived suites keep their runs and reports, are left out
+    of the suite list (an "Archived" tab shows them), are skipped by the scheduler and by deployment checks, and do
+    not run until restored. Permanent deletion is the new permission `suite.delete` (Super Admin, Lead) and only for
+    archived suites.
+  - The run dialog's environment applies to "Changed tests" too (framework targets; Bruno requests keep choosing their
+    Bruno environment).
+  - The UI tests seed a `secrets_tester` with their own checkout, so the spec can change a test file safely.
 
 ### Phase 18: `feature/phase_18_service_account`
 - **Delivers:** each project can have an ATM service account, set up by a Lead: a GitHub token for the project kept
