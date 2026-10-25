@@ -60,18 +60,20 @@ export default function LoginPage() {
     <div className="flex min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Left panel - branding */}
       <div
-        className="relative hidden flex-1 items-stretch justify-center overflow-hidden lg:flex"
+        className="relative hidden flex-1 overflow-hidden lg:block"
         style={{ background: 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 50%, #1e40af 100%)' }}
       >
         <div className="absolute inset-0 opacity-10" style={{
           backgroundImage: 'radial-gradient(circle at 30% 50%, white, transparent 50%), radial-gradient(circle at 70% 70%, white, transparent 50%)',
         }} />
 
+        {/* The whole panel scrolls, so a short window shows the scroll bar at the panel's edge, not beside the text. */}
+        <div className="absolute inset-0 z-10 flex overflow-y-auto [scrollbar-color:rgba(255,255,255,0.35)_transparent] [scrollbar-width:thin]">
         <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.6 }}
-          className="relative z-10 flex max-h-screen w-full max-w-md flex-col justify-center overflow-y-auto px-12 py-10"
+          className="m-auto flex w-full max-w-md flex-col px-12 py-10"
         >
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm shadow-lg">
@@ -105,6 +107,7 @@ export default function LoginPage() {
             ))}
           </div>
         </motion.div>
+        </div>
       </div>
 
       {/* Right panel - form */}
