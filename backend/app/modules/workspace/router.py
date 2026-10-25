@@ -5,7 +5,7 @@ from typing import Optional
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
@@ -20,7 +20,8 @@ from app.modules.projects.service import (
     local_status,
     project_github_token,
 )
-from app.modules.reviews.router import record_opened
+from app.modules.reviews import github
+from app.modules.reviews.router import record_opened, request_reviewers
 from app.modules.work.service import link_pull_request, link_pushed_files
 
 router = APIRouter(prefix="/api/projects", tags=["Workspace"])
@@ -293,6 +294,9 @@ class PullRequestCreate(BaseModel):
     title: str
     body: str = ""
     draft: bool = False
+    # Phase 20: asked for a review on GitHub (logins and team slugs from /api/reviews/projects/{id}/reviewer-options).
+    reviewers: list[str] = Field(default_factory=list, max_length=15)
+    team_reviewers: list[str] = Field(default_factory=list, max_length=15)
 
 
 def _publish_context(db: Session, current_user, project_id: int):
@@ -462,6 +466,13 @@ async def create_project_pull_request(
         item = link_pull_request(db, project_id, head, url, pr.get("title", title)) if url else None
         number = pr.get("number", 0)
         record_opened(db, project_id, number, pr.get("title", title), url, head, base, current_user)
+        requested, reviewers_error = [], None
+        if number and (payload.reviewers or payload.team_reviewers):
+            try:
+                requested = await request_reviewers(github.Repo(api_base, owner, repo, token), number,
+                                                    payload.reviewers, payload.team_reviewers)
+            except HTTPException as exc:  # the pull request is open; say why the reviewers were not asked
+                reviewers_error = str(exc.detail)
         author = current_user.full_name or current_user.username
         notify(db, reviewers(db, project_id, current_user), "review_request",
                f"{author} asks for a review: {pr.get('title', title)}",
@@ -469,6 +480,9 @@ async def create_project_pull_request(
                project_id=project_id)
         return {"number": pr.get("number", 0), "url": url, "state": pr.get("state", "open"),
                 "title": pr.get("title", title), "head": head, "base": base,
+                "requested_reviewers": requested,
+                "requested_teams": [] if reviewers_error else payload.team_reviewers,
+                "reviewers_error": reviewers_error,
                 "work_item": {"id": item.id, "external_key": item.external_key} if item else None}
     if resp.status_code == 401:
         raise HTTPException(status_code=400, detail="GitHub token invalid or expired for this project.")
