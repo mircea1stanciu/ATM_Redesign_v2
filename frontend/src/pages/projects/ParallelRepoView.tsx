@@ -6,6 +6,8 @@ import RepoTreePanel from './RepoTreePanel'
 
 interface ParallelRepoViewProps {
   projectId: string
+  /** After a clone, a link or a removal: the rest of the workspace depends on whether there is a local copy. */
+  onCheckoutChanged?: () => void
 }
 
 /** Modal for entering an absolute server-side folder path (import or link-existing). */
@@ -192,7 +194,7 @@ function LocalPathModal({
   )
 }
 
-export default function ParallelRepoView({ projectId }: ParallelRepoViewProps) {
+export default function ParallelRepoView({ projectId, onCheckoutChanged }: ParallelRepoViewProps) {
   // Shared branch list (for panel A default + panel B selector).
   const [branches, setBranches] = useState<Branch[]>([])
   const [branchesError, setBranchesError] = useState<string | null>(null)
@@ -283,6 +285,7 @@ export default function ParallelRepoView({ projectId }: ParallelRepoViewProps) {
       await apiService.deleteLocalRepo(projectId)
       setLocal(null)
       setLocalReloadKey(k => k + 1)
+      onCheckoutChanged?.()
     } catch (e: unknown) {
       setLocalError(apiService.errorMessage(e))
     } finally {
@@ -303,6 +306,7 @@ export default function ParallelRepoView({ projectId }: ParallelRepoViewProps) {
       setLocalError(null)
       setLocalReloadKey(k => k + 1)
       setPathModalMode(null)
+      onCheckoutChanged?.()
     } catch (e: unknown) {
       setPathModalError(apiService.errorMessage(e))
     } finally {

@@ -22,6 +22,8 @@ jobs:
           REQUIRED_PREFIX: feature-mircea-feature-nou/
           # Redesign phases (docs/redesign/07-delivery-workflow.md): feature/phase_XX_featurename
           PHASE_PATTERN: ^feature/phase_[0-9]{2}_[a-z0-9_]+$
+          # Fixes for issues found while testing (same document): feature/fixes_name
+          FIX_PATTERN: ^feature/fixes_[a-z0-9_]+$
         run: |
           echo "PR source branch: ${HEAD_REF}"
           if [[ -z "${HEAD_REF}" ]]; then
@@ -29,9 +31,9 @@ jobs:
             exit 1
           fi
 
-          if [[ "${HEAD_REF}" != ${REQUIRED_PREFIX}* && ! "${HEAD_REF}" =~ ${PHASE_PATTERN} ]]; then
+          if [[ "${HEAD_REF}" != ${REQUIRED_PREFIX}* && ! "${HEAD_REF}" =~ ${PHASE_PATTERN} && ! "${HEAD_REF}" =~ ${FIX_PATTERN} ]]; then
             echo "ERROR: Invalid branch name '${HEAD_REF}'."
-            echo "Branch must start with '${REQUIRED_PREFIX}' or match '${PHASE_PATTERN}'."
+            echo "Branch must start with '${REQUIRED_PREFIX}' or match '${PHASE_PATTERN}' or '${FIX_PATTERN}'."
             exit 1
           fi
 

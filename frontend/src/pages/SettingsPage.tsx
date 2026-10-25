@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Navigate, useParams } from 'react-router-dom'
 import {
-  AlertCircle, Bot, BookOpen, CheckCircle2, Github, Loader2,
+  AlertCircle, Bot, BookOpen, CheckCircle2, Github, Info, Loader2,
   Save, Search, Settings2, Unplug, Eye, EyeOff, Trash2, Link2, User,
   Lock, Sliders,
 } from 'lucide-react'
@@ -53,6 +53,51 @@ interface ConfluenceTestResult {
   ok: boolean
   user?: string
   error?: string
+}
+
+// ── What a GitHub token needs for ATM ─────────────────────────────────────
+// Without these GitHub answers "Resource not accessible by personal access token" (Reviews, workspace, runs).
+const GITHUB_TOKEN_RIGHTS = [
+  { permission: 'Contents', access: 'Read and write', use: 'Files, branches, and commit & push from the workspace' },
+  { permission: 'Pull requests', access: 'Read and write', use: 'Reviews: pull requests, comments, approvals, reviewers' },
+  { permission: 'Actions', access: 'Read and write', use: 'Starting test runs on GitHub Actions and reading their results' },
+  { permission: 'Metadata', access: 'Read-only', use: 'Added by GitHub itself; the list of people to ask for a review' },
+  { permission: 'Workflows', access: 'Read and write', use: 'Optional: only to change files in .github/workflows from the workspace' },
+]
+
+function GitHubTokenRights() {
+  return (
+    <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 px-4 py-3 text-xs text-blue-900 dark:text-blue-200">
+      <p className="flex items-center gap-1.5 font-semibold">
+        <Info size={14} className="shrink-0" /> What the token needs
+      </p>
+      <p className="mt-1">
+        A fine-grained token (
+        <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer" className="underline hover:text-blue-600 dark:hover:text-blue-300">
+          create one
+        </a>
+        ): under <b>Repository access</b>, choose this project's repository; under <b>Repository permissions</b>, add:
+      </p>
+      <table className="mt-2 w-full text-left" aria-label="GitHub token permissions">
+        <thead className="text-[11px] text-blue-700 dark:text-blue-300">
+          <tr><th className="py-1 pr-3 font-semibold">Permission</th><th className="py-1 pr-3 font-semibold">Access</th><th className="py-1 font-semibold">ATM uses it for</th></tr>
+        </thead>
+        <tbody>
+          {GITHUB_TOKEN_RIGHTS.map(right => (
+            <tr key={right.permission} className="border-t border-blue-200/70 dark:border-blue-800/70 align-top">
+              <td className="py-1 pr-3 font-semibold whitespace-nowrap">{right.permission}</td>
+              <td className="py-1 pr-3 whitespace-nowrap">{right.access}</td>
+              <td className="py-1">{right.use}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="mt-2">
+        No account permissions are needed. A classic token works too, with the <code className="font-mono">repo</code> scope
+        (and <code className="font-mono">workflow</code> to change workflow files).
+      </p>
+    </div>
+  )
 }
 
 // ── Shared GitHub card used for both global and per-project ───────────────
@@ -130,7 +175,7 @@ function GitHubCard({
 
             <div>
               <label className="mb-1.5 block text-xs font-semibold text-gray-700 dark:text-gray-300">
-                Classic token for general use, with repo rights
+                Personal access token
                 <span className="ml-1 font-normal text-gray-400">(leave blank to keep existing)</span>
               </label>
               <div className="relative">
@@ -147,13 +192,9 @@ function GitHubCard({
                   {showToken ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
               </div>
-              <p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">
-                Generate at{' '}
-                <a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noreferrer" className="underline hover:text-blue-500">
-                  github.com/settings/tokens?type=beta
-                </a>
-              </p>
             </div>
+
+            <GitHubTokenRights />
 
             <div>
               <label className="mb-1.5 block text-xs font-semibold text-gray-700 dark:text-gray-300">

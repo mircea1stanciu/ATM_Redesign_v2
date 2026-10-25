@@ -5,6 +5,8 @@
 - **Name.** One branch per phase: `feature/phase_XX_featurename`. `XX` is the two-digit phase number, and
   `featurename` is short, lower case, with underscores.
   - Example: `feature/phase_04_roles_permissions`.
+  - Fixes for issues found while testing go on `feature/fixes_name` instead (for example
+    `feature/fixes_from_testing`) and follow the same steps.
 - **Base.** Branched from the latest `origin/main` of `mircea1stanciu/ATM-Redesign`.
 - **History.** One or more commits per phase. Commit messages say what changed and why.
 - **Merging.** The product owner merges every PR. Nothing is merged by the implementer.

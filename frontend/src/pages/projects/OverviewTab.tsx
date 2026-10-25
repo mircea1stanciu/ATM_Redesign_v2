@@ -388,7 +388,7 @@ export default function OverviewTab() {
               </div>
             ) : (
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                No local clone yet. Use <Link to="/work/workspace?view=three-panel" className="font-medium text-blue-600 hover:underline dark:text-blue-400">Work › Workspace › 3-Panel</Link> to clone or link one, so runs can execute on this station.
+                No local clone yet. Use <Link to="/work/workspace?view=three-panel" className="font-medium text-blue-600 hover:underline dark:text-blue-400">Work › Workspace › Repository</Link> to clone or link one, so runs can execute on this station.
               </p>
             )}
           </Card>
