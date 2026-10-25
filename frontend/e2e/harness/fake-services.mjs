@@ -11,6 +11,7 @@
 //   SMTP on E2E_FAKE_SMTP_PORT   a mail server that keeps every message (e-mail notifications)
 //   /__e2e/requests             what ATM sent (tests inspect it); /__e2e/health for the harness
 //   POST /__e2e/pull-request    a pull request opened on GitHub outside ATM: a commit on a new branch of the bare repo
+//                               (optionally already merged, with reviews)
 import { execFileSync, spawn } from 'node:child_process'
 import { createServer } from 'node:http'
 import { createServer as createTcpServer } from 'node:net'
@@ -171,10 +172,12 @@ function gitHttpBackend(req, res, url) {
   child.stderr.on('data', data => process.stderr.write(data))
 }
 
-// The GitHub user of a token: the seeded tokens are e2e-github-token (a shared bot) and e2e-github-token-senior.
+// The GitHub user of a token: the seeded tokens are e2e-github-token (a shared bot), e2e-github-token-senior and
+// e2e-github-token-mentee (phase 22: the mentee's own pull requests).
+const TOKEN_LOGINS = { 'e2e-github-token-senior': 'e2e-senior', 'e2e-github-token-mentee': 'e2e-mentee' }
 function loginOf(req) {
   const token = (req.headers.authorization || '').split(' ').pop()
-  return token === 'e2e-github-token-senior' ? 'e2e-senior' : 'e2e-bot'
+  return TOKEN_LOGINS[token] ?? 'e2e-bot'
 }
 
 function bareGit(owner, repo, args, input, env = {}) {
@@ -217,7 +220,8 @@ function filesOf(owner, repo, base, head) {
 
 function pullJson(owner, repo, pr) {
   return {
-    number: pr.number, title: pr.title, body: pr.body || '', state: 'open', draft: Boolean(pr.draft), merged: false,
+    number: pr.number, title: pr.title, body: pr.body || '', state: pr.merged ? 'closed' : 'open', draft: Boolean(pr.draft),
+    merged: Boolean(pr.merged), merged_at: pr.merged ? pr.updated_at : null,
     html_url: `http://127.0.0.1:${port}/${owner}/${repo}/pull/${pr.number}`,
     user: { login: pr.author }, head: { ref: pr.head, sha: pr.sha }, base: { ref: pr.base },
     requested_reviewers: (pr.requested || []).map(login => ({ login })),
@@ -267,7 +271,8 @@ async function github(req, res, url) {
   }
   if (req.method === 'GET' && rest === '/pulls') {
     if (Number(url.searchParams.get('page') || 1) > 1) return json(res, 200, [])
-    return json(res, 200, pullRequests.filter(pr => pr.sha).map(pr => pullJson(owner, repo, pr)).reverse())
+    const all = url.searchParams.get('state') === 'all'
+    return json(res, 200, pullRequests.filter(pr => pr.sha && (all || !pr.merged)).map(pr => pullJson(owner, repo, pr)).reverse())
   }
   const pull = rest.match(/^\/(pulls|issues)\/(\d+)(\/[a-z_]+)?$/)
   const pr = pull && pullRequests.find(p => p.number === Number(pull[2]))
@@ -450,14 +455,16 @@ createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${port}`)
   if (url.pathname === '/__e2e/health') return json(res, 200, { ok: true })
   if (url.pathname === '/__e2e/pull-request' && req.method === 'POST') {
-    // { branch, path, content, title, author, requested } → a commit on the branch and an open pull request.
+    // { branch, path, content, title, author, requested, merged?, reviews? } → a commit on the branch and a pull
+    // request (open, or merged), with reviews given as [{ login, state }].
     const body = JSON.parse(await readBody(req))
     const sha = commitToBranch('e2e', 'sample', body.branch, body.path, body.content, body.title)
     const now = new Date().toISOString()
     const number = pullRequests.length + 1
+    const reviews = (body.reviews || []).map((r, i) => ({ id: 9000 + number * 10 + i, state: r.state, body: '', user: { login: r.login }, submitted_at: now }))
     pullRequests.push({ number, title: body.title, body: body.body || '', head: body.branch, base: 'main', sha,
-      author: body.author || 'e2e-user', requested: body.requested || [], requestedTeams: [], reviews: [], comments: [], issueComments: [],
-      created_at: now, updated_at: now })
+      author: body.author || 'e2e-user', requested: body.requested || [], requestedTeams: [], reviews, comments: [], issueComments: [],
+      merged: Boolean(body.merged), created_at: now, updated_at: now })
     return json(res, 201, { number })
   }
   if (url.pathname === '/__e2e/requests') {
