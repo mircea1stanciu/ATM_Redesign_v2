@@ -205,6 +205,22 @@ Decisions kept as they are need no work and are not repeated here.
   - Tutor mode on by default for Users as well as Trainees. (#26)
 - **UI tests:** ask and answer in Community; a Lead builds a path a Trainee then follows; a Lead assigns a mentor who
   then reviews that person's practice; tutor mode on for a new User.
+- **Decided while building phase 21:**
+  - Community is written anew in today's design on the kept `forum_*` tables, rather than restoring phase 12's
+    screens: one Community per organisation, questions (Markdown, up to five tags) and answers, likes, search and a
+    tag filter. Leads and Super Admins pin, lock and remove; authors edit and remove their own. Attachments and
+    threaded replies were left out. It needs `learning.use` (not Viewers) and has its own side-bar entry (`g c`).
+  - A new answer notifies the question's author ("community"); a mentor assignment notifies the Senior and the
+    learner ("mentoring"). Both kinds can be switched off, or sent by e-mail or Teams, like the others.
+  - Paths live in `learning_paths` (migration `0018`, seeded with the eight). Leads and Super Admins create, edit
+    (title, description, programs in order), move up or down, and delete them on Learning › Paths. A path keeps its
+    id when renamed. Deleting a path keeps lesson progress; those who chose it choose again, and its practice tasks
+    become "any path".
+  - Mentors: `learning_profiles.mentor_id`. On Learning › Mentor, a Lead picks a Senior for each of their Trainees
+    and Users (a Super Admin, for anyone). A Senior mentors only the people assigned to them; a Lead still mentors all
+    their own people. Practice handed in notifies the lead and the mentor. A learner sees their mentor on Learning ›
+    Paths and on Home.
+  - Tutor mode: on by default for Trainees and Users; whoever switched it off keeps it off.
 
 ### Phase 22: `feature/phase_22_readiness_audit`
 - **Delivers:**
