@@ -232,6 +232,25 @@ Decisions kept as they are need no work and are not repeated here.
     settings) and deletions (projects, suites, users, services, hints, reports, share links). (#28)
 - **UI tests:** the evidence shows merged pull requests and AI usage; a failed sign-in and a deletion appear in
   Admin › Audit.
+- **Decided while building phase 22:**
+  - GitHub evidence: for each of the person's projects with a repository (up to 10), ATM lists the 100 most recently
+    updated pull requests with the project lead's token, or the person's own when the lead has none. The person's
+    pull requests are those with their GitHub login (from their token) and those they opened in ATM. Up to 30 of
+    them are checked: merged after an approval by someone else, approved and still open, or merged without
+    approval. A project that cannot be read is named with the reason; the rest of the evidence still shows.
+  - AI use is counted from this phase on (`ai_usage`, migration `0019`): each assistant message in the workspace,
+    each tutor question and each AI review. The evidence shows it when the person has an AI connection or has used
+    the AI.
+  - The audit log adds:
+    - sign-ins and failed attempts, with the name typed, the address and why;
+    - changes to connections (GitHub, Jira, Confluence, per-project GitHub), AI settings, project settings, the
+      mail server and Zephyr: which fields changed, never their values;
+    - deletions of projects, suites, users, services, hints and learning paths. Reports and share links were
+      already audited in phase 19.
+  - Refreshed sign-in tokens of the AI connection are not audited (the person did not change anything). A failed
+    sign-in for a name with no account is seen only by Super Admins; Leads see their people's.
+  - Also fixed in this phase, at the user's request: the login page's branding panel scrolls as a whole, so its
+    scroll bar sits at the panel's edge (where the blue meets the form) instead of beside the text.
 
 ## 8.3 How the notes were read
 
