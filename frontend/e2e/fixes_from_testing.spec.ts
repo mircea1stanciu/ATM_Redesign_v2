@@ -23,3 +23,15 @@ test('a switch that is on keeps its thumb inside the track, on the right', async
   expect(thumb.right).toBeLessThanOrEqual(track.right) // it used to stick out past the right end
   expect(thumb.left).toBeGreaterThan((track.left + track.right) / 2 - 1) // and sits in the right half
 })
+
+test('the GitHub settings say which rights the token needs', async ({ page }) => {
+  await login(page, 'automation_user')
+  await page.goto('/settings/mcp/github')
+  const rights = page.getByRole('table', { name: 'GitHub token permissions' })
+  for (const [permission, access] of [['Contents', 'Read and write'], ['Pull requests', 'Read and write'],
+    ['Actions', 'Read and write'], ['Metadata', 'Read-only']]) {
+    await expect(rights.getByRole('row', { name: new RegExp(`^${permission} ${access}`) })).toBeVisible()
+  }
+  await expect(page.getByRole('link', { name: 'create one' }))
+    .toHaveAttribute('href', 'https://github.com/settings/personal-access-tokens/new')
+})
