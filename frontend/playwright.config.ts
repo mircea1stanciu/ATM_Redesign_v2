@@ -13,6 +13,7 @@ function freePort(): string {
 process.env.E2E_BACKEND_PORT ||= freePort()
 process.env.E2E_FRONTEND_PORT ||= freePort()
 process.env.E2E_FAKE_PORT ||= freePort()
+process.env.E2E_FAKE_SMTP_PORT ||= freePort()
 process.env.E2E_FAKE_ROOT ||= path.join(os.tmpdir(), `atm-e2e-fake-${process.env.E2E_FAKE_PORT}`)
 process.env.E2E_SESSIONS_FILE ||= path.resolve('e2e/.auth/sessions.json')
 process.env.E2E_PASSWORD ||= 'e2e-Password-1'

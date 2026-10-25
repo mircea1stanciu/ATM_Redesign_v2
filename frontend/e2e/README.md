@@ -18,12 +18,13 @@ The harness uses `backend/.venv/bin/python` when it exists; set `ATM_PYTHON` to 
 
 ## What the harness does
 
-`playwright.config.ts` picks three free ports and starts:
+`playwright.config.ts` picks four free ports and starts:
 
 1. `harness/fake-services.mjs`: stand-ins for GitHub, Jira and Confluence. It serves git over HTTP (through
    `git http-backend`) for the bare repositories in a temporary folder, a small GitHub REST API (repository,
-   branches, pull requests), and the Jira and Confluence calls the settings screens make. `GET /__e2e/requests`
-   shows what ATM sent, so tests can check it.
+   branches, pull requests), and the Jira and Confluence calls the settings screens make. On its own port
+   (`E2E_FAKE_SMTP_PORT`) it is also a mail server that keeps every e-mail. `GET /__e2e/requests` shows what ATM
+   sent, so tests can check it.
 2. `harness/start-backend.mjs`: creates the sample repository (a bare "GitHub" repository with a README and
    `scripts/hello.sh`, plus a checkout of it), a temporary SQLite database (`ATM_DATABASE_PATH`), runs
    `backend/tools/e2e_seed.py`, then starts `backend/main.py`. Everything is deleted when the run ends.
