@@ -10,7 +10,7 @@ test.beforeEach(({ page }) => {
   })
 })
 
-const EVERYONE = ['Home', 'Work', 'Tests', 'Reports', 'Reviews', 'Deploys', 'Learning']
+const EVERYONE = ['Home', 'Work', 'Tests', 'Reports', 'Reviews', 'Deploys', 'Learning', 'Community'] // Community: phase 21
 
 const NAVIGATION: Record<Role, string[]> = {
   super_admin: [...EVERYONE, 'Admin', 'Settings'],
@@ -18,7 +18,7 @@ const NAVIGATION: Record<Role, string[]> = {
   automation_senior: [...EVERYONE, 'Settings'], // phase 15: no Admin
   automation_user: [...EVERYONE, 'Settings'],
   automation_trainee: [...EVERYONE, 'Settings'],
-  viewer: ['Home', 'Tests', 'Reports', 'Reviews', 'Deploys', 'Settings'], // phase 15: no Work, no Learning
+  viewer: ['Home', 'Tests', 'Reports', 'Reviews', 'Deploys', 'Settings'], // phase 15: no Work, no Learning (nor Community)
 }
 
 const HOME_SECTIONS: Record<Role, string> = {

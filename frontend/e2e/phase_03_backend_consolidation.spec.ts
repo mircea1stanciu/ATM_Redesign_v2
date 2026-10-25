@@ -26,7 +26,7 @@ async function sampleProjectId(request: APIRequestContext): Promise<string> {
 }
 
 test('Publish: branch, commit, push to the repository and open a pull request', async ({ page, request }) => {
-  test.setTimeout(90_000) // git steps (branch, commit, push) on a busy station
+  test.setTimeout(150_000) // git steps (branch, commit, push) on a busy station
   const projectId = await sampleProjectId(request)
   const branch = `feature/e2e-${Date.now()}`
   // A change to publish, written through the editor API.
@@ -43,14 +43,14 @@ test('Publish: branch, commit, push to the repository and open a pull request', 
   await toolbar.getByRole('button', { name: 'New branch' }).click()
   await page.getByRole('dialog', { name: 'New branch' }).getByLabel('Branch name').fill(branch)
   await page.getByRole('dialog', { name: 'New branch' }).getByRole('button', { name: 'Create branch' }).click()
-  await expect(page.getByRole('dialog', { name: 'New branch' })).toBeHidden({ timeout: 20_000 })
+  await expect(page.getByRole('dialog', { name: 'New branch' })).toBeHidden({ timeout: 60_000 })
   await expect(toolbar).toContainText(branch)
 
   await toolbar.getByRole('button', { name: 'Commit & push' }).click()
   const commit = page.getByRole('dialog', { name: 'Commit & push' })
   await commit.getByLabel('Commit message').fill('Add a note from the UI test')
   await commit.getByRole('button', { name: 'Commit & push' }).click()
-  await expect(commit).toBeHidden({ timeout: 30_000 })
+  await expect(commit).toBeHidden({ timeout: 60_000 })
 
   await toolbar.getByRole('button', { name: 'Open PR' }).click()
   const pr = page.getByRole('dialog', { name: 'Open a pull request' })
