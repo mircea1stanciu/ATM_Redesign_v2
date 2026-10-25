@@ -46,9 +46,23 @@ function Evidence({ data }: { data: Readiness }) {
           <Stat label="Practice approved" value={e.practice.approved} detail={e.practice.submitted ? `${e.practice.submitted} waiting for review` : undefined} />
           <Stat label="Work items done" value={e.work_items.done} detail={`${e.work_items.in_review} in review, ${e.work_items.in_progress} in progress`} />
           <Stat label="Pull requests approved" value={e.pull_requests.approved} detail={`of ${e.pull_requests.opened} opened from ATM`} />
+          <Stat label="Merged after review" value={e.github.merged_after_review}
+            detail={`${e.github.approved_not_merged} approved, not merged yet · ${e.github.merged_without_review} merged without approval`} />
           <Stat label="Runs" value={e.runs.total} detail={`${e.runs.passed} passed, ${e.runs.failed} failed`} />
+          {(e.ai.connected || e.ai.assistant + e.ai.tutor + e.ai.review > 0) && (
+            <Stat label="AI use" value={e.ai.assistant + e.ai.tutor + e.ai.review}
+              detail={`${e.ai.assistant} assistant messages, ${e.ai.tutor} tutor questions, ${e.ai.review} AI reviews`} />
+          )}
         </dl>
-        <p className="text-xs text-fg-muted">Last learning activity: {when(e.last_activity) || 'none yet'}. ATM never promotes anyone by itself: the lead decides.</p>
+        {e.github.errors.length > 0 && (
+          <p className="text-xs text-fg-muted">
+            GitHub was not asked for {e.github.errors.map(err => `${err.project} (${err.detail})`).join('; ')}.
+          </p>
+        )}
+        <p className="text-xs text-fg-muted">
+          Last learning activity: {when(e.last_activity) || 'none yet'}. Merged pull requests come from GitHub{e.github.projects.length ? ` (${e.github.projects.join(', ')})` : ''}; AI use is counted since phase 22.
+          ATM never promotes anyone by itself: the lead decides.
+        </p>
       </Card>
     </Section>
   )
