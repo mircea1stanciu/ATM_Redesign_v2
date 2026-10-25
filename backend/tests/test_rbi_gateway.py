@@ -159,11 +159,11 @@ def test_gateway_auth_errors_are_explained(status, expected):
 
 # ── Routes ───────────────────────────────────────────────────────────────────
 
-_DB = SimpleNamespace(commit=lambda: None, refresh=lambda _user: None)
+_DB = SimpleNamespace(commit=lambda: None, refresh=lambda _user: None, add=lambda _entry: None)  # add: the audit entry
 
 
 def _user(**stored):
-    user = SimpleNamespace(id=7, settings_json={}, connections=[])
+    user = SimpleNamespace(id=7, settings_json={}, connections=[], full_name="RBI Tester", username="rbi")
     stored = {"provider": "rbi_genai", "environment": "uat", "model": "claude-opus-4-8", **stored}
     set_json(user, "ai_assistant", stored)
     return user

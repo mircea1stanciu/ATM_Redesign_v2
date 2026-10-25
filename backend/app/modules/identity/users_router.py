@@ -22,7 +22,7 @@ from app.core.permissions import (
     require,
     visible_project_ids,
 )
-from app.modules.audit.service import record
+from app.modules.audit.service import name_of, record
 from app.modules.identity.models import Organization, User, UserRole
 from app.modules.identity.service import get_default_organization
 from app.modules.notifications.service import notify
@@ -296,9 +296,12 @@ async def delete_user(
     if user.id == current_user.id:
         raise HTTPException(status_code=400, detail="You cannot delete yourself.")
     check_role_change(current_user, user, None)
+    details = {"username": user.username, "name": user.full_name, "role": user.role.value, "user_id": user.id}
     db.delete(user)
     db.commit()
     logger.info("%s deleted user %s", current_user.username, user.username)
+    record(db, "user.delete", f"{name_of(current_user)} deleted the user {details['name'] or details['username']}",
+           actor_id=current_user.id, details=details)
     return {"message": "User deleted", "username": user.username}
 
 

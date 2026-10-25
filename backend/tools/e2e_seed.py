@@ -184,6 +184,8 @@ def seed(sessions_path: str) -> None:
             # (the fake answers its own login), the viewer reads with the shared one.
             set_project_github_token(db, users[UserRole.AUTOMATION_SENIOR], project.id, f"{SAMPLE_GITHUB_TOKEN}-senior")
             set_project_github_token(db, users[UserRole.VIEWER], project.id, SAMPLE_GITHUB_TOKEN)
+            # The mentee's own GitHub account: phase 22 reads their merged pull requests for the readiness evidence.
+            set_project_github_token(db, mentee, project.id, f"{SAMPLE_GITHUB_TOKEN}-mentee")
     finally:
         db.close()
 

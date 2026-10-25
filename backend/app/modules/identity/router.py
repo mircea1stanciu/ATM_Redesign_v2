@@ -10,12 +10,14 @@ import pyotp
 import qrcode
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel, EmailStr
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.deps import get_current_user
 from app.core.rate_limit import limiter
 from app.core.security import create_access_token, pwd_context
+from app.modules.audit.service import name_of, record
 from app.modules.identity.models import User, UserRole
 from app.modules.identity.service import authenticate_user, get_default_organization
 from app.modules.identity.users_router import me_payload
@@ -69,6 +71,14 @@ class TokenResponse(BaseModel):
     user: dict
     requires_2fa: Optional[bool] = False  # Indicates if 2FA is required
 
+def _record_failed_sign_in(db: Session, username: str, ip: str, reason: str) -> None:
+    """A failed sign-in (phase 22): the name typed, the address and why; the account when it exists."""
+    typed = (username or "").strip()[:100]
+    account = db.query(User).filter(or_(User.username == typed, User.email == typed)).first() if typed else None
+    record(db, "sign_in.failed", f"Failed sign-in as {typed or '(empty)'}: {reason}",
+           subject_user_id=account.id if account else None, details={"username": typed, "ip": ip, "reason": reason})
+
+
 # Authentication endpoints
 @router.post("/api/auth/login", response_model=TokenResponse, tags=["Authentication"])
 @limiter.limit("5/minute")  # Max 5 login attempts per minute per IP
@@ -88,6 +98,7 @@ async def login(request: Request, login_data: LoginRequest, response: Response, 
     if not user:
         # Log failed login
         logger.warning(f"Failed login - Username: {login_data.username}, IP: {client_ip}, Reason: Invalid credentials")
+        _record_failed_sign_in(db, login_data.username, client_ip, "Wrong user name or password")
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
     
@@ -111,6 +122,8 @@ async def login(request: Request, login_data: LoginRequest, response: Response, 
     
     # Log successful login
     logger.info(f"Successful login - Username: {user.username}, User ID: {user.id}, IP: {client_ip}")
+    record(db, "sign_in", f"{name_of(user)} signed in", actor_id=user.id, subject_user_id=user.id,
+           details={"ip": client_ip})
     
     access_token = create_access_token(
         data={
@@ -177,6 +190,7 @@ async def login_verify_2fa(
         logger.warning(
             f"Failed 2FA verification - Username: {login_data.username}, IP: {client_ip}, Reason: Invalid credentials"
         )
+        _record_failed_sign_in(db, login_data.username, client_ip, "Wrong user name or password")
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
     # Check if user has 2FA enabled
@@ -192,6 +206,7 @@ async def login_verify_2fa(
         logger.warning(
             f"Failed 2FA verification - Username: {login_data.username}, IP: {client_ip}, Reason: Invalid TOTP code"
         )
+        _record_failed_sign_in(db, login_data.username, client_ip, "Wrong two-factor code")
         raise HTTPException(status_code=401, detail="Invalid 2FA code")
     
     
@@ -201,6 +216,8 @@ async def login_verify_2fa(
     
     # Log successful 2FA login
     logger.info(f"Successful 2FA login - Username: {user.username}, User ID: {user.id}, IP: {client_ip}")
+    record(db, "sign_in", f"{name_of(user)} signed in (with a two-factor code)", actor_id=user.id,
+           subject_user_id=user.id, details={"ip": client_ip, "two_factor": True})
     
     access_token = create_access_token(
         data={

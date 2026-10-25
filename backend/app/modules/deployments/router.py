@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.crypto import encrypt
 from app.core.db import get_db
 from app.core.permissions import has_permission, permission_denied, require, visible_project_ids
-from app.modules.audit.service import record
+from app.modules.audit.service import name_of, record
 from app.modules.deployments import service as deployments
 from app.modules.deployments.models import Deployment, DeploymentCheck, Service, ServiceProject
 from app.modules.identity.models import User
@@ -218,8 +218,11 @@ async def delete_service(service_id: int, current_user: User = Depends(require("
     """Delete a service with its deployments and their checks."""
     service = _service_or_404(db, service_id)
     _ensure_controls(db, current_user, service)
+    name = service.name
     db.delete(service)
     db.commit()
+    record(db, "service.delete", f"{name_of(current_user)} deleted the service {name}", actor_id=current_user.id,
+           details={"service": name, "service_id": service_id})
     return {"deleted": service_id}
 
 

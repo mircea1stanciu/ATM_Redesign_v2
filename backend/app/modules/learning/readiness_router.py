@@ -9,21 +9,34 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
-from app.core.permissions import ROLE_RANK, TAGGED_ROLES, PermissionDenied, check_role_change, has_permission, require
+from app.core.permissions import (
+    ROLE_RANK,
+    TAGGED_ROLES,
+    PermissionDenied,
+    check_role_change,
+    has_permission,
+    require,
+    visible_project_ids,
+)
 from app.modules.audit.service import record
 from app.modules.identity.models import User, UserRole
 from app.modules.identity.users_router import ROLE_NAMES
 from app.modules.learning import service
-from app.modules.learning.progress_models import PracticeSubmission, ReadinessRequest
+from app.modules.learning.progress_models import AIUsage, PracticeSubmission, ReadinessRequest
 from app.modules.notifications.service import notify
-from app.modules.projects.models import AnalyticsRun
+from app.modules.projects.models import AnalyticsRun, Project
+from app.modules.projects.service import project_github_token
+from app.modules.reviews import github
 from app.modules.reviews.models import PullRequest, PullRequestReview
+from app.modules.settings.connections import get_json
 from app.modules.work.models import WorkItem
 
 router = APIRouter(prefix="/api/readiness", tags=["Learning"])
 
 # The ladder a promotion climbs (docs/redesign/04-roles-and-permissions.md, section 4.4).
 RANK = ROLE_RANK
+MAX_GITHUB_PROJECTS = 10
+MAX_PULLS_PER_PROJECT = 30  # of the person's most recently updated pull requests, each checked for an approval
 
 
 def _name(user: Optional[User]) -> Optional[str]:
@@ -64,7 +77,69 @@ def evidence(db: Session, person: User) -> dict:
         "runs": {"total": runs.count(), "passed": runs.filter(AnalyticsRun.status == "passed").count(),
                  "failed": runs.filter(AnalyticsRun.status.in_(("failed", "error"))).count(),
                  "last_at": last.created_at.isoformat() if last and last.created_at else None},
+        "ai": ai_evidence(db, person),
     }
+
+
+def ai_evidence(db: Session, person: User) -> dict:
+    """How the person used the AI since phase 22: assistant messages, tutor questions, AI reviews. Shown when they
+    have an AI connection (or used it before removing it)."""
+    counts = dict(db.query(AIUsage.kind, func.count()).filter(AIUsage.user_id == person.id)
+                  .group_by(AIUsage.kind).all())
+    last = db.query(func.max(AIUsage.created_at)).filter(AIUsage.user_id == person.id).scalar()
+    return {"connected": bool(get_json(person, "ai_assistant")),
+            **{kind: int(counts.get(kind, 0)) for kind in service.AI_KINDS},
+            "last_at": last.isoformat() if last else None}
+
+
+def _token_holder(db: Session, project: Project, person: User) -> Optional[User]:
+    """Whose GitHub token reads the project's pull requests: the project lead's, else the person's own."""
+    lead = db.query(User).filter(User.id == project.lead_user_id).first() if project.lead_user_id else None
+    return next((u for u in (lead, person) if u and project_github_token(u, project.id)), None)
+
+
+async def github_evidence(db: Session, person: User) -> dict:
+    """Pull requests of the person merged after an approval, and approved ones still open, asked from GitHub per
+    project (phase 22). The person's pull requests are those with their GitHub login and those they opened in ATM."""
+    from app.modules.reviews.router import github_login
+
+    visible = visible_project_ids(db, person)
+    query = db.query(Project).filter(Project.is_archived.isnot(True), Project.github_repo_url.isnot(None))
+    if visible is not None:
+        query = query.filter(Project.id.in_(visible))
+    out: dict = {"merged_after_review": 0, "approved_not_merged": 0, "merged_without_review": 0, "projects": [],
+                 "errors": []}
+    for project in query.order_by(Project.name).limit(MAX_GITHUB_PROJECTS).all():
+        if not (project.github_repo_url or "").strip():
+            continue
+        holder = _token_holder(db, project, person)
+        if not holder:
+            out["errors"].append({"project": project.name, "detail": "Neither the lead nor the person has a GitHub "
+                                                                      "token for this project."})
+            continue
+        try:
+            repo = github.repo_for(project, holder)
+            login = await github_login(github.repo_for(project, person)) if project_github_token(person, project.id) \
+                else ""
+            opened = {n for (n,) in db.query(PullRequest.number).filter(PullRequest.project_id == project.id,
+                                                                       PullRequest.author_id == person.id)}
+            pulls = await github.call(repo, "GET", "/pulls", params={"state": "all", "sort": "updated",
+                                                                    "direction": "desc", "per_page": 100})
+            mine = [pr for pr in pulls or []
+                    if (login and (pr.get("user") or {}).get("login") == login) or pr.get("number") in opened]
+            for pr in mine[:MAX_PULLS_PER_PROJECT]:
+                author = (pr.get("user") or {}).get("login")
+                reviews = await github.pages(repo, f"/pulls/{pr['number']}/reviews", limit=100)
+                approved = any(r.get("state") == "APPROVED" and (r.get("user") or {}).get("login") != author
+                               for r in reviews)
+                if pr.get("merged_at"):
+                    out["merged_after_review" if approved else "merged_without_review"] += 1
+                elif approved and pr.get("state") == "open":
+                    out["approved_not_merged"] += 1
+            out["projects"].append(project.name)
+        except HTTPException as exc:
+            out["errors"].append({"project": project.name, "detail": str(exc.detail)})
+    return out
 
 
 def _request_response(db: Session, item: ReadinessRequest) -> dict:
@@ -108,7 +183,7 @@ async def readiness_of(user_id: int, current_user: User = Depends(require("learn
                .order_by(ReadinessRequest.requested_at.desc()).all())
     return {
         "user": {"id": person.id, "name": _name(person), "role": person.role.value},
-        "evidence": evidence(db, person),
+        "evidence": {**evidence(db, person), "github": await github_evidence(db, person)},
         "open_request": next((_request_response(db, r) for r in history if r.status == "open"), None),
         "history": [_request_response(db, r) for r in history if r.status != "open"],
         "can_request": person.role in service.LEARNER_ROLES and _open_request(db, person.id) is None,

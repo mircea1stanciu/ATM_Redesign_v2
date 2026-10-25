@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.deps import get_current_user
+from app.modules.audit.service import record_change
 from app.modules.identity.models import APIToken, LoginHistory, NotificationPreference, User, UserSession
 from app.modules.settings.connections import set_secret, settings_with_secrets, store_settings
 
@@ -551,6 +552,10 @@ async def update_confluence_settings(
     db.add(current_user)
     db.commit()
     db.refresh(current_user)
+    connection = [f for f in ("confluence_token", "confluence_mcp_base_url") if getattr(payload, f) is not None]
+    if connection:  # choosing a space or a release page is not audited
+        record_change(db, current_user, "settings.connection", "their Confluence connection", connection,
+                      details={"kind": "Confluence"})
     return await get_confluence_settings(current_user=current_user, db=db)
 
 

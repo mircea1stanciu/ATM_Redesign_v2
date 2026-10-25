@@ -18,9 +18,27 @@ interface AuditItem {
 const ACTION_LABELS: Record<string, string> = {
   promotion: 'Promotion', 'readiness.not_yet': 'Readiness: not yet', 'role.change': 'Role change',
   'report.publish': 'Report published', 'deployment.webhook': 'Deployment webhook',
+  // phase 22: sign-ins, settings changes and deletions
+  sign_in: 'Sign-in', 'sign_in.failed': 'Failed sign-in',
+  'settings.connection': 'Connection changed', 'settings.ai': 'AI settings changed', 'settings.project': 'Project settings changed',
+  'settings.system': 'System settings changed',
+  'project.delete': 'Project deleted', 'suite.delete': 'Suite deleted', 'user.delete': 'User deleted', 'service.delete': 'Service deleted',
+  'hint.delete': 'Hint deleted', 'path.delete': 'Learning path deleted', 'report.delete': 'Report deleted',
+  'report.share.revoke': 'Share link revoked', 'service_account.set': 'Service account set', 'service_account.remove': 'Service account removed',
 }
 
-/** Admin › Audit: promotions, role changes, report publications and deployment webhooks (backend modules/audit). */
+/** What the Note column shows: the decision note, the settings that changed, or where a sign-in came from. */
+function noteOf(details: Record<string, unknown>): string {
+  if (typeof details.note === 'string') return details.note
+  if (Array.isArray(details.fields)) return `Changed: ${details.fields.join(', ')}`
+  if (typeof details.ip === 'string') return `From ${details.ip}`
+  return ''
+}
+
+/**
+ * Admin › Audit: promotions, role changes, report publications, deployment webhooks and, since phase 22, sign-ins
+ * (and failed attempts), settings changes and deletions (backend modules/audit).
+ */
 export default function AuditPage() {
   const [params, setParams] = useSearchParams()
   const action = params.get('action') ?? ''
@@ -55,7 +73,7 @@ export default function AuditPage() {
                   <td className="whitespace-nowrap px-4 py-2 text-xs text-fg-muted">{new Date(`${item.created_at}Z`).toLocaleString()}</td>
                   <td className="px-2 py-2 text-xs font-semibold text-fg">{ACTION_LABELS[item.action] ?? item.action}</td>
                   <td className="px-2 py-2 text-fg">{item.summary}{item.project ? <span className="text-fg-muted"> · {item.project}</span> : null}</td>
-                  <td className="px-4 py-2 text-xs text-fg-muted">{typeof item.details.note === 'string' ? item.details.note : ''}</td>
+                  <td className="px-4 py-2 text-xs text-fg-muted">{noteOf(item.details)}</td>
                 </tr>
               ))}
             </tbody>

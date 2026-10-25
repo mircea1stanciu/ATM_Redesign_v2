@@ -81,6 +81,15 @@ export interface Readiness {
     work_items: { done: number; in_review: number; in_progress: number; todo: number }
     pull_requests: { opened: number; approved: number }
     runs: { total: number; passed: number; failed: number; last_at: string | null }
+    /** Phase 22: uses of the AI since then, and pull requests merged after review, asked from GitHub. */
+    ai: { connected: boolean; assistant: number; tutor: number; review: number; last_at: string | null }
+    github: {
+      merged_after_review: number
+      approved_not_merged: number
+      merged_without_review: number
+      projects: string[]
+      errors: { project: string; detail: string }[]
+    }
   }
   open_request: ReadinessRequest | null
   history: ReadinessRequest[]

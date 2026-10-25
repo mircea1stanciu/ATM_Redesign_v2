@@ -427,6 +427,7 @@ async def ai_review(project_id: int, number: int,
                     current_user: User = Depends(require("pr.review", project_from="project_id")),
                     db: Session = Depends(get_db)):
     """Suggested line comments from the user's AI assistant; nothing is posted until the reviewer picks them."""
+    from app.modules.learning.service import count_ai_use
     from app.modules.workspace.assistant_router import _active_config
     from app.services import ai_provider_service as providers
 
@@ -454,6 +455,7 @@ async def ai_review(project_id: int, number: int,
             suggestions.append({"path": path, "line": line, "side": "RIGHT", "body": body[:2000]})
         else:
             dropped += 1  # not on a line of the diff: GitHub would refuse it
+    count_ai_use(db, current_user, "review", project.id)
     return {"suggestions": suggestions[:MAX_AI_SUGGESTIONS], "dropped": dropped}
 
 

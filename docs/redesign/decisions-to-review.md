@@ -201,3 +201,14 @@ own judgement calls at the end of this file.
 | Any active Senior can be chosen as a mentor | Only Seniors of the lead's projects | `list_mentors`, `assign_mentor` |
 | A Lead keeps mentoring their people even when a Senior is assigned | The Senior replaces the lead as mentor | `service.mentees` |
 | Deleting a path keeps the learners' lesson progress | Delete the progress of lessons only that path had | `delete_path` |
+
+## Phase 22: readiness and audit (from the review)
+
+| Decision | Alternative | To reverse |
+|---|---|---|
+| GitHub is read with the lead's token, or the person's own when the lead has none | Only the lead's token | `_token_holder` in `readiness_router.py` |
+| Up to 10 projects and 30 pull requests per project are checked, each time the readiness page opens | Check more, or cache the answer | `MAX_GITHUB_PROJECTS`, `MAX_PULLS_PER_PROJECT` |
+| "Merged after review" needs an approval by someone other than the author | Any review | `github_evidence` |
+| AI use counts start now; earlier use is not known | Estimate from saved AI conversations | `ai_usage` |
+| Choosing a Jira project or a Confluence space or release page is not audited (only tokens and base URLs) | Audit every settings save | `_record_connection`, `update_confluence_settings` |
+| Failed sign-ins keep the name typed and the address | Keep only that an attempt failed | `_record_failed_sign_in` |

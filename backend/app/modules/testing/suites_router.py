@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.permissions import can_manage_suite, ensure, permission_denied, require
+from app.modules.audit.service import name_of, record
 from app.modules.identity.models import User
 from app.modules.projects.checkouts import checkout_path
 from app.modules.projects.models import AllureReport, AnalyticsRun, AnalyticsSuite, TestEnvironment
@@ -232,8 +233,11 @@ async def delete_suite(suite_id: int, current_user: User = Depends(require("suit
     if suite.archived_at is None:
         raise HTTPException(status_code=400, detail="Archive the suite first; only archived suites are deleted.")
     deleted_runs = db.query(AnalyticsRun).filter(AnalyticsRun.suite_id == suite.id).delete()
+    name, project_id = suite.name, suite.project_id
     db.delete(suite)
     db.commit()
+    record(db, "suite.delete", f"{name_of(current_user)} deleted the suite {name}", actor_id=current_user.id,
+           project_id=project_id, details={"suite": name, "suite_id": suite_id, "deleted_runs": deleted_runs})
     return {"deleted": True, "deleted_runs": deleted_runs}
 
 
