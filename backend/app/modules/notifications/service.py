@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.permissions import LEAD, SENIOR, TRAINEE, USER
 from app.modules.identity.models import User
+from app.modules.notifications import channels
 from app.modules.notifications.hub import hub
 from app.modules.notifications.models import Notification, NotificationSubscription
 from app.modules.projects.models import Project, ProjectMember
@@ -50,24 +51,40 @@ def reviewers(db: Session, project_id: int, author: User) -> list[int]:
 
 def subscription(db: Session, user_id: int) -> NotificationSubscription:
     found = db.query(NotificationSubscription).filter(NotificationSubscription.user_id == user_id).first()
-    return found or NotificationSubscription(user_id=user_id, muted_kinds=[], muted_project_ids=[])
+    return found or NotificationSubscription(user_id=user_id, muted_kinds=[], muted_project_ids=[], email_kinds=[],
+                                             teams_kinds=[])
+
+
+def channels_for(db: Session, user_id: int, kind: str, project_id: Optional[int]) -> list[str]:
+    """Where the user wants this kind (from this project): "app" (ATM), "email", "teams". A muted project mutes all."""
+    choice = subscription(db, user_id)
+    if project_id is not None and project_id in (choice.muted_project_ids or []):
+        return []
+    wanted = [] if kind in (choice.muted_kinds or []) else ["app"]
+    if kind in (choice.email_kinds or []):
+        wanted.append("email")
+    if kind in (choice.teams_kinds or []) and choice.teams_webhook:
+        wanted.append("teams")
+    return wanted
 
 
 def wants(db: Session, user_id: int, kind: str, project_id: Optional[int]) -> bool:
-    choice = subscription(db, user_id)
-    if kind in (choice.muted_kinds or []):
-        return False
-    return project_id is None or project_id not in (choice.muted_project_ids or [])
+    return "app" in channels_for(db, user_id, kind, project_id)
 
 
 def notify(db: Session, user_ids: Iterable[int], kind: str, title: str, body: str = "", link: Optional[str] = None,
            project_id: Optional[int] = None, deployment_id: Optional[int] = None) -> list[Notification]:
-    """Store one notification per user who wants this kind (and project), commit, and push it to their open tabs."""
-    created = [
-        Notification(user_id=user_id, kind=kind, title=title[:255], body=body[:1000] or None, link=link,
-                     project_id=project_id, deployment_id=deployment_id)
-        for user_id in dict.fromkeys(user_ids) if wants(db, user_id, kind, project_id)
-    ]
+    """Store one notification per user who wants this kind (and project), commit, and push it to their open tabs.
+    Those who chose e-mail or Teams for this kind get it there too, sent in the background (phase 20)."""
+    created, outside = [], []
+    for user_id in dict.fromkeys(user_ids):
+        wanted = channels_for(db, user_id, kind, project_id)
+        if "app" in wanted:
+            created.append(Notification(user_id=user_id, kind=kind, title=title[:255], body=body[:1000] or None,
+                                        link=link, project_id=project_id, deployment_id=deployment_id))
+        outside += [channels.Delivery(channel, user_id, title[:255], body[:1000], link)
+                    for channel in wanted if channel != "app"]
+    channels.dispatch(outside)
     if not created:
         return []
     db.add_all(created)

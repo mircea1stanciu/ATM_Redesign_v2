@@ -27,6 +27,11 @@ export function fakeServicesUrl() {
   return `http://127.0.0.1:${process.env.E2E_FAKE_PORT}`
 }
 
+/** Port of the fake SMTP server (e-mail notifications land there). */
+export function fakeSmtpPort() {
+  return Number(process.env.E2E_FAKE_SMTP_PORT)
+}
+
 /** Username and password of the seeded user for a role. */
 export function credentials(role: Role) {
   return { username: readSessions()[role].username, password: process.env.E2E_PASSWORD! }

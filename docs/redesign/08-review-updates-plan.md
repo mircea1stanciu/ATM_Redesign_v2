@@ -176,6 +176,23 @@ Decisions kept as they are need no work and are not repeated here.
     webhook), chosen per notification kind in /notifications. (#20)
 - **UI tests:** reviewers requested on the fake GitHub; a line comment reaches GitHub before the review is submitted;
   an e-mail (fake SMTP) and a personal Teams post for a deployment.
+- **Decided while building phase 20:**
+  - Reviewers are chosen in "Open a pull request" (Workspace) and, for an open pull request, with "Request reviewers"
+    on its page (whoever may open pull requests). The list is the repository's collaborators (not yourself) and, for
+    an organisation's repository, its teams. If GitHub refuses the reviewers, the pull request stays open and the
+    toast says why.
+  - Line comments go to GitHub at once ("Post comment"); picked AI suggestions are posted one by one ("Post N
+    comments"). The review panel only sends the summary: Comment and Request changes need one, Approve does not. The
+    comments posted since a reviewer's last review are counted into that review (`pr_line_comments`).
+  - E-mail and Teams are extra channels per notification kind, off by default, next to the ATM switch: you can get a
+    kind by e-mail only. A muted project mutes every channel. Messages are sent in a background thread; a failure
+    is logged and never blocks the notification in ATM.
+  - The mail server is set by Super Admins in a new Admin › E-mail tab (`settings.system`): server, port, STARTTLS /
+    SSL / none, optional login (password encrypted), sender, and "Send me a test e-mail". E-mails go to each
+    person's account address.
+  - The personal Teams webhook is set in Notifications, with "Send a test". Links in e-mails and Teams messages need
+    `ATM_PUBLIC_URL`; without it they are left out.
+  - Migration `0017`: the channels on `notification_subscriptions`, `mail_server`, `pr_line_comments`.
 
 ### Phase 21: `feature/phase_21_learning_community`
 - **Delivers:**

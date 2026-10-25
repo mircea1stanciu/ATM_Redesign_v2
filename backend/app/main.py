@@ -23,6 +23,7 @@ from app.modules.identity.service import get_default_organization, seed_dev_admi
 from app.modules.identity.users_router import router as users_router
 from app.modules.learning.readiness_router import router as readiness_router
 from app.modules.learning.router import router as learning_router
+from app.modules.notifications.mail_router import router as mail_server_router
 from app.modules.notifications.router import router as notifications_router
 from app.modules.notifications.router import socket_router as notifications_socket_router
 from app.modules.projects.router import router as projects_router
@@ -113,6 +114,7 @@ app.include_router(zephyr_planner_router, prefix="/api/zephyr-planner", tags=["W
 app.include_router(work_router)
 app.include_router(deployments_router)
 app.include_router(notifications_router)
+app.include_router(mail_server_router)
 app.include_router(notifications_socket_router)
 app.include_router(reviews_router)
 app.include_router(learning_router)

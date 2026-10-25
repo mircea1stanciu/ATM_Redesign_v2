@@ -15,13 +15,14 @@ from app.modules.notifications.service import notify, reviewers
 from app.modules.projects.models import AnalyticsRun, AnalyticsSuite, Project
 from app.modules.reporting import allure
 from app.modules.reviews import github
-from app.modules.reviews.models import PullRequest, PullRequestReview
+from app.modules.reviews.models import PullRequest, PullRequestComment, PullRequestReview
 from app.modules.work.models import WorkItem
 
 router = APIRouter(prefix="/api/reviews", tags=["Reviews"])
 
 MAX_AI_DIFF_CHARS = 60_000
 MAX_AI_SUGGESTIONS = 10
+MAX_REVIEWER_OPTIONS = 300
 # GitHub login of each token (tokens are per user and project); filled on first use.
 _logins: dict[str, str] = {}
 
@@ -45,6 +46,10 @@ def _person(item: Optional[dict]) -> str:
     return str((item or {}).get("login") or "ghost")
 
 
+def _team(item: Optional[dict]) -> str:
+    return str((item or {}).get("slug") or (item or {}).get("name") or "")
+
+
 def _summary(project: Project, pr: dict, waiting: bool) -> dict:
     return {
         "project_id": project.id,
@@ -59,6 +64,7 @@ def _summary(project: Project, pr: dict, waiting: bool) -> dict:
         "created_at": pr.get("created_at"),
         "updated_at": pr.get("updated_at"),
         "requested_reviewers": [_person(r) for r in pr.get("requested_reviewers") or []],
+        "requested_teams": [_team(t) for t in pr.get("requested_teams") or []],
         "waiting_for_me": waiting,
     }
 
@@ -186,6 +192,8 @@ async def get_pull(project_id: int, number: int,
         "base": (pr.get("base") or {}).get("ref") or "",
         "head_sha": head.get("sha"),
         "created_at": pr.get("created_at"),
+        "requested_reviewers": [_person(r) for r in pr.get("requested_reviewers") or []],
+        "requested_teams": [_team(t) for t in pr.get("requested_teams") or []],
         "files": [{"filename": f.get("filename"), "previous_filename": f.get("previous_filename"),
                    "status": f.get("status"), "additions": f.get("additions", 0), "deletions": f.get("deletions", 0),
                    "patch": f.get("patch")} for f in files],
@@ -198,6 +206,7 @@ async def get_pull(project_id: int, number: int,
         if item else None,
         "me": {"login": login, "is_author": bool(login) and login == author,
                "can_comment": has_permission(current_user, "pr.comment"),
+               "can_request_reviewers": has_permission(current_user, "pr.create"),
                "can_review": has_permission(current_user, "pr.review")},
     }
 
@@ -228,6 +237,7 @@ class LineComment(BaseModel):
 class ReviewPayload(BaseModel):
     event: Literal["COMMENT", "APPROVE", "REQUEST_CHANGES"]
     body: str = Field(default="", max_length=65_000)
+    # Phase 20: line comments are posted at once (POST .../line-comments); this list stays for API clients.
     comments: list[LineComment] = Field(default_factory=list, max_length=100)
 
 
@@ -244,11 +254,49 @@ def _notify_author(db: Session, project: Project, number: int, title: str, revie
            f"{project.name} · #{number}", f"/reviews/{project.id}/{number}", project_id=project.id)
 
 
+async def _check_lines(repo: github.Repo, number: int, comments: list[LineComment]) -> None:
+    """GitHub accepts line comments only on lines shown in the pull request's diff: say which one is not."""
+    patches = {f.get("filename"): f.get("patch") for f in await github.pages(repo, f"/pulls/{number}/files")}
+    for comment in comments:
+        if comment.path not in patches:
+            raise HTTPException(status_code=400, detail=f"{comment.path} is not changed in this pull request.")
+        allowed = github.commentable_lines(patches[comment.path])
+        for line in filter(None, (comment.start_line, comment.line)):
+            if (comment.side, line) not in allowed:
+                raise HTTPException(status_code=400, detail=f"Line {line} of {comment.path} is not part of the diff.")
+
+
+def _github_line_comment(comment: LineComment) -> dict:
+    return {k: v for k, v in {"path": comment.path, "line": comment.line, "side": comment.side,
+                              "start_line": comment.start_line,
+                              "start_side": comment.side if comment.start_line else None,
+                              "body": comment.body}.items() if v is not None}
+
+
+@router.post("/projects/{project_id}/pulls/{number}/line-comments", status_code=201)
+async def add_line_comment(project_id: int, number: int, payload: LineComment,
+                           current_user: User = Depends(require("pr.comment", project_from="project_id")),
+                           db: Session = Depends(get_db)):
+    """A comment on a line of the diff, posted to GitHub at once (phase 20); the review summary comes separately."""
+    project = _project(db, project_id)
+    repo = github.repo_for(project, current_user)
+    pr = await github.call(repo, "GET", f"/pulls/{number}")
+    await _check_lines(repo, number, [payload])
+    created = await github.call(repo, "POST", f"/pulls/{number}/comments",
+                                json={"commit_id": (pr.get("head") or {}).get("sha"),
+                                      **_github_line_comment(payload)})
+    db.add(PullRequestComment(project_id=project.id, number=number, author_id=current_user.id,
+                              github_comment_id=(created or {}).get("id"), suggested_by_ai=payload.suggested_by_ai))
+    db.commit()
+    return _comment(created or {})
+
+
 @router.post("/projects/{project_id}/pulls/{number}/reviews", status_code=201)
 async def submit_review(project_id: int, number: int, payload: ReviewPayload,
                         current_user: User = Depends(require("pr.comment", project_from="project_id")),
                         db: Session = Depends(get_db)):
-    """Submit a review: line comments plus Comment, or (Seniors and leads) Approve / Request changes."""
+    """Submit a review: Comment, or (Seniors and leads) Approve / Request changes. The line comments the reviewer
+    posted since their last review count into this one."""
     if payload.event != "COMMENT":
         ensure(db, current_user, "pr.review", project_id)
     if payload.event in ("COMMENT", "REQUEST_CHANGES") and not payload.body.strip() and not payload.comments:
@@ -257,29 +305,79 @@ async def submit_review(project_id: int, number: int, payload: ReviewPayload,
     repo = github.repo_for(project, current_user)
     pr = await github.call(repo, "GET", f"/pulls/{number}")
     if payload.comments:
-        patches = {f.get("filename"): f.get("patch") for f in await github.pages(repo, f"/pulls/{number}/files")}
-        for comment in payload.comments:
-            if comment.path not in patches:
-                raise HTTPException(status_code=400, detail=f"{comment.path} is not changed in this pull request.")
-            allowed = github.commentable_lines(patches[comment.path])
-            for line in filter(None, (comment.start_line, comment.line)):
-                if (comment.side, line) not in allowed:
-                    raise HTTPException(status_code=400,
-                                        detail=f"Line {line} of {comment.path} is not part of the diff.")
+        await _check_lines(repo, number, payload.comments)
     body: dict = {"event": payload.event, "commit_id": (pr.get("head") or {}).get("sha"), "body": payload.body.strip(),
-                  "comments": [{k: v for k, v in {"path": c.path, "line": c.line, "side": c.side,
-                                                  "start_line": c.start_line,
-                                                  "start_side": c.side if c.start_line else None,
-                                                  "body": c.body}.items() if v is not None}
-                               for c in payload.comments]}
+                  "comments": [_github_line_comment(c) for c in payload.comments]}
     created = await github.call(repo, "POST", f"/pulls/{number}/reviews", json=body)
-    db.add(PullRequestReview(project_id=project.id, number=number, reviewer_id=current_user.id, event=payload.event,
-                             comments=len(payload.comments),
-                             ai_suggestions=sum(1 for c in payload.comments if c.suggested_by_ai),
-                             github_review_id=(created or {}).get("id")))
+    posted = db.query(PullRequestComment).filter(PullRequestComment.project_id == project.id,
+                                                 PullRequestComment.number == number,
+                                                 PullRequestComment.author_id == current_user.id,
+                                                 PullRequestComment.review_id.is_(None)).all()
+    review = PullRequestReview(project_id=project.id, number=number, reviewer_id=current_user.id, event=payload.event,
+                               comments=len(payload.comments) + len(posted),
+                               ai_suggestions=sum(1 for c in payload.comments if c.suggested_by_ai)
+                               + sum(1 for c in posted if c.suggested_by_ai),
+                               github_review_id=(created or {}).get("id"))
+    db.add(review)
+    db.flush()
+    for comment in posted:
+        comment.review_id = review.id
     db.commit()
     _notify_author(db, project, number, pr.get("title") or "", current_user, payload.event)
     return {"id": (created or {}).get("id"), "state": (created or {}).get("state")}
+
+
+@router.get("/projects/{project_id}/reviewer-options")
+async def reviewer_options(project_id: int,
+                           current_user: User = Depends(require("pr.create", project_from="project_id")),
+                           db: Session = Depends(get_db)):
+    """Whom a pull request can ask for a review on GitHub: the repository's collaborators (not oneself) and the
+    organisation's teams with access to it. A user-owned repository has no teams."""
+    repo = github.repo_for(_project(db, project_id), current_user)
+    login = await github_login(repo)
+    try:
+        people = await github.pages(repo, "/collaborators", limit=MAX_REVIEWER_OPTIONS)
+        people_error = None
+    except HTTPException as exc:
+        people, people_error = [], str(exc.detail)
+    teams = await _optional(repo, "/teams")
+    return {
+        "people": [{"login": _person(p), "avatar_url": p.get("avatar_url")}
+                   for p in people if _person(p) != login][:MAX_REVIEWER_OPTIONS],
+        "teams": [{"slug": _team(t), "name": t.get("name") or _team(t)} for t in teams if _team(t)],
+        "me": login,
+        "people_error": people_error,
+    }
+
+
+class ReviewerRequest(BaseModel):
+    reviewers: list[str] = Field(default_factory=list, max_length=15)
+    team_reviewers: list[str] = Field(default_factory=list, max_length=15)
+
+
+async def request_reviewers(repo: github.Repo, number: int, people: list[str], teams: list[str]) -> list[str]:
+    """Ask GitHub for the reviews; returns the people GitHub now lists as requested."""
+    people = [p.strip() for p in people if p.strip()]
+    teams = [t.strip() for t in teams if t.strip()]
+    if not people and not teams:
+        return []
+    answer = await github.call(repo, "POST", f"/pulls/{number}/requested_reviewers",
+                               json={"reviewers": people, "team_reviewers": teams})
+    return [_person(r) for r in (answer or {}).get("requested_reviewers") or []]
+
+
+@router.post("/projects/{project_id}/pulls/{number}/requested-reviewers")
+async def add_reviewers(project_id: int, number: int, payload: ReviewerRequest,
+                        current_user: User = Depends(require("pr.create", project_from="project_id")),
+                        db: Session = Depends(get_db)):
+    """Ask more people or teams for a review of an open pull request (on GitHub)."""
+    if not payload.reviewers and not payload.team_reviewers:
+        raise HTTPException(status_code=400, detail="Choose at least one reviewer.")
+    repo = github.repo_for(_project(db, project_id), current_user)
+    await request_reviewers(repo, number, payload.reviewers, payload.team_reviewers)
+    pr = await github.call(repo, "GET", f"/pulls/{number}")
+    return {"requested_reviewers": [_person(r) for r in pr.get("requested_reviewers") or []],
+            "requested_teams": [_team(t) for t in pr.get("requested_teams") or []]}
 
 
 AI_SYSTEM = (

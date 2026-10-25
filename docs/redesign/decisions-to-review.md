@@ -180,3 +180,13 @@ own judgement calls at the end of this file.
 | Auto-publish uses the token of whoever switched it on, and stops if they may no longer publish | A shared Confluence service account | `auto_publish.after_run` |
 | Deleting a report keeps the run and its results | Delete the run too | `delete_report` |
 
+## Phase 20: reviews and notifications (from the review)
+
+| Decision | Alternative | To reverse |
+|---|---|---|
+| Reviewers can also be requested later, from the pull request's page, by whoever may open pull requests | Only when opening the pull request | `add_reviewers` in `reviews/router.py` |
+| Comment and Request changes need a summary; Approve does not | Allow an empty Comment when line comments were posted | `submit_review` |
+| E-mail and Teams are off by default for every kind; each person switches them on | E-mail on by default for review requests | `channels_for` in `notifications/service.py` |
+| A kind can go by e-mail or Teams even when it is switched off in ATM | E-mail and Teams only for kinds that are on in ATM | `channels_for` |
+| The mail server is set by Super Admins only (`settings.system`) | Leads too | `mail_router.py` |
+| Personal Teams webhooks accept any http(s) URL, like the project webhook | Only `*.logic.azure.com` / `*.powerplatform.com` hosts | `set_teams_webhook` |

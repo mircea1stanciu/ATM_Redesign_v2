@@ -106,10 +106,13 @@ test('new branch, commit & push to the repository, open a pull request', async (
   await toolbar.getByRole('button', { name: 'Open PR' }).click()
   const pr = page.getByRole('dialog', { name: 'Open a pull request' })
   await pr.getByLabel('Title').fill('Login error test asserts the message')
+  await pr.getByRole('checkbox', { name: 'e2e-senior', exact: true }).check() // asked for a review on GitHub (phase 20)
   await pr.getByRole('button', { name: 'Open pull request' }).click()
   await expect(pr).toBeHidden({ timeout: GIT_TIMEOUT })
-  const { pullRequests } = await (await request.get(`${fakeServicesUrl()}/__e2e/requests`)).json()
-  expect(pullRequests).toContainEqual(expect.objectContaining({ head: BRANCH, base: 'main', title: 'Login error test asserts the message' }))
+  const { pullRequests, reviewerRequests } = await (await request.get(`${fakeServicesUrl()}/__e2e/requests`)).json()
+  const opened = pullRequests.find((p: { head: string }) => p.head === BRANCH)
+  expect(opened).toMatchObject({ base: 'main', title: 'Login error test asserts the message' })
+  expect(reviewerRequests).toContainEqual({ number: opened.number, login: 'e2e-bot', reviewers: ['e2e-senior'], teams: [] })
 
   // Trainees push only the branches they started in ATM, never main.
   const pushMain = await request.post(`/api/projects/${projectId}/local/push`, {

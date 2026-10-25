@@ -14,7 +14,7 @@ from app.modules.notifications.models import Notification
 from app.modules.projects.models import AnalyticsRun, AnalyticsSuite, Project, ProjectMember
 from app.modules.projects.service import set_project_github_token
 from app.modules.reviews import github
-from app.modules.reviews.models import PullRequestReview
+from app.modules.reviews.models import PullRequestComment, PullRequestReview
 from app.modules.reviews.router import record_opened
 from app.modules.work.models import WorkItem
 from app.services import ai_provider_service
@@ -38,7 +38,15 @@ class FakeGitHub:
         if path == "/user":
             return httpx.Response(200, json={"login": token.removeprefix("tok-") + "-gh"})
         if request.method == "POST":
-            self.writes.append({"path": path, "body": json.loads(request.content), "token": token})
+            body = json.loads(request.content)
+            self.writes.append({"path": path, "body": body, "token": token})
+            if path.endswith("/requested_reviewers"):
+                self.pr["requested_reviewers"] += [{"login": login} for login in body["reviewers"]]
+                self.pr["requested_teams"] = [{"slug": slug, "name": slug.upper()} for slug in body["team_reviewers"]]
+                return httpx.Response(201, json=self.pr)
+            if path.endswith("/pulls/7/comments"):
+                return httpx.Response(201, json={"id": 77, "user": {"login": token.removeprefix("tok-") + "-gh"},
+                                                 **{k: body[k] for k in ("path", "line", "side", "body")}})
             return httpx.Response(201, json={"id": 99, "state": "APPROVED"})
         routes = {
             f"{repo}/pulls": [self.pr],
@@ -52,6 +60,8 @@ class FakeGitHub:
                                            "created_at": "2026-10-24T09:10:00Z"}],
             f"{repo}/pulls/7/reviews": [{"id": 8, "state": "COMMENTED", "body": "Started", "user": {"login": "lead-gh"},
                                          "submitted_at": "2026-10-24T09:20:00Z"}],
+            f"{repo}/collaborators": [{"login": "senior-gh"}, {"login": "user-gh"}, {"login": "lead-gh"}],
+            f"{repo}/teams": [{"slug": "qa", "name": "QA"}],
             f"{repo}/commits/abc123/check-runs": {"check_runs": [{"name": "ci", "status": "completed",
                                                                  "conclusion": "success", "html_url": "https://ci"}]},
         }
@@ -141,7 +151,8 @@ def test_pull_request_view(client, setup):
     assert [c["body"] for c in pr["conversation"]] == ["Please look", "Started"]  # by time
     assert pr["checks"] == [{"name": "ci", "status": "completed", "conclusion": "success", "url": "https://ci"}]
     assert pr["runs"][0]["status"] == "passed" and pr["work_item"]["key"] == "E2E-9"
-    assert pr["me"] == {"login": "viewer-gh", "is_author": False, "can_comment": False, "can_review": False}
+    assert pr["me"] == {"login": "viewer-gh", "is_author": False, "can_comment": False, "can_review": False,
+                        "can_request_reviewers": False}
     assert client.get(setup["base"], headers=setup["senior"]["headers"]).json()["me"]["can_review"] is True
 
 
@@ -204,3 +215,44 @@ def test_ai_suggestions_keep_only_lines_of_the_diff(client, setup, monkeypatch):
     answers[0] = "I think it is fine."
     assert client.post(f"{setup['base']}/ai-review", headers=senior).status_code == 502
     assert client.post(f"{setup['base']}/ai-review", headers=setup["user"]["headers"]).status_code == 403
+
+
+def test_a_line_comment_is_posted_at_once_and_counted_in_the_next_review(client, setup, gh):
+    senior = setup["senior"]["headers"]
+    line = {"path": "tests/test_checkout.py", "line": 4, "side": "RIGHT", "body": "Check the total too.",
+            "suggested_by_ai": True}
+    posted = client.post(f"{setup['base']}/line-comments", headers=senior, json=line)
+    assert posted.status_code == 201, posted.text
+    assert posted.json()["author"] == "senior-gh" and posted.json()["line"] == 4
+    assert gh.writes[-1] == {"path": "/repos/acme/shop/pulls/7/comments", "token": "tok-senior", "body": {
+        "commit_id": "abc123", "path": "tests/test_checkout.py", "line": 4, "side": "RIGHT",
+        "body": "Check the total too."}}
+    assert not any(w["path"].endswith("/reviews") for w in gh.writes)  # nothing waits for the review
+    off_diff = client.post(f"{setup['base']}/line-comments", headers=senior, json={**line, "line": 40})
+    assert off_diff.status_code == 400 and "not part of the diff" in off_diff.json()["detail"]
+    assert client.post(f"{setup['base']}/line-comments", headers=setup["viewer"]["headers"],
+                       json=line).status_code == 403
+
+    assert client.post(f"{setup['base']}/reviews", headers=senior, json={"event": "APPROVE"}).status_code == 201
+    assert gh.writes[-1]["body"]["comments"] == []
+    with SessionLocal() as db:
+        review = db.query(PullRequestReview).filter_by(project_id=setup["project_id"], number=7).one()
+        assert (review.comments, review.ai_suggestions) == (1, 1)
+        assert db.query(PullRequestComment).filter_by(project_id=setup["project_id"]).one().review_id == review.id
+
+
+def test_reviewers_are_chosen_from_github(client, setup, gh):
+    user = setup["user"]["headers"]
+    options = client.get(f"/api/reviews/projects/{setup['project_id']}/reviewer-options", headers=user).json()
+    assert [p["login"] for p in options["people"]] == ["senior-gh", "lead-gh"]  # not oneself
+    assert options["teams"] == [{"slug": "qa", "name": "QA"}] and options["me"] == "user-gh"
+    assert client.get(f"/api/reviews/projects/{setup['project_id']}/reviewer-options",
+                      headers=setup["viewer"]["headers"]).status_code == 403
+
+    asked = client.post(f"{setup['base']}/requested-reviewers", headers=user,
+                        json={"reviewers": ["lead-gh"], "team_reviewers": ["qa"]})
+    assert asked.status_code == 200, asked.text
+    assert gh.writes[-1] == {"path": "/repos/acme/shop/pulls/7/requested_reviewers", "token": "tok-user",
+                             "body": {"reviewers": ["lead-gh"], "team_reviewers": ["qa"]}}
+    assert asked.json() == {"requested_reviewers": ["senior-gh", "lead-gh"], "requested_teams": ["qa"]}
+    assert client.post(f"{setup['base']}/requested-reviewers", headers=user, json={}).status_code == 400

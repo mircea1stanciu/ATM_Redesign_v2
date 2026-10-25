@@ -1,4 +1,5 @@
 """The notification centre: the signed-in user's notifications, what they are subscribed to, and the live socket."""
+import asyncio
 from datetime import datetime
 from typing import Optional
 
@@ -6,11 +7,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSock
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.core.crypto import encrypt
 from app.core.db import SessionLocal, get_db
 from app.core.deps import get_current_user
 from app.core.permissions import visible_project_ids
 from app.core.security import decode_token, token_user_id
 from app.modules.identity.models import User
+from app.modules.notifications import channels
 from app.modules.notifications.hub import hub
 from app.modules.notifications.models import KINDS, Notification, NotificationSubscription
 from app.modules.notifications.service import notification_response, subscription
@@ -78,16 +81,30 @@ def _visible_projects(db: Session, user: User) -> list[Project]:
 def _subscriptions_response(db: Session, user: User) -> dict:
     choice = subscription(db, user.id)
     return {
-        "kinds": [{"kind": kind, "label": KIND_LABELS[kind], "on": kind not in (choice.muted_kinds or [])}
+        "kinds": [{"kind": kind, "label": KIND_LABELS[kind], "on": kind not in (choice.muted_kinds or []),
+                   "email": kind in (choice.email_kinds or []), "teams": kind in (choice.teams_kinds or [])}
                   for kind in KINDS],
         "projects": [{"id": p.id, "name": p.name, "on": p.id not in (choice.muted_project_ids or [])}
                      for p in _visible_projects(db, user)],
+        "channels": {"email_available": channels.mail_server(db) is not None, "email": user.email,
+                     "teams_webhook_set": bool(choice.teams_webhook)},
     }
 
 
 class SubscriptionsUpdate(BaseModel):
     muted_kinds: list[str]
     muted_project_ids: list[int]
+    email_kinds: Optional[list[str]] = None  # None keeps the current choice
+    teams_kinds: Optional[list[str]] = None
+
+
+def _own_subscription(db: Session, user: User) -> NotificationSubscription:
+    choice = db.query(NotificationSubscription).filter(NotificationSubscription.user_id == user.id).first()
+    if not choice:
+        choice = NotificationSubscription(user_id=user.id, muted_kinds=[], muted_project_ids=[], email_kinds=[],
+                                          teams_kinds=[])
+        db.add(choice)
+    return choice
 
 
 @router.get("/subscriptions")
@@ -98,17 +115,50 @@ async def get_subscriptions(current_user: User = Depends(get_current_user), db: 
 @router.put("/subscriptions")
 async def update_subscriptions(payload: SubscriptionsUpdate, current_user: User = Depends(get_current_user),
                                db: Session = Depends(get_db)):
-    unknown = sorted(set(payload.muted_kinds) - set(KINDS))
+    kinds = payload.muted_kinds + (payload.email_kinds or []) + (payload.teams_kinds or [])
+    unknown = sorted(set(kinds) - set(KINDS))
     if unknown:
         raise HTTPException(status_code=400, detail=f"Unknown notification kind: {', '.join(unknown)}.")
-    choice = db.query(NotificationSubscription).filter(NotificationSubscription.user_id == current_user.id).first()
-    if not choice:
-        choice = NotificationSubscription(user_id=current_user.id)
-        db.add(choice)
+    choice = _own_subscription(db, current_user)
     choice.muted_kinds = sorted(set(payload.muted_kinds))
     choice.muted_project_ids = sorted(set(payload.muted_project_ids))
+    if payload.email_kinds is not None:
+        choice.email_kinds = sorted(set(payload.email_kinds))
+    if payload.teams_kinds is not None:
+        choice.teams_kinds = sorted(set(payload.teams_kinds))
     db.commit()
     return _subscriptions_response(db, current_user)
+
+
+class TeamsWebhookUpdate(BaseModel):
+    url: Optional[str] = None  # empty or None removes it
+
+
+@router.put("/teams-webhook")
+async def set_teams_webhook(payload: TeamsWebhookUpdate, current_user: User = Depends(get_current_user),
+                            db: Session = Depends(get_db)):
+    """The user's own Teams workflow webhook ("When a Teams webhook request is received", posting to their chat)."""
+    url = (payload.url or "").strip()
+    if url and not url.startswith(("https://", "http://")):
+        raise HTTPException(status_code=400, detail="The Teams webhook is the URL of a Teams workflow webhook.")
+    choice = _own_subscription(db, current_user)
+    choice.teams_webhook = encrypt(url) if url else None
+    db.commit()
+    return _subscriptions_response(db, current_user)
+
+
+@router.post("/teams-webhook/test")
+async def test_teams_webhook(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    choice = subscription(db, current_user.id)
+    if not choice.teams_webhook:
+        raise HTTPException(status_code=400, detail="Set your Teams webhook first.")
+    try:
+        await asyncio.to_thread(channels.post_teams, choice.teams_webhook, "ATM test message",
+                                "Your ATM notifications can reach you in Teams.",
+                                channels.absolute_link("/notifications"))
+    except channels.DeliveryError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"sent": True}
 
 
 def _socket_user_id(token: Optional[str]) -> Optional[int]:

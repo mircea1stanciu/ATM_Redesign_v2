@@ -7,16 +7,19 @@
 //   /confluence/rest/api/...    Confluence: current user, spaces, page search and detail; report pages (create,
 //                               update, attachments)
 //   /models/...                 GitHub Models (the "GitHub Copilot" AI provider): catalog and chat completions
-//   /teams/hook                 a Microsoft Teams workflow webhook (deployment cards)
+//   /teams/hook                 a Microsoft Teams workflow webhook (deployment cards; personal hooks add ?for=…)
+//   SMTP on E2E_FAKE_SMTP_PORT   a mail server that keeps every message (e-mail notifications)
 //   /__e2e/requests             what ATM sent (tests inspect it); /__e2e/health for the harness
 //   POST /__e2e/pull-request    a pull request opened on GitHub outside ATM: a commit on a new branch of the bare repo
 import { execFileSync, spawn } from 'node:child_process'
 import { createServer } from 'node:http'
+import { createServer as createTcpServer } from 'node:net'
 import { join } from 'node:path'
 
 const port = Number(process.env.E2E_FAKE_PORT)
+const smtpPort = Number(process.env.E2E_FAKE_SMTP_PORT)
 const root = process.env.E2E_FAKE_ROOT
-if (!port || !root) {
+if (!port || !root || !smtpPort) {
   console.error('E2E_FAKE_PORT and E2E_FAKE_ROOT are set by playwright.config.ts')
   process.exit(1)
 }
@@ -25,11 +28,16 @@ const requests = []
 const pullRequests = []
 // Reviews ATM submitted to GitHub (event, body, line comments with path, line and side).
 const reviewWrites = []
+// Line comments ATM posted on their own (phase 20: at once, not with the review), and reviewer requests.
+const lineCommentWrites = []
+const reviewerRequests = []
+// E-mails received by the fake SMTP server: from, to, subject and the text.
+const emails = []
 // Comments, remote links and transitions ATM wrote to Jira, with their bodies.
 const jiraWrites = []
 // Report pages ATM created or updated in Confluence, and the attachments it uploaded.
 const confluenceWrites = []
-// Cards posted to the Teams workflow webhook (/teams/hook).
+// Cards posted to the Teams workflow webhook (/teams/hook), with the hook's query (personal hooks: ?for=<login>).
 const teamsPosts = []
 const reportPages = {}
 
@@ -213,9 +221,14 @@ function pullJson(owner, repo, pr) {
     html_url: `http://127.0.0.1:${port}/${owner}/${repo}/pull/${pr.number}`,
     user: { login: pr.author }, head: { ref: pr.head, sha: pr.sha }, base: { ref: pr.base },
     requested_reviewers: (pr.requested || []).map(login => ({ login })),
+    requested_teams: (pr.requestedTeams || []).map(slug => ({ slug, name: TEAMS.find(t => t.slug === slug)?.name ?? slug })),
     created_at: pr.created_at, updated_at: pr.updated_at,
   }
 }
+
+// Who can be asked for a review: the repository's collaborators and the organisation's teams.
+const COLLABORATORS = ['e2e-bot', 'e2e-senior', 'e2e-lead', 'e2e-user']
+const TEAMS = [{ slug: 'qa-team', name: 'QA team' }]
 
 function branchesOf(owner, repo) {
   const out = execFileSync('git', ['for-each-ref', '--format=%(refname:short) %(objectname)', 'refs/heads'], {
@@ -236,6 +249,10 @@ async function github(req, res, url) {
     return json(res, 200, { name: repo, full_name: `${owner}/${repo}`, default_branch: 'main', private: true })
   }
   if (req.method === 'GET' && rest === '/branches') return json(res, 200, branchesOf(owner, repo))
+  if (req.method === 'GET' && rest === '/collaborators') {
+    return json(res, 200, Number(url.searchParams.get('page') || 1) > 1 ? [] : COLLABORATORS.map(login => ({ login, avatar_url: null })))
+  }
+  if (req.method === 'GET' && rest === '/teams') return json(res, 200, Number(url.searchParams.get('page') || 1) > 1 ? [] : TEAMS)
   if (req.method === 'POST' && rest === '/pulls') {
     const body = JSON.parse(await readBody(req))
     const number = pullRequests.length + 1
@@ -243,7 +260,7 @@ async function github(req, res, url) {
     let sha = ''
     try { sha = bareGit(owner, repo, ['rev-parse', body.head]).trim() } catch { /* branch not pushed */ }
     pullRequests.push({ number, ...body, authorization: req.headers.authorization || '', author: loginOf(req), sha,
-      requested: [], reviews: [], comments: [], issueComments: [], created_at: now, updated_at: now })
+      requested: [], requestedTeams: [], reviews: [], comments: [], issueComments: [], created_at: now, updated_at: now })
     return json(res, 201, {
       number, state: 'open', title: body.title, html_url: `http://127.0.0.1:${port}/${owner}/${repo}/pull/${number}`,
     })
@@ -252,7 +269,7 @@ async function github(req, res, url) {
     if (Number(url.searchParams.get('page') || 1) > 1) return json(res, 200, [])
     return json(res, 200, pullRequests.filter(pr => pr.sha).map(pr => pullJson(owner, repo, pr)).reverse())
   }
-  const pull = rest.match(/^\/(pulls|issues)\/(\d+)(\/[a-z]+)?$/)
+  const pull = rest.match(/^\/(pulls|issues)\/(\d+)(\/[a-z_]+)?$/)
   const pr = pull && pullRequests.find(p => p.number === Number(pull[2]))
   if (pull && !pr) return json(res, 404, { message: 'Not Found' })
   if (pr) {
@@ -277,6 +294,20 @@ async function github(req, res, url) {
       }
       pr.requested = pr.requested.filter(login => login !== user.login)
       return json(res, 200, { id, state })
+    }
+    if (req.method === 'POST' && kind === 'pulls' && action === '/comments') {
+      const comment = { id: 7000 + lineCommentWrites.length, path: body.path, line: body.line, side: body.side || 'RIGHT', position: 1,
+        body: body.body, user, created_at: now }
+      lineCommentWrites.push({ number: pr.number, login: user.login, path: body.path, line: body.line, side: body.side, body: body.body,
+        reviewsBefore: pr.reviews.filter(r => r.user.login === user.login).length })
+      pr.comments.push(comment)
+      return json(res, 201, comment)
+    }
+    if (req.method === 'POST' && kind === 'pulls' && action === '/requested_reviewers') {
+      reviewerRequests.push({ number: pr.number, login: user.login, reviewers: body.reviewers || [], teams: body.team_reviewers || [] })
+      pr.requested = [...new Set([...(pr.requested || []), ...(body.reviewers || [])])]
+      pr.requestedTeams = [...new Set([...(pr.requestedTeams || []), ...(body.team_reviewers || [])])]
+      return json(res, 201, pullJson(owner, repo, pr))
     }
     if (req.method === 'POST' && kind === 'issues' && action === '/comments') {
       const comment = { id: 5000 + pr.issueComments.length, body: body.body, user, created_at: now }
@@ -406,11 +437,12 @@ async function models(req, res, url) {
   return json(res, 404, { message: 'Not Found' })
 }
 
-// Microsoft Teams workflow webhook: records the Adaptive Card's title and link.
-async function teams(req, res) {
+// Microsoft Teams workflow webhook: records the Adaptive Card's title and link, and which hook (?for=…) got it.
+async function teams(req, res, url) {
   if (req.method !== 'POST') return json(res, 405, { message: 'Method Not Allowed' })
   const card = JSON.parse(await readBody(req)).attachments[0].content
-  teamsPosts.push({ title: card.body[0].text, text: card.body[1]?.text ?? '', link: card.actions?.[0]?.url ?? null })
+  teamsPosts.push({ title: card.body[0].text, text: card.body[1]?.text ?? '', link: card.actions?.[0]?.url ?? null,
+    for: url.searchParams.get('for') })
   return json(res, 202, {})
 }
 
@@ -424,17 +456,60 @@ createServer(async (req, res) => {
     const now = new Date().toISOString()
     const number = pullRequests.length + 1
     pullRequests.push({ number, title: body.title, body: body.body || '', head: body.branch, base: 'main', sha,
-      author: body.author || 'e2e-user', requested: body.requested || [], reviews: [], comments: [], issueComments: [],
+      author: body.author || 'e2e-user', requested: body.requested || [], requestedTeams: [], reviews: [], comments: [], issueComments: [],
       created_at: now, updated_at: now })
     return json(res, 201, { number })
   }
-  if (url.pathname === '/__e2e/requests') return json(res, 200, { requests, pullRequests, jiraWrites, aiRequests, confluenceWrites, teamsPosts, reviewWrites })
+  if (url.pathname === '/__e2e/requests') {
+    return json(res, 200, { requests, pullRequests, jiraWrites, aiRequests, confluenceWrites, teamsPosts, reviewWrites, lineCommentWrites,
+      reviewerRequests, emails })
+  }
   requests.push({ method: req.method, path: url.pathname, authorization: Boolean(req.headers.authorization) })
   if (/^\/[^/]+\/[^/]+\.git\//.test(url.pathname)) return gitHttpBackend(req, res, url)
   if (url.pathname.startsWith('/api/v3/')) return github(req, res, url)
   if (url.pathname.startsWith('/jira/')) return jira(req, res, url)
   if (url.pathname.startsWith('/confluence/')) return confluence(req, res, url)
   if (url.pathname.startsWith('/models/')) return models(req, res, url)
-  if (url.pathname === '/teams/hook') return teams(req, res)
+  if (url.pathname === '/teams/hook') return teams(req, res, url)
   json(res, 404, { message: 'Not Found' })
 }).listen(port, '127.0.0.1', () => console.log(`fake services on http://127.0.0.1:${port}`))
+
+// Just enough SMTP for Python's smtplib without TLS: greet, accept the envelope, keep the message.
+createTcpServer(socket => {
+  let buffer = ''
+  let data = null
+  let envelope = { from: '', to: [] }
+  const reply = line => socket.write(`${line}\r\n`)
+  reply('220 fake-smtp ready')
+  socket.on('data', chunk => {
+    buffer += chunk.toString('utf8')
+    while (true) {
+      if (data !== null) {
+        const end = buffer.indexOf('\r\n.\r\n')
+        if (end < 0) return
+        data += buffer.slice(0, end)
+        buffer = buffer.slice(end + 5)
+        const [head, ...rest] = data.split('\r\n\r\n')
+        const header = name => (head.match(new RegExp(`^${name}: (.*)$`, 'mi')) || [])[1] ?? ''
+        emails.push({ from: envelope.from, to: envelope.to, subject: header('Subject'), text: rest.join('\r\n\r\n').replace(/^\.\./gm, '.') })
+        data = null
+        envelope = { from: '', to: [] }
+        reply('250 OK: queued')
+        continue
+      }
+      const newline = buffer.indexOf('\r\n')
+      if (newline < 0) return
+      const line = buffer.slice(0, newline)
+      buffer = buffer.slice(newline + 2)
+      const command = line.slice(0, 4).toUpperCase()
+      if (command === 'EHLO' || command === 'HELO') reply('250 fake-smtp')
+      else if (command === 'MAIL') { envelope.from = (line.match(/<([^>]*)>/) || [])[1] ?? ''; reply('250 OK') }
+      else if (command === 'RCPT') { envelope.to.push((line.match(/<([^>]*)>/) || [])[1] ?? ''); reply('250 OK') }
+      else if (command === 'DATA') { data = ''; reply('354 End data with <CR><LF>.<CR><LF>') }
+      else if (command === 'QUIT') { reply('221 Bye'); socket.end() }
+      else if (command === 'RSET') { envelope = { from: '', to: [] }; reply('250 OK') }
+      else reply('250 OK')
+    }
+  })
+  socket.on('error', () => {})
+}).listen(smtpPort, '127.0.0.1', () => console.log(`fake SMTP on 127.0.0.1:${smtpPort}`))

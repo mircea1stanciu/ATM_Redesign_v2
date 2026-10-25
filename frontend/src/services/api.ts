@@ -1125,7 +1125,7 @@ export const apiService = {
 
   async createPullRequest(
     projectId: string,
-    params: { head: string; base?: string; title: string; body?: string; draft?: boolean },
+    params: { head: string; base?: string; title: string; body?: string; draft?: boolean; reviewers?: string[]; teamReviewers?: string[] },
   ): Promise<PullRequestResult> {
     const response = await api.post(`/projects/${projectId}/github/pull-request`, {
       head: params.head,
@@ -1133,6 +1133,8 @@ export const apiService = {
       title: params.title,
       body: params.body ?? '',
       draft: params.draft ?? false,
+      reviewers: params.reviewers ?? [],
+      team_reviewers: params.teamReviewers ?? [],
     })
     return response.data
   },
