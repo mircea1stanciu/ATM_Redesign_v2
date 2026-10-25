@@ -393,6 +393,10 @@ export interface PullRequestResult {
   title: string
   head: string
   base: string
+  requested_reviewers?: string[]
+  requested_teams?: string[]
+  /** Set when the pull request was opened but GitHub did not accept the reviewers. */
+  reviewers_error?: string | null
 }
 
 export interface JiraProject {

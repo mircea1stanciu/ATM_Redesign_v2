@@ -54,23 +54,32 @@ export interface PullDetail {
   base: string
   head_sha: string | null
   created_at: string | null
+  requested_reviewers: string[]
+  requested_teams: string[]
   files: PullFile[]
   comments: LineComment[]
   conversation: { kind: 'comment' | 'review'; id: number; author: string; body: string; state: string | null; created_at: string | null }[]
   checks: { name: string; status: string; conclusion: string | null; url: string | null }[]
   runs: { id: string; name: string; suite: string; status: string; passed: number; failed: number; created_at: string | null; report: boolean }[]
   work_item: { key: string; title: string; url: string | null; status: string } | null
-  me: { login: string; is_author: boolean; can_comment: boolean; can_review: boolean }
+  me: { login: string; is_author: boolean; can_comment: boolean; can_review: boolean; can_request_reviewers: boolean }
 }
 
-/** A line comment written in ATM and not submitted yet (part of the next review). */
-export interface PendingComment {
-  key: string
+/** A comment on a line of the diff, posted to GitHub at once. */
+export interface NewLineComment {
   path: string
   line: number
   side: Side
   body: string
-  suggested_by_ai: boolean
+  suggested_by_ai?: boolean
+}
+
+/** Whom a pull request can ask for a review on GitHub. */
+export interface ReviewerOptions {
+  people: { login: string; avatar_url: string | null }[]
+  teams: { slug: string; name: string }[]
+  me: string
+  people_error: string | null
 }
 
 export interface Suggestion {
@@ -93,12 +102,17 @@ export const reviewsApi = {
   async comment(projectId: string, number: string, body: string): Promise<void> {
     await api.post(`/reviews/projects/${projectId}/pulls/${number}/comments`, { body })
   },
-  async review(projectId: string, number: string, event: ReviewEvent, body: string, comments: PendingComment[]): Promise<void> {
-    await api.post(`/reviews/projects/${projectId}/pulls/${number}/reviews`, {
-      event,
-      body,
-      comments: comments.map(({ path, line, side, body: text, suggested_by_ai }) => ({ path, line, side, body: text, suggested_by_ai })),
-    })
+  async lineComment(projectId: string, number: string, comment: NewLineComment): Promise<LineComment> {
+    return (await api.post(`/reviews/projects/${projectId}/pulls/${number}/line-comments`, comment)).data
+  },
+  async review(projectId: string, number: string, event: ReviewEvent, body: string): Promise<void> {
+    await api.post(`/reviews/projects/${projectId}/pulls/${number}/reviews`, { event, body })
+  },
+  async reviewerOptions(projectId: string): Promise<ReviewerOptions> {
+    return (await api.get(`/reviews/projects/${projectId}/reviewer-options`)).data
+  },
+  async requestReviewers(projectId: string, number: string, reviewers: string[], teamReviewers: string[]): Promise<{ requested_reviewers: string[]; requested_teams: string[] }> {
+    return (await api.post(`/reviews/projects/${projectId}/pulls/${number}/requested-reviewers`, { reviewers, team_reviewers: teamReviewers })).data
   },
   async aiReview(projectId: string, number: string): Promise<{ suggestions: Suggestion[]; dropped: number }> {
     return (await api.post(`/reviews/projects/${projectId}/pulls/${number}/ai-review`)).data
@@ -108,4 +122,5 @@ export const reviewsApi = {
 export const reviewKeys = {
   pulls: (scope: string) => ['reviews', 'pulls', scope] as const,
   pull: (projectId: string, number: string) => ['reviews', 'pull', projectId, number] as const,
+  reviewerOptions: (projectId: string) => ['reviews', 'reviewer-options', projectId] as const,
 }

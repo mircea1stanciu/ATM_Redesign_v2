@@ -61,7 +61,7 @@ export function ScriptsPage() {
 }
 
 export function AdminLayout() {
-  return <AreaLayout areaId="admin" title="Admin" description="Users and projects." />
+  return <AreaLayout areaId="admin" title="Admin" description="Users, projects, the audit log and the mail server." />
 }
 
 /** /admin opens its first tab the user can see. */

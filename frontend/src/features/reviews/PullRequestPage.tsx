@@ -1,21 +1,21 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Columns2, ExternalLink, FileCode2, Rows2, Sparkles } from 'lucide-react'
+import { ArrowLeft, Columns2, ExternalLink, FileCode2, Rows2, Sparkles, UserPlus } from 'lucide-react'
 import { apiService } from '@/services/api'
 import { usePermission } from '@/hooks/usePermission'
-import { Badge, Button, Card, Checkbox, cn, ErrorState, Section, Skeleton, StatusPill, Tabs, useTabParam, useToast } from '@/ui'
+import { Badge, Button, Card, Checkbox, cn, Dialog, ErrorState, Section, Skeleton, StatusPill, Tabs, useTabParam, useToast } from '@/ui'
 import PatchView from './PatchView'
 import type { Layout } from './PatchView'
-import type { PendingComment, PullDetail, ReviewEvent, Side, Suggestion } from './api'
+import ReviewerPicker, { NO_REVIEWERS } from './ReviewerPicker'
+import type { ReviewerChoice } from './ReviewerPicker'
+import type { NewLineComment, PullDetail, ReviewEvent, Side, Suggestion } from './api'
 import { reviewKeys, reviewsApi } from './api'
 
 const STATE_TONE: Record<string, 'success' | 'neutral' | 'info'> = { open: 'success', closed: 'neutral', merged: 'info' }
 const REVIEW_WORDS: Record<string, string> = {
   APPROVED: 'approved', CHANGES_REQUESTED: 'requested changes', COMMENTED: 'reviewed', DISMISSED: 'review dismissed',
 }
-let nextKey = 1
-
 function Conversation({ pr, onComment, busy }: { pr: PullDetail; onComment: (body: string) => void; busy: boolean }) {
   const [body, setBody] = useState('')
   return (
@@ -48,7 +48,7 @@ function Conversation({ pr, onComment, busy }: { pr: PullDetail; onComment: (bod
   )
 }
 
-function Suggestions({ suggestions, onAdd }: { suggestions: Suggestion[]; onAdd: (chosen: Suggestion[]) => void }) {
+function Suggestions({ suggestions, onPost, busy }: { suggestions: Suggestion[]; onPost: (chosen: Suggestion[]) => void; busy: boolean }) {
   const [chosen, setChosen] = useState<Set<number>>(() => new Set(suggestions.map((_, i) => i)))
   if (suggestions.length === 0) return <p className="text-[13px] text-fg-muted">The AI found nothing to comment on.</p>
   return (
@@ -61,14 +61,58 @@ function Suggestions({ suggestions, onAdd }: { suggestions: Suggestion[]; onAdd:
           </li>
         ))}
       </ul>
-      <Button size="sm" disabled={chosen.size === 0} onClick={() => onAdd(suggestions.filter((_, i) => chosen.has(i)))}>
-        Add {chosen.size} to my review
+      <Button size="sm" loading={busy} disabled={chosen.size === 0} onClick={() => onPost(suggestions.filter((_, i) => chosen.has(i)))}>
+        Post {chosen.size} comment{chosen.size === 1 ? '' : 's'}
       </Button>
     </div>
   )
 }
 
-/** Reviews › one pull request: files changed with line comments, the conversation, checks, ATM runs, the story. */
+function Reviewers({ pr }: { pr: PullDetail }) {
+  const toast = useToast()
+  const queryClient = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const [choice, setChoice] = useState<ReviewerChoice>(NO_REVIEWERS)
+  const projectId = String(pr.project_id)
+  const request = useMutation({
+    mutationFn: () => reviewsApi.requestReviewers(projectId, String(pr.number), choice.people, choice.teams),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: reviewKeys.pull(projectId, String(pr.number)) })
+      toast({ title: 'Reviewers asked on GitHub', tone: 'success' })
+      setOpen(false)
+      setChoice(NO_REVIEWERS)
+    },
+    onError: error => toast({ title: 'Reviewers not asked', description: apiService.errorMessage(error), tone: 'danger' }),
+  })
+  const requested = [...pr.requested_reviewers, ...pr.requested_teams.map(team => `${team} (team)`)]
+  return (
+    <Section title="Reviewers" actions={pr.me.can_request_reviewers && pr.state === 'open' && (
+      <Button size="sm" variant="ghost" icon={<UserPlus size={13} />} onClick={() => setOpen(true)}>Request reviewers</Button>
+    )}>
+      <Card className="p-3 text-[13px]">
+        {requested.length === 0 ? <span className="text-fg-muted">Nobody is asked on GitHub.</span> : (
+          <ul aria-label="Requested reviewers" className="flex flex-wrap gap-1.5">
+            {requested.map(name => <li key={name}><Badge>{name}</Badge></li>)}
+          </ul>
+        )}
+      </Card>
+      <Dialog open={open} onOpenChange={setOpen} title="Request reviewers" description="They are asked on GitHub, and see the pull request waiting for them in ATM."
+        footer={(
+          <>
+            <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button variant="primary" loading={request.isPending} disabled={!choice.people.length && !choice.teams.length} onClick={() => request.mutate()}>Request</Button>
+          </>
+        )}>
+        <ReviewerPicker projectId={projectId} value={choice} onChange={setChoice} exclude={[...pr.requested_reviewers, ...pr.requested_teams, pr.author]} />
+      </Dialog>
+    </Section>
+  )
+}
+
+/**
+ * Reviews › one pull request: files changed with line comments (posted to GitHub at once), the conversation, the
+ * reviewers, checks, ATM runs, the story.
+ */
 export default function PullRequestPage() {
   const { projectId = '', number = '' } = useParams()
   const toast = useToast()
@@ -76,16 +120,14 @@ export default function PullRequestPage() {
   const canUseAi = usePermission('ai.use')
   const view = useTabParam('view', ['files', 'conversation'] as const)
   const [layout, setLayout] = useState<Layout>(() => (localStorage.getItem('atm.diffLayout') as Layout) || 'split')
-  const [pending, setPending] = useState<PendingComment[]>([])
   const [summary, setSummary] = useState('')
   const [suggestions, setSuggestions] = useState<Suggestion[] | null>(null)
   const pull = useQuery({ queryKey: reviewKeys.pull(projectId, number), queryFn: () => reviewsApi.pull(projectId, number) })
   const refresh = () => void queryClient.invalidateQueries({ queryKey: ['reviews'] })
 
   const submit = useMutation({
-    mutationFn: (event: ReviewEvent) => reviewsApi.review(projectId, number, event, summary.trim(), pending),
+    mutationFn: (event: ReviewEvent) => reviewsApi.review(projectId, number, event, summary.trim()),
     onSuccess: (_, event) => {
-      setPending([])
       setSummary('')
       setSuggestions(null)
       refresh()
@@ -98,6 +140,25 @@ export default function PullRequestPage() {
     onSuccess: refresh,
     onError: error => toast({ title: 'Comment not sent', description: apiService.errorMessage(error), tone: 'danger' }),
   })
+  const lineComment = useMutation({
+    mutationFn: (comment: NewLineComment) => reviewsApi.lineComment(projectId, number, comment),
+    onSuccess: refresh,
+    onError: error => toast({ title: 'Comment not posted', description: apiService.errorMessage(error), tone: 'danger' }),
+  })
+  const postSuggestions = useMutation({
+    mutationFn: async (chosen: Suggestion[]) => {
+      for (const [index, s] of chosen.entries()) {
+        try {
+          await reviewsApi.lineComment(projectId, number, { ...s, suggested_by_ai: true })
+        } catch (error) {
+          throw new Error(`${index} of ${chosen.length} posted. ${apiService.errorMessage(error)}`)
+        }
+      }
+      return chosen.length
+    },
+    onSuccess: count => { setSuggestions(null); refresh(); toast({ title: `Posted ${count} comment${count === 1 ? '' : 's'}`, tone: 'success' }) },
+    onError: error => { refresh(); toast({ title: 'Not every comment was posted', description: error.message, tone: 'danger' }) },
+  })
   const askAi = useMutation({
     mutationFn: () => reviewsApi.aiReview(projectId, number),
     onSuccess: result => setSuggestions(result.suggestions),
@@ -107,8 +168,9 @@ export default function PullRequestPage() {
   if (pull.isPending) return <Skeleton className="h-64" />
   if (pull.isError) return <ErrorState title="Could not load the pull request">{apiService.errorMessage(pull.error)}</ErrorState>
   const pr = pull.data
-  const add = (path: string, target: { line: number; side: Side }, body: string, ai = false) =>
-    setPending(list => [...list, { key: String(nextKey++), path, ...target, body, suggested_by_ai: ai }])
+  const add = async (path: string, target: { line: number; side: Side }, body: string) => {
+    await lineComment.mutateAsync({ path, ...target, body })
+  }
   const chooseLayout = (value: Layout) => { setLayout(value); localStorage.setItem('atm.diffLayout', value) }
   const open = pr.state === 'open'
 
@@ -146,8 +208,7 @@ export default function PullRequestPage() {
                     <span className="text-xs text-success">+{file.additions}</span><span className="text-xs text-danger">−{file.deletions}</span>
                   </div>
                   <PatchView path={file.filename} patch={file.patch} layout={layout} canComment={pr.me.can_comment && open}
-                    comments={pr.comments.filter(c => c.path === file.filename)} pending={pending.filter(c => c.path === file.filename)}
-                    onAdd={(target, body) => add(file.filename, target, body)} onRemove={key => setPending(list => list.filter(c => c.key !== key))} />
+                    comments={pr.comments.filter(c => c.path === file.filename)} onAdd={(target, body) => add(file.filename, target, body)} />
                 </Card>
               ))}
             </>
@@ -157,17 +218,17 @@ export default function PullRequestPage() {
           {pr.me.can_comment && open && (
             <Section title="Your review">
               <Card className="space-y-3 p-3">
-                <p className="text-xs text-fg-muted">{pending.length} pending line comment{pending.length === 1 ? '' : 's'}</p>
+                <p className="text-xs text-fg-muted">Line comments are posted on GitHub as you write them. Finish with a summary.</p>
                 <textarea aria-label="Review summary" value={summary} onChange={e => setSummary(e.target.value)} rows={3}
-                  placeholder="Summary (optional)" className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-[13px] text-fg" />
+                  placeholder="Summary (optional to approve)" className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-[13px] text-fg" />
                 <div className="flex flex-wrap gap-2">
-                  <Button size="sm" loading={submit.isPending && submit.variables === 'COMMENT'} disabled={submit.isPending || (!summary.trim() && !pending.length)}
+                  <Button size="sm" loading={submit.isPending && submit.variables === 'COMMENT'} disabled={submit.isPending || !summary.trim()}
                     onClick={() => submit.mutate('COMMENT')}>Comment</Button>
                   {pr.me.can_review && (
                     <>
                       <Button size="sm" variant="primary" disabled={submit.isPending || pr.me.is_author} loading={submit.isPending && submit.variables === 'APPROVE'}
                         onClick={() => submit.mutate('APPROVE')}>Approve</Button>
-                      <Button size="sm" variant="danger" disabled={submit.isPending || pr.me.is_author || (!summary.trim() && !pending.length)}
+                      <Button size="sm" variant="danger" disabled={submit.isPending || pr.me.is_author || !summary.trim()}
                         loading={submit.isPending && submit.variables === 'REQUEST_CHANGES'} onClick={() => submit.mutate('REQUEST_CHANGES')}>Request changes</Button>
                     </>
                   )}
@@ -177,16 +238,15 @@ export default function PullRequestPage() {
                   <div className="space-y-2 border-t border-line pt-3">
                     <Button size="sm" variant="ghost" icon={<Sparkles size={13} />} loading={askAi.isPending} onClick={() => askAi.mutate()}>Ask AI to review</Button>
                     {suggestions && (
-                      <Suggestions key={suggestions.length} suggestions={suggestions} onAdd={chosen => {
-                        chosen.forEach(s => add(s.path, { line: s.line, side: s.side }, s.body, true))
-                        setSuggestions(null)
-                      }} />
+                      <Suggestions key={suggestions.length} suggestions={suggestions} busy={postSuggestions.isPending}
+                        onPost={chosen => postSuggestions.mutate(chosen)} />
                     )}
                   </div>
                 )}
               </Card>
             </Section>
           )}
+          <Reviewers pr={pr} />
           <Section title="Story">
             <Card className="p-3 text-[13px]">
               {pr.work_item ? (

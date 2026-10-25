@@ -1,8 +1,8 @@
 import { Fragment, useState } from 'react'
 import type { ReactNode } from 'react'
-import { MessageSquarePlus, Sparkles, X } from 'lucide-react'
-import { Badge, Button, cn, IconButton } from '@/ui'
-import type { LineComment, PendingComment, Side } from './api'
+import { MessageSquarePlus } from 'lucide-react'
+import { Button, cn } from '@/ui'
+import type { LineComment, Side } from './api'
 
 export type Layout = 'split' | 'inline'
 
@@ -62,33 +62,40 @@ const TONE: Record<Row['kind'], string> = {
   add: 'bg-success/10', del: 'bg-danger/10', context: '', hunk: 'bg-accent/5 text-fg-muted',
 }
 
-function CommentEditor({ onSave, onCancel, label }: { onSave: (body: string) => void; onCancel: () => void; label: string }) {
+function CommentEditor({ onSave, onCancel, label }: { onSave: (body: string) => Promise<void>; onCancel: () => void; label: string }) {
   const [body, setBody] = useState('')
+  const [busy, setBusy] = useState(false)
+  const save = async () => {
+    setBusy(true)
+    try {
+      await onSave(body.trim())
+    } catch {
+      setBusy(false) // the page says why; the text stays to try again
+    }
+  }
   return (
     <div className="space-y-2 rounded-lg border border-line bg-surface p-2">
       <textarea autoFocus aria-label={label} value={body} onChange={e => setBody(e.target.value)} rows={3}
         className="w-full rounded-md border border-line bg-surface px-2 py-1.5 text-[13px] text-fg" placeholder="Leave a comment" />
       <div className="flex justify-end gap-2">
-        <Button size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>
-        <Button size="sm" variant="primary" disabled={!body.trim()} onClick={() => onSave(body.trim())}>Add to review</Button>
+        <Button size="sm" variant="ghost" disabled={busy} onClick={onCancel}>Cancel</Button>
+        <Button size="sm" variant="primary" loading={busy} disabled={!body.trim()} onClick={() => void save()}>Post comment</Button>
       </div>
     </div>
   )
 }
 
 /**
- * One changed file as a diff (side by side or inline), with comments on lines: the ones already on GitHub, the
- * pending ones of this review, and a "+" on each line to write a new one (GitHub accepts comments on these lines).
+ * One changed file as a diff (side by side or inline), with the comments on its lines and a "+" on each line to
+ * write a new one (GitHub accepts comments on these lines). A new comment is posted to GitHub at once.
  */
-export default function PatchView({ path, patch, layout, comments, pending, canComment, onAdd, onRemove }: {
+export default function PatchView({ path, patch, layout, comments, canComment, onAdd }: {
   path: string
   patch: string | null
   layout: Layout
   comments: LineComment[]
-  pending: PendingComment[]
   canComment: boolean
-  onAdd: (target: Target, body: string) => void
-  onRemove: (key: string) => void
+  onAdd: (target: Target, body: string) => Promise<void>
 }) {
   const [editing, setEditing] = useState<Target | null>(null)
   const rows = parsePatch(patch)
@@ -96,9 +103,8 @@ export default function PatchView({ path, patch, layout, comments, pending, canC
 
   const threadFor = (target: Target): ReactNode => {
     const existing = comments.filter(c => c.line === target.line && c.side === target.side)
-    const mine = pending.filter(c => c.line === target.line && c.side === target.side)
     const open = sameTarget(editing, target)
-    if (!existing.length && !mine.length && !open) return null
+    if (!existing.length && !open) return null
     const where = `${target.side === 'LEFT' ? 'old line' : 'line'} ${target.line} of ${path}`
     return (
       <div className="space-y-2 border-y border-line bg-surface-2 px-3 py-2">
@@ -108,20 +114,9 @@ export default function PatchView({ path, patch, layout, comments, pending, canC
             <p className="whitespace-pre-wrap text-fg">{c.body}</p>
           </div>
         ))}
-        {mine.map(c => (
-          <div key={c.key} className="flex items-start gap-2 rounded-lg border border-accent/40 bg-surface px-3 py-2 text-[13px]">
-            <div className="min-w-0 flex-1">
-              <p className="flex items-center gap-1.5 text-xs font-semibold text-fg">
-                You<Badge tone="accent">Pending</Badge>{c.suggested_by_ai && <Badge tone="brand"><Sparkles size={10} aria-hidden />AI</Badge>}
-              </p>
-              <p className="whitespace-pre-wrap text-fg">{c.body}</p>
-            </div>
-            <IconButton size="sm" label={`Remove the pending comment on ${where}`} icon={<X size={13} />} onClick={() => onRemove(c.key)} />
-          </div>
-        ))}
         {open && (
           <CommentEditor label={`Comment on ${where}`} onCancel={() => setEditing(null)}
-            onSave={body => { onAdd(target, body); setEditing(null) }} />
+            onSave={async body => { await onAdd(target, body); setEditing(null) }} />
         )}
       </div>
     )

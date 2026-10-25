@@ -6,6 +6,8 @@ import { usePermission } from '@/hooks/usePermission'
 import { Button, Checkbox, Dialog, ErrorState, Input, Textarea, useToast } from '@/ui'
 import { workApi, workKeys } from '@/features/work/api'
 import type { WorkItem } from '@/features/work/types'
+import ReviewerPicker, { NO_REVIEWERS } from '@/features/reviews/ReviewerPicker'
+import type { ReviewerChoice } from '@/features/reviews/ReviewerPicker'
 
 function defaultBody(item: WorkItem | null): string {
   if (!item) return ''
@@ -17,7 +19,10 @@ function defaultBody(item: WorkItem | null): string {
   ].filter(Boolean).join('\n')
 }
 
-/** Open a pull request from the current branch; the work item of the branch links to it in ATM (and in Jira). */
+/**
+ * Open a pull request from the current branch, asking the chosen people and teams for a review on GitHub; the work
+ * item of the branch links to it in ATM (and in Jira).
+ */
 export default function PullRequestDialog({ open, onOpenChange, projectId, branch, baseBranch, workItem }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -33,12 +38,15 @@ export default function PullRequestDialog({ open, onOpenChange, projectId, branc
   const [body, setBody] = useState(() => defaultBody(workItem))
   const [base, setBase] = useState(baseBranch)
   const [draft, setDraft] = useState(false)
+  const [reviewers, setReviewers] = useState<ReviewerChoice>(NO_REVIEWERS)
   const offerJira = Boolean(workItem && workItem.source === 'jira' && canWriteJira)
   const [linkInJira, setLinkInJira] = useState(offerJira)
 
   const create = useMutation({
     mutationFn: async () => {
-      const pr = await apiService.createPullRequest(projectId, { head: branch, base: base.trim(), title: title.trim(), body, draft })
+      const pr = await apiService.createPullRequest(projectId, {
+        head: branch, base: base.trim(), title: title.trim(), body, draft, reviewers: reviewers.people, teamReviewers: reviewers.teams,
+      })
       let jiraError: string | null = null
       if (linkInJira && workItem) {
         try {
@@ -51,10 +59,14 @@ export default function PullRequestDialog({ open, onOpenChange, projectId, branc
     },
     onSuccess: ({ pr, jiraError }) => {
       void queryClient.invalidateQueries({ queryKey: workKeys.all(projectId) })
+      const problems = [
+        pr.reviewers_error && `The reviewers were not asked: ${pr.reviewers_error}`,
+        jiraError && `The Jira link failed: ${jiraError}`,
+      ].filter(Boolean).join(' ')
       toast({
         title: `Opened pull request #${pr.number}`,
-        description: jiraError ? `The Jira link failed: ${jiraError}` : workItem ? `Linked to ${workItem.external_key}.` : undefined,
-        tone: jiraError ? 'warning' : 'success',
+        description: problems || (workItem ? `Linked to ${workItem.external_key}.` : undefined),
+        tone: problems ? 'warning' : 'success',
         action: { label: 'Open on GitHub', onClick: () => window.open(pr.url, '_blank', 'noopener') },
       })
       onOpenChange(false)
@@ -83,6 +95,7 @@ export default function PullRequestDialog({ open, onOpenChange, projectId, branc
         <Input label="Into branch" value={base} onChange={e => setBase(e.target.value)} className="font-mono" />
         <Textarea label="Description" rows={5} value={body} onChange={e => setBody(e.target.value)} />
         <Checkbox label="Draft (not ready for review yet)" checked={draft} onChange={e => setDraft(e.target.checked)} />
+        <ReviewerPicker projectId={projectId} value={reviewers} onChange={setReviewers} />
         {offerJira && (
           <Checkbox label={`Link the pull request on ${workItem?.external_key} in Jira`} checked={linkInJira}
             onChange={e => setLinkInJira(e.target.checked)} />

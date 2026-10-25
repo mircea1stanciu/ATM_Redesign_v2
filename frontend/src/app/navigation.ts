@@ -35,8 +35,8 @@ export const AREAS: Area[] = [
 ]
 
 export const SECONDARY_AREAS: Area[] = [
-  { id: 'admin', label: 'Admin', to: '/admin', icon: Shield, permissions: ['user.view', 'project.create'],
-    description: 'Users and projects' },
+  { id: 'admin', label: 'Admin', to: '/admin', icon: Shield, permissions: ['user.view', 'project.create', 'settings.system'],
+    description: 'Users, projects, audit and e-mail' },
   { id: 'settings', label: 'Settings', to: '/settings', icon: Settings,
     description: 'Profile, connections and preferences' },
 ]
@@ -99,6 +99,7 @@ export const AREA_TABS: Record<string, AreaTab[]> = {
     { to: '/admin/users', label: 'Users', permissions: ['user.view'] },
     { to: '/admin/projects', label: 'Projects', permissions: ['project.create'] },
     { to: '/admin/audit', label: 'Audit', permissions: ['audit.view'] },
+    { to: '/admin/email', label: 'E-mail', permissions: ['settings.system'] },
   ],
 }
 
