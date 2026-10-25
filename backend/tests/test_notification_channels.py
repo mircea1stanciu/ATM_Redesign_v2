@@ -134,7 +134,8 @@ def test_notifications_reach_email_and_teams_as_chosen_per_kind(client, outside)
                "/deployments/3", project_id=project_id)
         assert db.query(Notification).filter_by(user_id=user["id"]).count() == 0
     mail = FakeSMTP.sent[-1]
-    assert (mail["to"], mail["from"], mail["subject"]) == (user["email"], "atm@example.test", "shop 1.2 deployed to UAT")
+    assert (mail["to"], mail["from"]) == (user["email"], "atm@example.test")
+    assert mail["subject"] == "shop 1.2 deployed to UAT"
     assert "Open in ATM: https://atm.example.test/deployments/3" in mail["text"]
     assert outside[-1]["url"] == "https://teams.example.test/hook/me"
     assert outside[-1]["card"]["body"][0]["text"] == "shop 1.2 deployed to UAT"
