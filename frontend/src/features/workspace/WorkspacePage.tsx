@@ -172,11 +172,17 @@ export default function WorkspacePage() {
       </div>
 
       <div className="min-h-0 flex-1">
-        {noCheckout && view !== 'runs' ? (
+        {/* Without a checkout only Runs and Repository open: Repository is where one is cloned or linked. */}
+        {noCheckout && view !== 'runs' && view !== 'three-panel' ? (
           <EmptyState icon={FolderGit2} title="No local copy of the repository yet"
-            action={<Link to="/tests/project" className={buttonStyles('primary')}>Project overview</Link>}>
-            The workspace works on the project's local copy. Import or link one from Tests › Project, or create a
-            starter project there.
+            action={
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button variant="primary" onClick={() => setView('three-panel')}>Clone or link the repository</Button>
+                <Link to="/tests/project" className={buttonStyles('secondary')}>Create a starter project</Link>
+              </div>
+            }>
+            The workspace works on the project's local copy. Clone the GitHub repository, or link a folder already
+            cloned on the server, in the Repository view. A new project can start from a starter project instead.
           </EmptyState>
         ) : (
           <Suspense fallback={fallback}>
@@ -199,7 +205,7 @@ export default function WorkspacePage() {
                 onFilesChanged={() => void refreshWorkspace()}
               />
             ) : view === 'three-panel' ? (
-              <div className="h-full overflow-hidden rounded-xl border border-line bg-surface p-3"><ParallelRepoView projectId={projectId} /></div>
+              <div className="h-full overflow-hidden rounded-xl border border-line bg-surface p-3"><ParallelRepoView projectId={projectId} onCheckoutChanged={() => void refreshWorkspace()} /></div>
             ) : view === 'compare' ? (
               <div className="h-full overflow-hidden rounded-xl border border-line bg-surface p-3"><CompareView projectId={projectId} /></div>
             ) : view === 'analysis' ? (
