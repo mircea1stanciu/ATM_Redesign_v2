@@ -1,6 +1,7 @@
 """Learning (phase 13): progress on lessons and quizzes, practice tasks and their review, the hint library, and each
-learner's profile (chosen path, AI tutor mode). The lessons themselves ship with the frontend
-(src/features/learning/content.ts); the server stores what each person did with them, by id."""
+learner's profile (chosen path, AI tutor mode, mentor). The lessons themselves ship with the frontend
+(src/features/learning/content.ts); the server stores what each person did with them, by id. Phase 21: the paths
+(which programs, in which order) are stored here too, so leads build them in the app."""
 from datetime import datetime
 from typing import Optional
 
@@ -29,12 +30,28 @@ class LearningProgress(Base):
                                                  nullable=False)
 
 
+class LearningPath(Base):
+    """A path: programs of the content library in the order to take them. Leads create, edit, order and delete them."""
+    __tablename__ = "learning_paths"
+
+    id: Mapped[str] = mapped_column(String(100), primary_key=True)  # a slug, kept when the path is renamed
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
+    programs: Mapped[list] = mapped_column(JSON, default=list, nullable=False)  # program ids of content.ts, in order
+    position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    updated_by_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
+                                                 nullable=False)
+
+
 class LearningProfile(Base):
     __tablename__ = "learning_profiles"
 
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     path_id: Mapped[Optional[str]] = mapped_column(String(100))
-    tutor_mode: Mapped[Optional[bool]] = mapped_column(Boolean)  # None: on for Trainees, off for everyone else
+    tutor_mode: Mapped[Optional[bool]] = mapped_column(Boolean)  # None: on for Trainees and Users, off for others
+    # Phase 21: the Senior a lead assigned as this learner's mentor.
+    mentor_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"), index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
                                                  nullable=False)
 

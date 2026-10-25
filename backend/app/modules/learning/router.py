@@ -1,5 +1,5 @@
 """Learning area (phase 13): my progress and profile, practice tasks and their review, the mentor view, the hint
-library and the AI tutor."""
+library and the AI tutor. Phase 21: the paths leads build, and the mentors they assign."""
 import re
 from datetime import datetime
 from typing import Literal, Optional
@@ -9,11 +9,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
-from app.core.permissions import ensure, has_permission, require
+from app.core.permissions import SENIOR, ensure, has_permission, require
 from app.modules.identity.models import User
 from app.modules.learning import service
 from app.modules.learning.progress_models import (
     Hint,
+    LearningPath,
     LearningProfile,
     LearningProgress,
     PracticeSubmission,
@@ -25,6 +26,7 @@ from app.modules.projects.models import Project
 router = APIRouter(prefix="/api/learning", tags=["Learning"])
 
 ITEM_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,99}$")
+MAX_PATHS = 100
 HINT_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 
 
@@ -51,8 +53,10 @@ def _submission_response(db: Session, submission: PracticeSubmission) -> dict:
 
 def _me(db: Session, user: User) -> dict:
     saved = service.profile(db, user.id)
+    mentor = service.mentor_of(db, user.id)
     return {
-        "profile": {"path_id": saved.path_id if saved else None, "tutor_mode": service.tutor_mode(db, user)},
+        "profile": {"path_id": saved.path_id if saved else None, "tutor_mode": service.tutor_mode(db, user),
+                    "mentor": _person(mentor)},
         "progress": service.progress_of(db, [user.id])[user.id],
     }
 
@@ -76,7 +80,9 @@ async def update_profile(payload: ProfileUpdate, current_user: User = Depends(re
         db.add(saved)
     fields = payload.model_fields_set
     if "path_id" in fields:
-        saved.path_id = _item(payload.path_id) if payload.path_id else None
+        if payload.path_id and not db.query(LearningPath).filter(LearningPath.id == payload.path_id).first():
+            raise HTTPException(status_code=400, detail="That learning path does not exist.")
+        saved.path_id = payload.path_id or None
     if "tutor_mode" in fields:
         saved.tutor_mode = payload.tutor_mode
     db.commit()
@@ -168,6 +174,8 @@ async def list_practice(current_user: User = Depends(require("learning.use")), d
 def _clean_task(db: Session, payload: TaskPayload) -> dict:
     if payload.project_id is not None and not db.query(Project).filter(Project.id == payload.project_id).first():
         raise HTTPException(status_code=400, detail="That project does not exist.")
+    if payload.path_id and not db.query(LearningPath).filter(LearningPath.id == payload.path_id).first():
+        raise HTTPException(status_code=400, detail="That learning path does not exist.")
     return {"title": payload.title.strip(), "description": payload.description.strip(),
             "path_id": _item(payload.path_id) if payload.path_id else None, "project_id": payload.project_id,
             "active": payload.active}
@@ -225,9 +233,10 @@ async def submit_practice(task_id: int, payload: SubmissionPayload,
     submission.status = "submitted"
     submission.submitted_at = datetime.utcnow()
     db.commit()
-    if current_user.assigned_lead_id:
-        notify(db, [current_user.assigned_lead_id], "review_request",
-               f"{_person(current_user)} handed in practice: {task.title}", submission.note or "", "/learning/mentor")
+    mentor = service.mentor_of(db, current_user.id)
+    reviewers = [uid for uid in (current_user.assigned_lead_id, mentor.id if mentor else None) if uid]
+    notify(db, reviewers, "review_request", f"{_person(current_user)} handed in practice: {task.title}",
+           submission.note or "", "/learning/mentor")
     return _task_response(db, task, submission)
 
 
@@ -271,10 +280,13 @@ async def mentor_view(current_user: User = Depends(require("learning.mentor")), 
                    .order_by(PracticeSubmission.submitted_at).all() if ids else [])
     tasks = {t.id: t for t in db.query(PracticeTask).filter(PracticeTask.id.in_({s.task_id for s in submissions}))}
     names = {p.id: _person(p) for p in people}
+    mentor_ids = {p.mentor_id for p in profiles.values() if p.mentor_id}
+    mentors = {u.id: _person(u) for u in db.query(User).filter(User.id.in_(mentor_ids))} if mentor_ids else {}
     return {
         "people": [{
             "id": p.id, "name": names[p.id], "role": p.role.value,
             "path_id": profiles[p.id].path_id if p.id in profiles else None,
+            "mentor": mentors.get(profiles[p.id].mentor_id or 0) if p.id in profiles else None,
             **progress[p.id],
             "practice": {status: sum(1 for s in submissions if s.user_id == p.id and s.status == status)
                          for status in ("submitted", "approved", "changes_requested")},
@@ -283,6 +295,163 @@ async def mentor_view(current_user: User = Depends(require("learning.mentor")), 
                      "task": tasks[s.task_id].title, "task_description": tasks[s.task_id].description}
                     for s in submissions if s.status == "submitted"],
     }
+
+
+# ── Mentors (phase 21) ────────────────────────────────────────────────────────
+
+
+def _profile_for(db: Session, user_id: int) -> LearningProfile:
+    saved = service.profile(db, user_id)
+    if not saved:
+        saved = LearningProfile(user_id=user_id)
+        db.add(saved)
+    return saved
+
+
+@router.get("/mentors")
+async def list_mentors(current_user: User = Depends(require("learning.manage")), db: Session = Depends(get_db)):
+    """The learners whose mentor I choose (a lead's own Trainees and Users), each with their mentor, and the Seniors
+    who can mentor."""
+    people = service.managed_learners(db, current_user)
+    ids = [p.id for p in people]
+    profiles = {p.user_id: p for p in db.query(LearningProfile).filter(LearningProfile.user_id.in_(ids))} if ids else {}
+    seniors = (db.query(User).filter(User.role == SENIOR, User.is_active.is_(True))
+               .order_by(User.full_name, User.username).all())
+    return {
+        "people": [{"id": p.id, "name": _person(p), "role": p.role.value,
+                    "mentor_id": profiles[p.id].mentor_id if p.id in profiles else None} for p in people],
+        "seniors": [{"id": s.id, "name": _person(s)} for s in seniors],
+    }
+
+
+class MentorChoice(BaseModel):
+    mentor_id: Optional[int] = None  # None: no Senior mentor (the lead still mentors their own people)
+
+
+@router.put("/mentors/{user_id}")
+async def assign_mentor(user_id: int, payload: MentorChoice, current_user: User = Depends(require("learning.manage")),
+                        db: Session = Depends(get_db)):
+    """A lead assigns a Senior as mentor to one of their Trainees or Users; both are told."""
+    learner = next((p for p in service.managed_learners(db, current_user) if p.id == user_id), None)
+    if not learner:
+        raise HTTPException(status_code=404, detail="Not one of the Trainees and Users you lead.")
+    mentor = None
+    if payload.mentor_id is not None:
+        mentor = db.query(User).filter(User.id == payload.mentor_id, User.role == SENIOR,
+                                       User.is_active.is_(True)).first()
+        if not mentor:
+            raise HTTPException(status_code=400, detail="A mentor is an active Automation Senior.")
+    saved = _profile_for(db, learner.id)
+    previous = saved.mentor_id
+    saved.mentor_id = mentor.id if mentor else None
+    db.commit()
+    if mentor and previous != mentor.id:
+        notify(db, [mentor.id], "mentoring", f"You now mentor {_person(learner)}",
+               f"Assigned by {_person(current_user)}.", "/learning/mentor")
+        notify(db, [learner.id], "mentoring", f"{_person(mentor)} is your mentor now",
+               f"Assigned by {_person(current_user)}. Ask them about your lessons and practice.", "/learning/paths")
+    return {"id": learner.id, "mentor_id": saved.mentor_id, "mentor": _person(mentor)}
+
+
+# ── Learning paths (phase 21) ─────────────────────────────────────────────────
+
+
+def _path_response(path: LearningPath) -> dict:
+    return {"id": path.id, "title": path.title, "description": path.description, "programs": list(path.programs),
+            "position": path.position, "updated_at": path.updated_at.isoformat()}
+
+
+def _ordered_paths(db: Session) -> list[LearningPath]:
+    return db.query(LearningPath).order_by(LearningPath.position, LearningPath.title).all()
+
+
+@router.get("/paths")
+async def list_paths(current_user: User = Depends(require("learning.use")), db: Session = Depends(get_db)):
+    """The learning paths, in the order leads chose."""
+    return [_path_response(p) for p in _ordered_paths(db)]
+
+
+class PathPayload(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    description: str = Field(default="", max_length=1000)
+    programs: list[str] = Field(min_length=1, max_length=20)
+
+
+def _clean_programs(programs: list[str]) -> list[str]:
+    cleaned = [_item(p) for p in programs]
+    if len(set(cleaned)) != len(cleaned):
+        raise HTTPException(status_code=400, detail="A program is listed twice.")
+    return cleaned
+
+
+def _slug(db: Session, title: str) -> str:
+    base = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:80] or "path"
+    slug, number = base, 2
+    while db.query(LearningPath).filter(LearningPath.id == slug).first():
+        slug, number = f"{base}-{number}", number + 1
+    return slug
+
+
+@router.post("/paths", status_code=201)
+async def create_path(payload: PathPayload, current_user: User = Depends(require("learning.manage")),
+                      db: Session = Depends(get_db)):
+    if db.query(LearningPath).count() >= MAX_PATHS:
+        raise HTTPException(status_code=400, detail=f"There are already {MAX_PATHS} paths.")
+    last = db.query(LearningPath).order_by(LearningPath.position.desc()).first()
+    path = LearningPath(id=_slug(db, payload.title), title=payload.title.strip(),
+                        description=payload.description.strip(), programs=_clean_programs(payload.programs),
+                        position=(last.position + 1) if last else 0, updated_by_id=current_user.id)
+    db.add(path)
+    db.commit()
+    return _path_response(path)
+
+
+class PathOrder(BaseModel):
+    ids: list[str] = Field(max_length=MAX_PATHS)
+
+
+@router.post("/paths/reorder")
+async def reorder_paths(payload: PathOrder, current_user: User = Depends(require("learning.manage")),
+                        db: Session = Depends(get_db)):
+    """Every path's id, in the new order."""
+    paths = {p.id: p for p in _ordered_paths(db)}
+    if sorted(payload.ids) != sorted(paths):
+        raise HTTPException(status_code=400, detail="List every path once.")
+    for position, path_id in enumerate(payload.ids):
+        paths[path_id].position = position
+    db.commit()
+    return [_path_response(p) for p in _ordered_paths(db)]
+
+
+def _path(db: Session, path_id: str) -> LearningPath:
+    path = db.query(LearningPath).filter(LearningPath.id == path_id).first()
+    if not path:
+        raise HTTPException(status_code=404, detail="Learning path not found.")
+    return path
+
+
+@router.put("/paths/{path_id}")
+async def update_path(path_id: str, payload: PathPayload, current_user: User = Depends(require("learning.manage")),
+                      db: Session = Depends(get_db)):
+    path = _path(db, path_id)
+    path.title, path.description = payload.title.strip(), payload.description.strip()
+    path.programs = _clean_programs(payload.programs)
+    path.updated_by_id = current_user.id
+    db.commit()
+    return _path_response(path)
+
+
+@router.delete("/paths/{path_id}")
+async def delete_path(path_id: str, current_user: User = Depends(require("learning.manage")),
+                      db: Session = Depends(get_db)):
+    """Delete a path. Progress on its lessons is kept; those who chose it choose again, and its practice tasks are
+    for any path."""
+    path = _path(db, path_id)
+    db.query(LearningProfile).filter(LearningProfile.path_id == path.id).update({"path_id": None})
+    db.query(PracticeTask).filter(PracticeTask.path_id == path.id).update({"path_id": None})
+    db.delete(path)
+    db.commit()
+    return {"deleted": path_id}
 
 
 # ── Hint library ──────────────────────────────────────────────────────────────

@@ -37,6 +37,7 @@ from app.modules.settings.connections import set_secret  # noqa: E402
 SAMPLE_PROJECT_KEY = "E2E"
 CANDIDATE = "promotion_candidate"
 SECRETS_TESTER = "secrets_tester"
+MENTEE = "mentee"
 SAMPLE_GITHUB_TOKEN = "e2e-github-token"
 PUBLISHING_ROLES = {UserRole.SUPER_ADMIN, UserRole.AUTOMATION_USER}
 SCOPE_TAGS = {
@@ -130,6 +131,17 @@ def seed(sessions_path: str) -> None:
         db.commit()
         sessions[SECRETS_TESTER] = {"username": SECRETS_TESTER,
                                     "token": create_access_token(data={"user_id": tester.id})}
+        # A trainee of the lead whom the phase 21 tests give a Senior mentor (the others keep the lead as mentor).
+        mentee = db.query(User).filter(User.username == MENTEE).first()
+        if not mentee:
+            mentee = User(username=MENTEE, email=f"{MENTEE}@e2e.test", full_name="E2E Mentee",
+                          hashed_password=User.hash_password(password), role=UserRole.AUTOMATION_TRAINEE,
+                          scope_tag="project_base", organization_id=org.id, is_active=True, assigned_lead_id=lead.id)
+            db.add(mentee)
+            db.flush()
+            db.add(ProjectMember(project_id=project.id, user_id=mentee.id))
+        db.commit()
+        sessions[MENTEE] = {"username": MENTEE, "token": create_access_token(data={"user_id": mentee.id})}
         secrets_checkout = os.getenv("E2E_SECRETS_CHECKOUT_DIR")
         if secrets_checkout:
             save_linked_path(db, tester, project.id, secrets_checkout)

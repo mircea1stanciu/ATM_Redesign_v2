@@ -77,11 +77,12 @@ def test_lessons_and_quizzes_are_saved(client, team):
 
 def test_profile_and_tutor_mode(client, team):
     trainee, senior = team["trainee"]["headers"], team["senior"]["headers"]
-    assert client.get("/api/learning/me", headers=trainee).json()["profile"] == {"path_id": None, "tutor_mode": True}
+    assert client.get("/api/learning/me", headers=trainee).json()["profile"] == {"path_id": None, "tutor_mode": True,
+                                                                                    "mentor": None}
     assert client.get("/api/learning/me", headers=senior).json()["profile"]["tutor_mode"] is False
     saved = client.put("/api/learning/me/profile", headers=trainee,
                        json={"path_id": "api-bruno", "tutor_mode": False}).json()
-    assert saved["profile"] == {"path_id": "api-bruno", "tutor_mode": False}
+    assert saved["profile"] == {"path_id": "api-bruno", "tutor_mode": False, "mentor": None}
     with SessionLocal() as db:
         assert service.tutor_mode(db, db.query(User).filter(User.id == team["trainee"]["id"]).one()) is False
 
@@ -115,8 +116,13 @@ def test_practice_is_handed_in_and_reviewed(client, team):
                        json={"decision": "approved"}).status_code == 404  # not their trainee
     asked = client.post(review, headers=lead, json={"decision": "changes_requested", "feedback": "Assert the text."})
     assert asked.json()["status"] == "changes_requested"
+    # A senior mentors only the people a lead assigned to them (phase 21).
+    assert client.post(review, headers=senior, json={"decision": "approved"}).status_code == 404
+    assert client.put(f"/api/learning/mentors/{team['trainee']['id']}", headers=lead,
+                      json={"mentor_id": team["senior"]["id"]}).status_code == 200
     client.post(url, headers=trainee, json={"branch": "practice/login", "note": "Fixed"})
-    # A senior mentors the learners of the projects they see.
+    handed_in = _notes(team["senior"]["id"], "review_request")[-1].title
+    assert handed_in.endswith("handed in practice: Assert the login message")
     approved = client.post(review, headers=senior, json={"decision": "approved", "feedback": "Well done"}).json()
     assert approved["status"] == "approved" and approved["reviewer"] == team["senior"]["name"]
     assert [n.title for n in _notes(team["trainee"]["id"], "practice")][-1].endswith(
@@ -158,3 +164,72 @@ def test_ai_tutor(client, team, monkeypatch):
     assert "# Lesson: Environments" in seen["system"] and seen["messages"][-1]["content"] == "What is an environment?"
     assert client.post("/api/learning/tutor", headers=team["viewer"]["headers"],
                        json={"lesson": "x", "question": "y"}).status_code == 403  # viewers have no AI
+
+
+def test_leads_assign_senior_mentors_to_their_people(client, team):
+    lead, senior = team["lead"]["headers"], team["senior"]["headers"]
+    trainee_id, senior_id = team["trainee"]["id"], team["senior"]["id"]
+    listed = client.get("/api/learning/mentors", headers=lead).json()
+    assert [p["id"] for p in listed["people"]] == [trainee_id] and listed["people"][0]["mentor_id"] is None
+    assert senior_id in [s["id"] for s in listed["seniors"]]
+    assert client.get("/api/learning/mentors", headers=senior).status_code == 403
+    assert client.get("/api/learning/mentor", headers=senior).json()["people"] == []  # nobody assigned yet
+
+    other_lead = _user("automation_lead")["headers"]
+    assert client.put(f"/api/learning/mentors/{trainee_id}", headers=other_lead,
+                      json={"mentor_id": senior_id}).status_code == 404  # not their trainee
+    assert client.put(f"/api/learning/mentors/{trainee_id}", headers=lead,
+                      json={"mentor_id": team["viewer"]["id"]}).status_code == 400  # only Seniors mentor
+    assert client.put(f"/api/learning/mentors/{team['viewer']['id']}", headers=lead,
+                      json={"mentor_id": senior_id}).status_code == 404  # viewers have no mentor
+    assigned = client.put(f"/api/learning/mentors/{trainee_id}", headers=lead, json={"mentor_id": senior_id}).json()
+    assert assigned["mentor"] == team["senior"]["name"]
+    assert _notes(senior_id, "mentoring")[0].title == f"You now mentor {team['trainee']['name']}"
+    assert _notes(trainee_id, "mentoring")[0].title == f"{team['senior']['name']} is your mentor now"
+    view = client.get("/api/learning/mentor", headers=senior).json()
+    assert [p["id"] for p in view["people"]] == [trainee_id]
+    assert client.get("/api/learning/mentor", headers=lead).json()["people"][0]["mentor"] == team["senior"]["name"]
+    assert client.get("/api/learning/me", headers=team["trainee"]["headers"]).json()["profile"]["mentor"] == \
+        team["senior"]["name"]
+
+    client.put(f"/api/learning/mentors/{trainee_id}", headers=lead, json={"mentor_id": None})
+    assert client.get("/api/learning/mentor", headers=senior).json()["people"] == []
+
+
+def test_tutor_mode_is_on_by_default_for_users_too(client, team):
+    user = _user("automation_user", team["lead"]["id"])
+    assert client.get("/api/learning/me", headers=user["headers"]).json()["profile"]["tutor_mode"] is True
+    assert client.get("/api/learning/me", headers=team["senior"]["headers"]).json()["profile"]["tutor_mode"] is False
+
+
+def test_leads_build_learning_paths(client, team):
+    lead, trainee = team["lead"]["headers"], team["trainee"]["headers"]
+    seeded = client.get("/api/learning/paths", headers=trainee).json()
+    assert len(seeded) >= 8 and seeded[0]["id"] == "api-bruno" and seeded[0]["programs"] == ["bruno", "postman"]
+    payload = {"title": f"Contract testing {uuid.uuid4().hex[:4]}", "description": "Pact for APIs.",
+               "programs": ["javascript", "postman"]}
+    assert client.post("/api/learning/paths", headers=trainee, json=payload).status_code == 403
+    assert client.post("/api/learning/paths", headers=lead,
+                       json={**payload, "programs": ["postman", "postman"]}).status_code == 400
+    created = client.post("/api/learning/paths", headers=lead, json=payload).json()
+    assert created["id"].startswith("contract-testing-") and created["programs"] == ["javascript", "postman"]
+    again = client.post("/api/learning/paths", headers=lead, json=payload).json()
+    assert again["id"] == f"{created['id']}-2"  # titles may repeat; ids stay unique
+
+    renamed = client.put(f"/api/learning/paths/{created['id']}", headers=lead,
+                         json={**payload, "title": "Contract testing with Pact", "programs": ["postman"]}).json()
+    assert (renamed["id"], renamed["title"], renamed["programs"]) == (created["id"], "Contract testing with Pact",
+                                                                      ["postman"])
+    ids = [p["id"] for p in client.get("/api/learning/paths", headers=lead).json()]
+    moved = [created["id"]] + [i for i in ids if i != created["id"]]
+    assert [p["id"] for p in client.post("/api/learning/paths/reorder", headers=lead,
+                                         json={"ids": moved}).json()] == moved
+    assert client.post("/api/learning/paths/reorder", headers=lead, json={"ids": moved[1:]}).status_code == 400
+
+    client.put("/api/learning/me/profile", headers=trainee, json={"path_id": created["id"]})
+    assert client.put("/api/learning/me/profile", headers=trainee, json={"path_id": "no-such-path"}).status_code == 400
+    assert client.delete(f"/api/learning/paths/{created['id']}", headers=lead).json() == {"deleted": created["id"]}
+    assert client.get("/api/learning/me", headers=trainee).json()["profile"]["path_id"] is None
+    client.delete(f"/api/learning/paths/{again['id']}", headers=lead)
+    client.post("/api/learning/paths/reorder", headers=lead,
+                json={"ids": [i for i in ids if i not in (created["id"], again["id"])]})

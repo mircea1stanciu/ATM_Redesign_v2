@@ -9,7 +9,7 @@ from app.core.security import create_access_token
 from app.main import app
 from app.modules.audit.models import AuditEntry
 from app.modules.identity.models import User, UserRole
-from app.modules.learning.progress_models import LearningProgress, PracticeSubmission, PracticeTask
+from app.modules.learning.progress_models import LearningProfile, LearningProgress, PracticeSubmission, PracticeTask
 from app.modules.notifications.models import Notification
 from app.modules.projects.models import AnalyticsRun, AnalyticsSuite, Project, ProjectMember
 from app.modules.reviews.models import PullRequest, PullRequestReview
@@ -47,8 +47,12 @@ def team(client):
         db.commit()
         project_id = project.id
     lead = _user("automation_lead")
-    return {"lead": lead, "project_id": project_id, "trainee": _user("automation_trainee", lead["id"], project_id),
-            "senior": _user("automation_senior", project_id=project_id)}
+    trainee = _user("automation_trainee", lead["id"], project_id)
+    senior = _user("automation_senior", project_id=project_id)
+    with SessionLocal() as db:  # the lead made the senior the trainee's mentor (phase 21)
+        db.add(LearningProfile(user_id=trainee["id"], mentor_id=senior["id"]))
+        db.commit()
+    return {"lead": lead, "project_id": project_id, "trainee": trainee, "senior": senior}
 
 
 def _evidence_for(person_id: int, project_id: int, senior_id: int) -> None:

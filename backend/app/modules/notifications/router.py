@@ -31,6 +31,8 @@ KIND_LABELS = {
     "practice": "Feedback on my practice tasks",
     "readiness": "Readiness reviews (requests and decisions)",
     "promotion": "Changes to my role",
+    "mentoring": "Who mentors whom (mine and my mentees)",
+    "community": "Answers to my questions in Community",
 }
 WS_TOKEN_PROTOCOL = "atm-token"
 
