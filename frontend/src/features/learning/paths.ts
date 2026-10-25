@@ -1,35 +1,19 @@
 import { PROGRAMS, type Lesson, type Module, type Program } from './content'
 
-/** A learning path: programs of the content library in the order to take them (docs/redesign/05-design.md). */
+/**
+ * A learning path: programs of the content library in the order to take them. Stored on the server since phase 21,
+ * where leads create, edit, order and delete them (usePaths).
+ */
 export interface LearningPath {
   id: string
   title: string
   description: string
   programs: string[]
+  position: number
 }
 
-// Every program belongs to at least one path; a language program comes before the frameworks that use it.
-export const PATHS: LearningPath[] = [
-  { id: 'api-bruno', title: 'Manual to API automation with Bruno', programs: ['bruno', 'postman'],
-    description: 'From requests you try by hand to Git-tracked API suites that run in CI.' },
-  { id: 'ui-playwright', title: 'UI automation with Playwright', programs: ['javascript', 'playwright'],
-    description: 'JavaScript for testers, then reliable browser tests with Playwright.' },
-  { id: 'java-automation', title: 'Java automation: Selenium, JUnit 5 and REST Assured', programs: ['java', 'junit5', 'selenium', 'restassured'],
-    description: 'Java for testers, a test framework, browser automation and API checks in one stack.' },
-  { id: 'mobile-appium', title: 'Mobile automation with Appium', programs: ['java', 'appium'],
-    description: 'Automate Android and iOS apps with Appium and Java.' },
-  { id: 'python-automation', title: 'Python test automation', programs: ['python', 'robotframework'],
-    description: 'pytest and Python for testers, then keyword-driven suites with Robot Framework.' },
-  { id: 'js-ui-frameworks', title: 'JavaScript UI testing: Cypress and WebdriverIO', programs: ['javascript', 'cypress', 'webdriverio'],
-    description: 'Two more JavaScript frameworks for web UI tests, and when to choose which.' },
-  { id: 'api-bdd-karate', title: 'API testing in BDD style with Karate', programs: ['karate'],
-    description: 'Readable API scenarios with Karate, no Java coding needed.' },
-  { id: 'performance-k6', title: 'Performance testing with k6', programs: ['javascript', 'k6'],
-    description: 'Load and stress tests written in JavaScript, with thresholds that fail a slow build.' },
-]
-
-export function pathById(id: string | null | undefined): LearningPath | undefined {
-  return PATHS.find(path => path.id === id)
+export function pathById(paths: LearningPath[], id: string | null | undefined): LearningPath | undefined {
+  return paths.find(path => path.id === id)
 }
 
 export function programsOf(path: LearningPath): Program[] {

@@ -2,15 +2,19 @@ import { Link, useParams } from 'react-router-dom'
 import { ArrowLeft, CheckCircle2, Circle, HelpCircle } from 'lucide-react'
 import { apiService } from '@/services/api'
 import { Badge, Button, Card, EmptyState, ErrorState, Section, Skeleton } from '@/ui'
-import { pathById, pathProgress, programsOf } from './paths'
+import { pathProgress, programsOf } from './paths'
+import { usePaths } from './usePaths'
 import { ProgressBar } from './PathsPage'
 import { useMyLearning } from './useMyLearning'
 
 /** Learning › one path: its programs, modules, lessons and quizzes, with what I have done. */
 export default function PathPage() {
   const { pathId = '' } = useParams()
-  const path = pathById(pathId)
+  const { query: paths, byId } = usePaths()
+  const path = byId(pathId)
   const { me, updateProfile } = useMyLearning()
+  if (paths.isPending) return <Skeleton className="h-64" />
+  if (paths.isError) return <ErrorState title="Could not load the learning paths">{apiService.errorMessage(paths.error)}</ErrorState>
   if (!path) return <EmptyState title="Path not found"><Link to="/learning/paths" className="text-accent hover:underline">All paths</Link></EmptyState>
   if (me.isPending) return <Skeleton className="h-64" />
   if (me.isError) return <ErrorState title="Could not load your progress">{apiService.errorMessage(me.error)}</ErrorState>

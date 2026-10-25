@@ -9,7 +9,8 @@ import { ROLE_LABELS, type UserRole } from '@/types/domain'
 import { Badge, Button, Card, EmptyState, ErrorState, Section, Select, Skeleton, useToast } from '@/ui'
 import type { Readiness, ReadinessRequest } from './api'
 import { learningApi, learningKeys } from './api'
-import { pathById, pathProgress } from './paths'
+import { pathProgress } from './paths'
+import { usePaths } from './usePaths'
 import { ProgressBar } from './PathsPage'
 
 const roleName = (role: string | null) => (role ? ROLE_LABELS[role as UserRole] ?? role : '')
@@ -27,7 +28,7 @@ function Stat({ label, value, detail }: { label: string; value: string | number;
 
 function Evidence({ data }: { data: Readiness }) {
   const e = data.evidence
-  const path = pathById(e.path_id)
+  const path = usePaths().byId(e.path_id)
   const stats = path ? pathProgress(path, e.lessons, e.quizzes) : null
   return (
     <Section title="Evidence">

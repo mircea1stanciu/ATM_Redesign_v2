@@ -148,8 +148,11 @@ test('the notification settings mute a kind', async ({ page }) => {
   await expect(page.getByRole('list', { name: 'Notifications' })).toContainText(TITLE)
   const toggle = page.getByRole('switch', { name: 'Deployments to my projects\' test environments' })
   await expect(toggle).toBeChecked()
+  // The switch flips at once (phase 20); reload only once the server saved it.
+  const saved = page.waitForResponse(r => r.url().endsWith('/api/notifications/subscriptions') && r.request().method() === 'PUT')
   await toggle.click()
   await expect(toggle).not.toBeChecked()
+  expect((await saved).ok()).toBeTruthy()
   await page.reload()
   await expect(page.getByRole('switch', { name: 'Deployments to my projects\' test environments' })).not.toBeChecked()
 })

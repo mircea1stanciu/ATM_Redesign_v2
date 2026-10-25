@@ -9,7 +9,7 @@ from app.core.db import Base
 
 # What a notification is about. Each kind can be switched off in the notification settings.
 KINDS = ("deployment", "deployment_check", "run_finished", "review_request", "review", "practice", "readiness",
-         "promotion")
+         "promotion", "mentoring", "community")
 
 
 class Notification(Base):

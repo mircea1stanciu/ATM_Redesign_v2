@@ -1,4 +1,5 @@
 import { api } from '@/services/api'
+import type { LearningPath } from './paths'
 
 export interface QuizProgress { best_score: number | null; total: number | null; attempts: number; passed: boolean; passed_at: string | null }
 
@@ -9,7 +10,7 @@ export interface Progress {
 }
 
 export interface MyLearning {
-  profile: { path_id: string | null; tutor_mode: boolean }
+  profile: { path_id: string | null; tutor_mode: boolean; mentor: string | null }
   progress: Progress
 }
 
@@ -42,8 +43,17 @@ export interface Mentee extends Progress {
   name: string
   role: string
   path_id: string | null
+  mentor: string | null
   practice: { submitted: number; approved: number; changes_requested: number }
 }
+
+/** A lead's Trainees and Users with their Senior mentor, and the Seniors who can mentor (phase 21). */
+export interface Mentors {
+  people: { id: number; name: string; role: string; mentor_id: number | null }[]
+  seniors: { id: number; name: string }[]
+}
+
+export interface PathInput { title: string; description: string; programs: string[] }
 
 export interface WaitingPractice extends Submission { learner: string; learner_id: number; task: string; task_description: string }
 
@@ -112,6 +122,24 @@ export const learningApi = {
   async mentor(): Promise<{ people: Mentee[]; waiting: WaitingPractice[] }> {
     return (await api.get('/learning/mentor')).data
   },
+  async paths(): Promise<LearningPath[]> {
+    return (await api.get('/learning/paths')).data
+  },
+  async savePath(path: PathInput, id?: string): Promise<LearningPath> {
+    return (id ? await api.put(`/learning/paths/${id}`, path) : await api.post('/learning/paths', path)).data
+  },
+  async deletePath(id: string): Promise<void> {
+    await api.delete(`/learning/paths/${id}`)
+  },
+  async reorderPaths(ids: string[]): Promise<LearningPath[]> {
+    return (await api.post('/learning/paths/reorder', { ids })).data
+  },
+  async mentors(): Promise<Mentors> {
+    return (await api.get('/learning/mentors')).data
+  },
+  async assignMentor(userId: number, mentorId: number | null): Promise<{ id: number; mentor_id: number | null; mentor: string | null }> {
+    return (await api.put(`/learning/mentors/${userId}`, { mentor_id: mentorId })).data
+  },
   async hints(): Promise<Hint[]> {
     return (await api.get('/learning/hints')).data
   },
@@ -142,6 +170,8 @@ export const learningKeys = {
   me: ['learning', 'me'] as const,
   practice: ['learning', 'practice'] as const,
   mentor: ['learning', 'mentor'] as const,
+  mentors: ['learning', 'mentors'] as const,
+  paths: ['learning', 'paths'] as const,
   hints: ['learning', 'hints'] as const,
   readiness: (userId: number | string) => ['learning', 'readiness', String(userId)] as const,
   requests: ['learning', 'readiness-requests'] as const,

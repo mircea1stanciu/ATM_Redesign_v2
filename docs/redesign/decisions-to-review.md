@@ -190,3 +190,14 @@ own judgement calls at the end of this file.
 | A kind can go by e-mail or Teams even when it is switched off in ATM | E-mail and Teams only for kinds that are on in ATM | `channels_for` |
 | The mail server is set by Super Admins only (`settings.system`) | Leads too | `mail_router.py` |
 | Personal Teams webhooks accept any http(s) URL, like the project webhook | Only `*.logic.azure.com` / `*.powerplatform.com` hosts | `set_teams_webhook` |
+
+## Phase 21: learning and community (from the review)
+
+| Decision | Alternative | To reverse |
+|---|---|---|
+| Community is rebuilt in today's design, without attachments or threaded replies | Restore phase 12's screens as they were | `community_router.py`, `features/community/` |
+| One Community per organisation | One per project, or per community tag | `COMMUNITY` in `community_router.py` |
+| Viewers do not see Community (it follows `learning.use`) | Viewers read it too | `require("learning.use")` in `community_router.py`, `navigation.ts` |
+| Any active Senior can be chosen as a mentor | Only Seniors of the lead's projects | `list_mentors`, `assign_mentor` |
+| A Lead keeps mentoring their people even when a Senior is assigned | The Senior replaces the lead as mentor | `service.mentees` |
+| Deleting a path keeps the learners' lesson progress | Delete the progress of lessons only that path had | `delete_path` |

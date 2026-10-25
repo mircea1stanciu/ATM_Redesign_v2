@@ -2,13 +2,15 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Users } from 'lucide-react'
+import { usePermission } from '@/hooks/usePermission'
 import { apiService } from '@/services/api'
 import { ROLE_LABELS, type UserRole } from '@/types/domain'
 import { Button, Card, EmptyState, ErrorState, Section, Skeleton, useToast } from '@/ui'
-import type { WaitingPractice } from './api'
+import type { Mentors, WaitingPractice } from './api'
 import { learningApi, learningKeys } from './api'
-import { pathById, pathProgress } from './paths'
+import { pathProgress } from './paths'
 import { ProgressBar } from './PathsPage'
+import { usePaths } from './usePaths'
 
 function ReviewPractice({ item }: { item: WaitingPractice }) {
   const queryClient = useQueryClient()
@@ -41,17 +43,72 @@ function ReviewPractice({ item }: { item: WaitingPractice }) {
   )
 }
 
+/** Leads choose a Senior mentor for each of their Trainees and Users (phase 21). */
+function AssignMentors() {
+  const queryClient = useQueryClient()
+  const toast = useToast()
+  const mentors = useQuery({ queryKey: learningKeys.mentors, queryFn: learningApi.mentors })
+  const assign = useMutation({
+    mutationFn: ({ userId, mentorId }: { userId: number; mentorId: number | null }) => learningApi.assignMentor(userId, mentorId),
+    onSuccess: saved => {
+      queryClient.setQueryData<Mentors>(learningKeys.mentors, data => data && {
+        ...data, people: data.people.map(p => p.id === saved.id ? { ...p, mentor_id: saved.mentor_id } : p),
+      })
+      void queryClient.invalidateQueries({ queryKey: learningKeys.mentor })
+      toast({ title: saved.mentor ? `${saved.mentor} mentors them now` : 'Mentor removed', tone: 'success' })
+    },
+    onError: error => toast({ title: 'Not saved', description: apiService.errorMessage(error), tone: 'danger' }),
+  })
+  if (mentors.isPending) return <Skeleton className="h-24" />
+  if (mentors.isError) return <ErrorState title="Could not load the mentors">{apiService.errorMessage(mentors.error)}</ErrorState>
+  const { people, seniors } = mentors.data
+  return (
+    <Section title="Mentors">
+      <Card className="overflow-x-auto">
+        {people.length === 0 ? <p className="p-4 text-[13px] text-fg-muted">You lead no Trainees or Users yet.</p> : (
+          <table className="w-full text-left text-[13px]" aria-label="Mentors">
+            <thead className="border-b border-line text-xs text-fg-muted">
+              <tr><th className="px-4 py-2 font-medium">Person</th><th className="px-4 py-2 font-medium">Senior mentor</th></tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {people.map(person => (
+                <tr key={person.id}>
+                  <td className="px-4 py-2">
+                    <p className="font-medium text-fg">{person.name}</p>
+                    <p className="text-xs text-fg-muted">{ROLE_LABELS[person.role as UserRole] ?? person.role}</p>
+                  </td>
+                  <td className="w-72 px-4 py-2">
+                    <select aria-label={`Mentor of ${person.name}`} value={person.mentor_id ?? ''} disabled={assign.isPending}
+                      className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-[13px] text-fg disabled:opacity-50"
+                      onChange={e => assign.mutate({ userId: person.id, mentorId: e.target.value ? Number(e.target.value) : null })}>
+                      <option value="">No Senior mentor (you mentor them)</option>
+                      {seniors.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+    </Section>
+  )
+}
+
 /** Learning › Mentor (Lead, Senior): the people I mentor with their progress, and practice waiting for my review. */
 export default function MentorPage() {
+  const canAssign = usePermission('learning.manage')
+  const { byId } = usePaths()
   const mentor = useQuery({ queryKey: learningKeys.mentor, queryFn: learningApi.mentor, refetchInterval: 60_000 })
   if (mentor.isPending) return <Skeleton className="h-48" />
   if (mentor.isError) return <ErrorState title="Could not load the mentor view">{apiService.errorMessage(mentor.error)}</ErrorState>
   const { people, waiting } = mentor.data
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="flex min-w-0 flex-col gap-4">
       <Section title="People I mentor">
         <Card className="overflow-x-auto">
-          {people.length === 0 ? <EmptyState icon={Users} title="Nobody to mentor yet">Trainees and users assigned to you (or in your projects) show here.</EmptyState> : (
+          {people.length === 0 ? <EmptyState icon={Users} title="Nobody to mentor yet">{canAssign ? 'Your Trainees and Users show here.' : 'The Trainees and Users a lead assigns to you show here.'}</EmptyState> : (
             <table className="w-full text-left text-[13px]" aria-label="Mentees">
               <thead className="border-b border-line text-xs text-fg-muted">
                 <tr>
@@ -65,13 +122,13 @@ export default function MentorPage() {
               </thead>
               <tbody className="divide-y divide-line">
                 {people.map(person => {
-                  const path = pathById(person.path_id)
+                  const path = byId(person.path_id)
                   const stats = path ? pathProgress(path, person.lessons, person.quizzes) : null
                   return (
                     <tr key={person.id}>
                       <td className="px-4 py-2">
                         <p className="font-medium text-fg">{person.name}</p>
-                        <p className="text-xs text-fg-muted">{ROLE_LABELS[person.role as UserRole] ?? person.role} · <Link to={`/learning/readiness/${person.id}`} className="font-semibold text-accent hover:underline" aria-label={`Readiness of ${person.name}`}>Readiness</Link></p>
+                        <p className="text-xs text-fg-muted">{ROLE_LABELS[person.role as UserRole] ?? person.role}{canAssign && person.mentor ? ` · mentor ${person.mentor}` : ''} · <Link to={`/learning/readiness/${person.id}`} className="font-semibold text-accent hover:underline" aria-label={`Readiness of ${person.name}`}>Readiness</Link></p>
                       </td>
                       <td className="min-w-[180px] px-2 py-2">
                         {path && stats ? <><p className="text-xs text-fg">{path.title}</p><ProgressBar percent={stats.percent} label={`${person.name} on ${path.title}`} /><p className="text-xs text-fg-muted">{stats.percent} %</p></>
@@ -89,6 +146,8 @@ export default function MentorPage() {
           )}
         </Card>
       </Section>
+      {canAssign && <AssignMentors />}
+      </div>
       <Section title={`Practice waiting for review (${waiting.length})`}>
         {waiting.length === 0 ? <Card><p className="p-4 text-[13px] text-fg-muted">Nothing waiting.</p></Card> : (
           <ul className="space-y-2" aria-label="Practice waiting for review">

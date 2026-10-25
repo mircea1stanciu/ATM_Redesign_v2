@@ -9,15 +9,15 @@ test.beforeEach(({ page }) => {
   })
 })
 
-test('Community is no longer in the navigation and its URL goes Home', async ({ page }) => {
+test('Community, removed in phase 13, is back as its own page (phase 21); viewers do not see it', async ({ page }) => {
   await login(page, 'super_admin')
   const nav = page.getByRole('navigation', { name: 'Main' })
-  await expect(nav.getByRole('link', { name: 'Learning', exact: true })).toBeVisible()
-  await expect(nav.getByRole('link', { name: 'Community', exact: true })).toHaveCount(0)
+  await nav.getByRole('link', { name: 'Community', exact: true }).click()
+  await expect(page).toHaveURL(/\/community$/)
+  await expect(page.getByRole('heading', { level: 1, name: 'Community' })).toBeVisible()
 
-  await page.goto('/community')
-  await expect(page).toHaveURL(/\/$/)
-  await expect(page.getByRole('heading', { name: /^Good (morning|afternoon|evening)/ })).toBeVisible()
+  await login(page, 'viewer')
+  await expect(nav.getByRole('link', { name: 'Community', exact: true })).toHaveCount(0)
 })
 
 test('Settings no longer offers the mock privacy, data and billing sections', async ({ page }) => {
