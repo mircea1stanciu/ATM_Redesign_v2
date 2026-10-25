@@ -1,5 +1,5 @@
 import {
-  BarChart3, ClipboardList, GitPullRequest, GraduationCap, Home, PlayCircle, Rocket, Settings, Shield,
+  BarChart3, ClipboardList, GitPullRequest, GraduationCap, Home, MessagesSquare, PlayCircle, Rocket, Settings, Shield,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { hasPermission } from '@/hooks/usePermission'
@@ -17,7 +17,7 @@ export interface Area {
   description: string
 }
 
-/** The seven areas (docs/redesign/05-design.md, sections 5.3 and 5.4). */
+/** The areas (docs/redesign/05-design.md, sections 5.3 and 5.4); Community came back in phase 21. */
 export const AREAS: Area[] = [
   { id: 'home', label: 'Home', to: '/', icon: Home, shortcut: 'h', description: 'Your start page' },
   { id: 'work', label: 'Work', to: '/work', icon: ClipboardList, permissions: ['work.view'], shortcut: 'w',
@@ -32,6 +32,8 @@ export const AREAS: Area[] = [
     shortcut: 'd', description: 'Deployments to check' },
   { id: 'learning', label: 'Learning', to: '/learning', icon: GraduationCap, permissions: ['learning.use'],
     shortcut: 'l', description: 'Paths, lessons and practice' },
+  { id: 'community', label: 'Community', to: '/community', icon: MessagesSquare, permissions: ['learning.use'],
+    shortcut: 'c', description: 'Questions and answers' },
 ]
 
 export const SECONDARY_AREAS: Area[] = [

@@ -7,13 +7,15 @@ import { apiService } from '@/services/api'
 import { Button, Card, EmptyState, ErrorState, Section, Skeleton } from '@/ui'
 import type { Program } from './content'
 import { learningApi, learningKeys } from './api'
-import { PATHS, findLesson, pathById } from './paths'
+import type { LearningPath } from './paths'
+import { findLesson, pathById } from './paths'
+import { usePaths } from './usePaths'
 import { useMyLearning } from './useMyLearning'
 import { CourseViewer } from './viewers'
 
 /** Where "back" goes: the path in the URL, my path if it has this program, or the first path that has it. */
-export function backToPath(program: Program, fromUrl: string | null, myPath: string | null | undefined): string {
-  const candidates = [pathById(fromUrl), pathById(myPath), ...PATHS]
+export function backToPath(paths: LearningPath[], program: Program, fromUrl: string | null, myPath: string | null | undefined): string {
+  const candidates = [pathById(paths, fromUrl), pathById(paths, myPath), ...paths]
   const path = candidates.find(p => p?.programs.includes(program.id))
   return path ? `/learning/paths/${path.id}` : '/learning/paths'
 }
@@ -72,11 +74,12 @@ export default function LessonPage() {
   const navigate = useNavigate()
   const canUseAi = usePermission('ai.use')
   const { me, completeLesson } = useMyLearning()
+  const { paths } = usePaths()
   const found = findLesson(lessonId)
   if (!found) return <EmptyState title="Lesson not found"><Link to="/learning/paths" className="text-accent hover:underline">All paths</Link></EmptyState>
   if (me.isPending) return <Skeleton className="h-64" />
   const { program, module, lesson } = found
-  const back = backToPath(program, params.get('path'), me.data?.profile.path_id)
+  const back = backToPath(paths, program, params.get('path'), me.data?.profile.path_id)
   const context = [lesson.summary, ...lesson.objectives.map(o => `- ${o}`), ...lesson.steps.map(s => `## ${s.title}\n${s.detail}`)].join('\n').slice(0, 11_000)
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">

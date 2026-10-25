@@ -7,7 +7,7 @@ import { apiService } from '@/services/api'
 import { Badge, Button, Card, Checkbox, Dialog, EmptyState, ErrorState, IconButton, Input, Select, Skeleton, Textarea, useToast } from '@/ui'
 import type { PracticeTask, Submission } from './api'
 import { learningApi, learningKeys } from './api'
-import { PATHS, pathById } from './paths'
+import { usePaths } from './usePaths'
 
 export const SUBMISSION_STATUS: Record<Submission['status'], { label: string; tone: 'info' | 'success' | 'warning' }> = {
   submitted: { label: 'Waiting for review', tone: 'info' },
@@ -23,6 +23,7 @@ function TaskDialog({ task, onClose }: { task: PracticeTask | null; onClose: () 
   const [pathId, setPathId] = useState(task?.path_id ?? '')
   const [projectId, setProjectId] = useState(task?.project ? String(task.project.id) : '')
   const [active, setActive] = useState(task?.active ?? true)
+  const { paths } = usePaths()
   const save = useMutation({
     mutationFn: () => learningApi.saveTask({ title: title.trim(), description: description.trim(), path_id: pathId || null,
       project_id: projectId ? Number(projectId) : null, active }, task?.id),
@@ -38,7 +39,7 @@ function TaskDialog({ task, onClose }: { task: PracticeTask | null; onClose: () 
           help="A small, real change: which file, what the test should check, how to know it is done." />
         <Select label="Path (optional)" value={pathId} onChange={e => setPathId(e.target.value)}>
           <option value="">Any path</option>
-          {PATHS.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
+          {paths.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
         </Select>
         <Select label="Project to work in (optional)" value={projectId} onChange={e => setProjectId(e.target.value)}>
           <option value="">None</option>
@@ -83,6 +84,7 @@ export default function PracticePage() {
   const canPractise = usePermission('code.edit')
   const [editing, setEditing] = useState<PracticeTask | 'new' | null>(null)
   const tasks = useQuery({ queryKey: learningKeys.practice, queryFn: learningApi.practice })
+  const { byId } = usePaths()
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3">
@@ -107,7 +109,7 @@ export default function PracticePage() {
                     {canManage && <IconButton size="sm" label={`Edit ${task.title}`} icon={<Pencil size={13} />} onClick={() => setEditing(task)} />}
                   </div>
                   <p className="text-xs text-fg-muted">
-                    {pathById(task.path_id)?.title ?? 'Any path'}{task.project ? ` · in ${task.project.name}` : ''}
+                    {byId(task.path_id)?.title ?? 'Any path'}{task.project ? ` · in ${task.project.name}` : ''}
                   </p>
                   <p className="whitespace-pre-wrap text-[13px] text-fg">{task.description}</p>
                   {mine?.feedback && (

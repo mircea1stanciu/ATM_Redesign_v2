@@ -42,6 +42,8 @@ const TimelinePage = lazy(() => import('@/features/deployments/TimelinePage'))
 const DeploymentPage = lazy(() => import('@/features/deployments/DeploymentPage'))
 const ServicesPage = lazy(() => import('@/features/deployments/ServicesPage'))
 const NotificationsPage = lazy(() => import('@/features/notifications/NotificationsPage'))
+const CommunityPage = lazy(() => import('@/features/community/CommunityPage'))
+const QuestionPage = lazy(() => import('@/features/community/QuestionPage'))
 const PullRequestsPage = lazy(() => import('@/features/reviews/PullRequestsPage'))
 const PullRequestPage = lazy(() => import('@/features/reviews/PullRequestPage'))
 const TrendsPage = lazy(() => import('@/features/reports/TrendsPage'))
@@ -325,7 +327,9 @@ export default function App() {
               <Route path="readiness" element={<ReadinessPage />} />
               <Route path="readiness/:userId" element={<ReadinessPage />} />
             </Route>
-            {/* Community was removed in phase 13 (learners ask the AI tutor and their mentors); /community falls through to Home. */}
+            {/* Community: removed in phase 13, back as its own page in phase 21. */}
+            <Route path="community" element={<RequirePermission any={['learning.use']}><CommunityPage /></RequirePermission>} />
+            <Route path="community/:postId" element={<RequirePermission any={['learning.use']}><QuestionPage /></RequirePermission>} />
             <Route path="admin" element={<RequirePermission any={['user.view', 'project.create', 'settings.system']}><AdminLayout /></RequirePermission>}>
               <Route index element={<AdminIndex />} />
               <Route path="users" element={<RequirePermission any={['user.view']}><UsersPage /></RequirePermission>} />
