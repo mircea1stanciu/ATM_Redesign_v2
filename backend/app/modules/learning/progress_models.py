@@ -5,7 +5,7 @@ learner's profile (chosen path, AI tutor mode, mentor). The lessons themselves s
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -121,3 +121,16 @@ class ReadinessRequest(Base):
     decided_by_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
     requested_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+
+class AIUsage(Base):
+    """One use of the AI by a person (phase 22, counted from then on): an assistant message in the workspace, a tutor
+    question in a lesson, or an AI review of a pull request. Readiness evidence shows the counts."""
+    __tablename__ = "ai_usage"
+    __table_args__ = (Index("ix_ai_usage_user_kind", "user_id", "kind"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)  # assistant | tutor | review
+    project_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("projects.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)

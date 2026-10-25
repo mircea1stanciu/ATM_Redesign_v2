@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.permissions import LEAD, SA, SENIOR, TRAINEE, USER
 from app.modules.identity.models import User
-from app.modules.learning.progress_models import LearningProfile, LearningProgress
+from app.modules.learning.progress_models import AIUsage, LearningProfile, LearningProgress
 
 LEARNER_ROLES = frozenset({TRAINEE, USER})
 QUIZ_PASS_MARK = 7  # of 10 questions (or all of them, for a shorter quiz)
@@ -80,6 +80,15 @@ def progress_of(db: Session, user_ids: list[int]) -> dict[int, dict]:
         if not entry["last_activity"] or stamp > entry["last_activity"]:
             entry["last_activity"] = stamp
     return out
+
+
+AI_KINDS = ("assistant", "tutor", "review")
+
+
+def count_ai_use(db: Session, user: User, kind: str, project_id: Optional[int] = None) -> None:
+    """Count one use of the AI for the readiness evidence (phase 22)."""
+    db.add(AIUsage(user_id=user.id, kind=kind, project_id=project_id))
+    db.commit()
 
 
 TUTOR_RULES = (

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.crypto import encrypt
 from app.core.db import get_db
 from app.core.permissions import require
+from app.modules.audit.service import record_change
 from app.modules.identity.models import User
 from app.modules.notifications import channels
 from app.modules.notifications.models import MailServer
@@ -56,13 +57,18 @@ async def set_mail_server(payload: MailServerUpdate, current_user: User = Depend
     server.sender = payload.sender.strip()
     server.updated_by_id = current_user.id
     db.commit()
+    changed = ["host", "port", "security", "username", "sender"]
+    if payload.password is not None:
+        changed.append("password")
+    record_change(db, current_user, "settings.system", "the mail server", changed)
     return _response(server)
 
 
 @router.delete("")
-async def remove_mail_server(_user: User = Depends(require("settings.system")), db: Session = Depends(get_db)):
+async def remove_mail_server(current_user: User = Depends(require("settings.system")), db: Session = Depends(get_db)):
     db.query(MailServer).delete()
     db.commit()
+    record_change(db, current_user, "settings.system", "the mail server (removed)", ["removed"])
     return _response(None)
 
 

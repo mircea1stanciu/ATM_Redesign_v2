@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.core.crypto import encrypt
 from app.core.db import get_db
 from app.core.permissions import ensure, require, visible_project_ids
+from app.modules.audit.service import name_of, record, record_change
 from app.modules.projects.checkouts import (
     checkout_path,
     read_linked_path,
@@ -185,6 +186,9 @@ async def update_project(
 
     db.commit()
     db.refresh(project)
+    if changes:
+        record_change(db, current_user, "settings.project", f"the settings of {project.name}", changes,
+                      project_id=project.id)
     return {"message": "Project updated successfully", "project": _project_response(project)}
 
 
@@ -202,8 +206,11 @@ async def delete_project(
         raise HTTPException(status_code=404, detail="Project not found")
     
     # Delete the project (cascade will delete related issues, sprints, etc.)
+    name, key = project.name, project.key
     db.delete(project)
     db.commit()
+    record(db, "project.delete", f"{name_of(current_user)} deleted the project {name}", actor_id=current_user.id,
+           details={"project": name, "key": key, "project_id": project_id})
     
     return {"message": "Project deleted successfully"}
 
@@ -919,6 +926,10 @@ async def update_project_github(
     if payload.github_token is not None:
         set_project_github_token(db, current_user, project_id, payload.github_token)
     _forget_github_overview(project_id)
+    fields = [f for f in ("github_token", "github_repo_url") if getattr(payload, f) is not None]
+    if fields:
+        record_change(db, current_user, "settings.connection", f"their GitHub connection for {project.name}", fields,
+                      project_id=project.id, details={"kind": "GitHub"})
 
     token = project_github_token(current_user, project_id)
     return ProjectGitHubResponse(
@@ -940,6 +951,8 @@ async def disconnect_project_github(
         raise HTTPException(status_code=404, detail="Project not found")
     set_project_github_token(db, current_user, project_id, "")
     _forget_github_overview(project_id)
+    record_change(db, current_user, "settings.connection", f"their GitHub connection for {project.name} (removed)",
+                  ["github_token"], project_id=project.id, details={"kind": "GitHub"})
     return None
 
 

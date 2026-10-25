@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.core.deps import get_current_user
 from app.core.permissions import require
+from app.modules.audit.service import record_change
 from app.modules.learning import service as learning
 from app.modules.projects.checkouts import require_checkout
 from app.modules.projects.models import AnalyticsRun, AnalyticsSuite
@@ -71,11 +72,20 @@ def _stored_settings(user) -> dict:
     return get_json(user, "ai_assistant")
 
 
-def _save_settings(db: Session, user, settings: dict | None) -> None:
+def _save_settings(db: Session, user, settings: dict | None, audit: bool = True) -> None:
     _models_cache.pop(user.id, None)
     set_json(user, "ai_assistant", settings)
     db.commit()
     db.refresh(user)
+    # Audited without the key (phase 22): the provider and model, or that the connection was removed. Refreshed
+    # sign-in tokens are not changes the person made, so they are not audited.
+    if not audit:
+        return
+    if settings:
+        record_change(db, user, "settings.ai", "their AI assistant connection", ["provider", "model"],
+                      details={"provider": settings.get("provider"), "model": settings.get("model")})
+    else:
+        record_change(db, user, "settings.ai", "their AI assistant connection (removed)", ["removed"])
 
 
 def _clean_time_zone(value: str | None) -> str:
@@ -102,7 +112,7 @@ async def _active_config(user, db: Session, payload: AISettingsRequest | None = 
             except providers.AIError as exc:
                 raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
             stored = {**stored, **{k: v for k, v in tokens.items() if v}}
-            _save_settings(db, user, stored)
+            _save_settings(db, user, stored, audit=False)
         return providers.AIConfig(provider, stored.get("access_token") or "", providers.MICROSOFT_COPILOT_MODEL,
                                   stored.get("time_zone") or "UTC")
     if provider == "rbi_genai":
@@ -143,10 +153,10 @@ async def _fresh_rbi_tokens(user, db: Session, stored: dict) -> dict:
         tokens = await rbi_gateway.refresh_token(stored.get("environment"), stored.get("refresh_token") or "")
     except rbi_gateway.GatewayAuthError as exc:
         if exc.relogin:
-            _save_settings(db, user, {**stored, "access_token": "", "refresh_token": "", "expires_at": 0})
+            _save_settings(db, user, {**stored, "access_token": "", "refresh_token": "", "expires_at": 0}, audit=False)
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     stored = {**stored, **{k: v for k, v in tokens.items() if v}}
-    _save_settings(db, user, stored)
+    _save_settings(db, user, stored, audit=False)
     return stored
 
 
@@ -556,6 +566,7 @@ async def send_ai_message(
             raise HTTPException(status_code=400, detail=f"'{normalised}' looks like a secret/key file and is never "
                                                         "sent to the AI.")
         attachments.append(normalised)
+    learning.count_ai_use(db, current_user, "assistant", project_id)
     model_content = payload.content.strip()
     run_info = None
     if payload.run_id:

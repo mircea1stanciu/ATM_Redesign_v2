@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.permissions import SENIOR, ensure, has_permission, require
+from app.modules.audit.service import name_of, record
 from app.modules.identity.models import User
 from app.modules.learning import service
 from app.modules.learning.progress_models import (
@@ -449,8 +450,11 @@ async def delete_path(path_id: str, current_user: User = Depends(require("learni
     path = _path(db, path_id)
     db.query(LearningProfile).filter(LearningProfile.path_id == path.id).update({"path_id": None})
     db.query(PracticeTask).filter(PracticeTask.path_id == path.id).update({"path_id": None})
+    title = path.title
     db.delete(path)
     db.commit()
+    record(db, "path.delete", f"{name_of(current_user)} deleted the learning path {title}", actor_id=current_user.id,
+           details={"path": title, "path_id": path_id})
     return {"deleted": path_id}
 
 
@@ -494,8 +498,10 @@ async def save_hint(hint_id: str, payload: HintPayload, current_user: User = Dep
 @router.delete("/hints/{hint_id}")
 async def delete_hint(hint_id: str, current_user: User = Depends(require("learning.manage")),
                       db: Session = Depends(get_db)):
-    db.query(Hint).filter(Hint.id == hint_id).delete()
-    db.commit()
+    if db.query(Hint).filter(Hint.id == hint_id).delete():
+        db.commit()
+        record(db, "hint.delete", f"{name_of(current_user)} deleted the hint {hint_id}", actor_id=current_user.id,
+               details={"hint_id": hint_id})
     return {"deleted": hint_id}
 
 
@@ -539,4 +545,5 @@ async def ask_tutor(payload: TutorQuestion, current_user: User = Depends(require
             parts.append(chunk)
     except providers.AIError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    service.count_ai_use(db, current_user, "tutor")
     return {"answer": "".join(parts).strip()}

@@ -12,6 +12,7 @@ from app.core.config import BACKEND_DIR, settings
 from app.core.db import get_db
 from app.core.deps import get_current_user
 from app.core.permissions import LEAD_ROLES, require
+from app.modules.audit.service import record_change
 from app.modules.identity.models import User, UserRole
 from app.modules.settings.connections import set_secret, settings_with_secrets, store_settings
 from app.services.confluence_release_analyzer import (
@@ -307,6 +308,13 @@ class RequirementsFiltersResponse(BaseModel):
     automation_status_management: AutomationStatusFilter
 
 
+def _record_connection(db: Session, user, kind: str, values: dict) -> None:
+    """Audit a change of a connection's token or base URL (phase 22); choosing a Jira project is not audited."""
+    fields = [field for field, value in values.items() if value is not None]
+    if fields:
+        record_change(db, user, "settings.connection", f"their {kind} connection", fields, details={"kind": kind})
+
+
 def _user_settings(user) -> dict:
     """The user's settings with decrypted tokens filled in (tokens are stored in user_connections)."""
     return settings_with_secrets(user)
@@ -430,6 +438,8 @@ async def update_github_settings(
     _set_user_settings(current_user, data)
     db.commit()
     db.refresh(current_user)
+    _record_connection(db, current_user, "GitHub", {"github_token": payload.github_token,
+                                                   "github_mcp_base_url": payload.github_mcp_base_url})
 
     token = _read_setting(data, "github_token", "")
     base_url = _read_setting(data, "github_mcp_base_url", "")
@@ -574,6 +584,8 @@ async def update_jira_settings(
     _set_user_settings(current_user, data)
     db.commit()
     db.refresh(current_user)
+    _record_connection(db, current_user, "Jira", {"jira_token": payload.jira_token,
+                                                 "jira_mcp_base_url": payload.jira_mcp_base_url})
 
     # The token/base URL/project just changed, so any previously cached
     # Epics/Test cases (Jira Management) fetched under the old configuration
@@ -1517,8 +1529,12 @@ async def get_zephyr_settings(_user=Depends(require("work.view"))):
 async def update_zephyr_settings(
     payload: dict,
     _user=Depends(require("settings.system")),
+    db: Session = Depends(get_db),
 ):
     """Save Zephyr project and folder selection to .env (admin only)."""
+    changed = [key for key in ("zephyr_project_key", "zephyr_selected_folder_id") if key in payload]
+    if changed:
+        record_change(db, _user, "settings.system", "the Zephyr settings", changed)
     if "zephyr_project_key" in payload:
         project_key = payload["zephyr_project_key"]
         _write_env_key("ZEPHYR_PROJECT_KEY", project_key)

@@ -1,6 +1,7 @@
 """Readiness and promotion, and the audit log (phase 14)."""
 import uuid
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -9,9 +10,12 @@ from app.core.security import create_access_token
 from app.main import app
 from app.modules.audit.models import AuditEntry
 from app.modules.identity.models import User, UserRole
+from app.modules.learning import service
 from app.modules.learning.progress_models import LearningProfile, LearningProgress, PracticeSubmission, PracticeTask
 from app.modules.notifications.models import Notification
 from app.modules.projects.models import AnalyticsRun, AnalyticsSuite, Project, ProjectMember
+from app.modules.projects.service import set_project_github_token
+from app.modules.reviews import github
 from app.modules.reviews.models import PullRequest, PullRequestReview
 from app.modules.work.models import WorkItem
 
@@ -165,3 +169,50 @@ def test_audit_log_scope(client, team):
     admin = _user("super_admin")
     assert any(e["subject"] == trainee["name"] for e in client.get(
         "/api/audit?action=role.change", headers=admin["headers"]).json()["items"])
+
+
+def test_evidence_asks_github_for_merged_pull_requests_and_counts_ai_use(client, team, monkeypatch):
+    trainee, lead = team["trainee"], team["lead"]
+    with SessionLocal() as db:  # the project has a repository; the trainee has a token (the lead has none)
+        project = db.query(Project).filter(Project.id == team["project_id"]).one()
+        project.github_repo_url = "https://ghe.test/acme/shop"
+        project.lead_user_id = lead["id"]
+        db.commit()
+        set_project_github_token(db, db.query(User).filter(User.id == trainee["id"]).one(), project.id, "tok-trainee")
+    pulls = [
+        {"number": 1, "state": "closed", "merged_at": "2026-10-20T10:00:00Z", "user": {"login": "trainee-gh"}},
+        {"number": 2, "state": "open", "merged_at": None, "user": {"login": "trainee-gh"}},
+        {"number": 3, "state": "closed", "merged_at": "2026-10-21T10:00:00Z", "user": {"login": "trainee-gh"}},
+        {"number": 4, "state": "closed", "merged_at": "2026-10-22T10:00:00Z", "user": {"login": "someone-else"}},
+    ]
+    approved = [{"state": "APPROVED", "user": {"login": "lead-gh"}}]
+    reviews = {1: approved, 2: approved, 3: [{"state": "COMMENTED", "user": {"login": "lead-gh"}}], 4: approved}
+    asked = []
+
+    def fake(request: httpx.Request) -> httpx.Response:
+        path = request.url.path.removeprefix("/api/v3")
+        asked.append((path, dict(request.url.params)))
+        if path == "/user":
+            return httpx.Response(200, json={"login": "trainee-gh"})
+        if path == "/repos/acme/shop/pulls":
+            return httpx.Response(200, json=pulls)
+        number = int(path.split("/")[-2])
+        return httpx.Response(200, json=reviews[number] if request.url.params.get("page") in (None, "1") else [])
+
+    monkeypatch.setattr(github, "HTTP_TRANSPORT", httpx.MockTransport(fake))
+    with SessionLocal() as db:
+        person = db.query(User).filter(User.id == trainee["id"]).one()
+        for kind in ("assistant", "assistant", "tutor", "review"):
+            service.count_ai_use(db, person, kind)
+
+    evidence = client.get(f"/api/readiness/people/{trainee['id']}", headers=lead["headers"]).json()["evidence"]
+    assert evidence["github"] == {"merged_after_review": 1, "approved_not_merged": 1, "merged_without_review": 1,
+                                  "projects": ["Shop"], "errors": []}
+    assert ("/repos/acme/shop/pulls", {"state": "all", "sort": "updated", "direction": "desc", "per_page": "100"}) \
+        in asked
+    assert (evidence["ai"]["assistant"], evidence["ai"]["tutor"], evidence["ai"]["review"]) == (2, 1, 1)
+    assert evidence["ai"]["connected"] is False and evidence["ai"]["last_at"]
+
+    monkeypatch.setattr(github, "HTTP_TRANSPORT", httpx.MockTransport(lambda request: httpx.Response(401)))
+    failing = client.get(f"/api/readiness/people/{trainee['id']}", headers=lead["headers"]).json()["evidence"]
+    assert failing["github"]["projects"] == [] and failing["github"]["errors"][0]["project"] == "Shop"
