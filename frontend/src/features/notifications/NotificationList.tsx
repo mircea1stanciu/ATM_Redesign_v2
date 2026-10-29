@@ -9,6 +9,7 @@ import { isExternal, notificationKeys, notificationsApi } from './api'
 const ICONS: Record<NotificationKind, LucideIcon> = {
   deployment: Rocket,
   deployment_check: CheckCircle2,
+  repository_merge: GitPullRequest,
   run_finished: Play,
   review_request: GitPullRequest,
   review: MessageSquare,

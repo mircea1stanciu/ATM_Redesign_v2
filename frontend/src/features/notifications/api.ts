@@ -1,7 +1,7 @@
 import { api } from '@/services/api'
 
-export type NotificationKind = 'deployment' | 'deployment_check' | 'run_finished' | 'review_request' | 'review' | 'practice' | 'readiness' | 'promotion'
-  | 'mentoring' | 'community'
+export type NotificationKind = 'deployment' | 'deployment_check' | 'repository_merge' | 'run_finished' | 'review_request'
+  | 'review' | 'practice' | 'readiness' | 'promotion' | 'mentoring' | 'community'
 
 export interface AppNotification {
   id: number

@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     ATM_PUBLIC_URL: str = ""
 
     # Creates the first super admin "admin" on a database without one (development only).
-    ATM_DEV_ADMIN_PASSWORD: str = ""
+    ATM_DEV_ADMIN_PASSWORD: str = "Parola123"
 
     # CORS
     CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000"]

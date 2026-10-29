@@ -16,6 +16,9 @@ class Service(Base):
     name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     kind: Mapped[str] = mapped_column(String(20), default="backend", nullable=False)  # backend | frontend
     description: Mapped[Optional[str]] = mapped_column(String(500))
+    repository_url: Mapped[Optional[str]] = mapped_column(String(1024))
+    main_branch: Mapped[str] = mapped_column(String(255), default="main", nullable=False)
+    check_portal_url: Mapped[Optional[str]] = mapped_column(String(1024))
     webhook_secret: Mapped[str] = mapped_column(String(512), nullable=False)  # encrypted (app.core.crypto)
     created_by_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
@@ -35,6 +38,23 @@ class ServiceProject(Base):
         Integer, ForeignKey("analytics_suites.id", ondelete="SET NULL"))
     # The check runs as the person who chose the smoke suite, in their checkout (like a schedule).
     check_user_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
+
+
+class ServiceMerge(Base):
+    """A GitHub pull request merged into a monitored service branch; delivery IDs make retries idempotent."""
+    __tablename__ = "service_merges"
+    __table_args__ = (UniqueConstraint("service_id", "delivery_id", name="uq_service_merge_delivery"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    service_id: Mapped[int] = mapped_column(Integer, ForeignKey("services.id", ondelete="CASCADE"), nullable=False,
+                                            index=True)
+    delivery_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    pull_request_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    url: Mapped[str] = mapped_column(String(1024), nullable=False)
+    commit_sha: Mapped[Optional[str]] = mapped_column(String(64))
+    merged_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    received_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
 
 class Deployment(Base):
