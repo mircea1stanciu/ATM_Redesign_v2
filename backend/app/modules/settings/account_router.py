@@ -609,24 +609,38 @@ async def list_confluence_spaces(current_user: User = Depends(get_current_user),
     last_error = ""
     for api_base in candidates:
         try:
+            spaces = []
+            start = 0
             async with httpx.AsyncClient(timeout=12) as client:
-                response = await client.get(
-                    f"{api_base}/rest/api/space",
-                    params={"limit": 200},
-                    headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
-                )
-            if response.status_code == 200:
-                payload = response.json() or {}
-                results = payload.get("results", []) if isinstance(payload, dict) else []
-                spaces = [
-                    ConfluenceSpaceItem(
-                        id=str(item.get("id", "")), key=str(item.get("key", "")), name=str(item.get("name", ""))
+                for _ in range(100):
+                    response = await client.get(
+                        f"{api_base}/rest/api/space",
+                        params={"start": start, "limit": 200},
+                        headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
                     )
-                    for item in results
-                    if item.get("key") and item.get("name")
-                ]
-                return ConfluenceSpacesResponse(spaces=spaces)
-            last_error = f"{response.status_code}: {response.text[:120]}"
+                    if response.status_code != 200:
+                        last_error = f"{response.status_code}: {response.text[:120]}"
+                        break
+
+                    payload = response.json() or {}
+                    results = payload.get("results", []) if isinstance(payload, dict) else []
+                    spaces.extend(
+                        ConfluenceSpaceItem(
+                            id=str(item.get("id", "")), key=str(item.get("key", "")), name=str(item.get("name", ""))
+                        )
+                        for item in results
+                        if item.get("key") and item.get("name")
+                    )
+                    if not results:
+                        return ConfluenceSpacesResponse(spaces=spaces)
+
+                    page_limit = payload.get("limit", 200) if isinstance(payload, dict) else 200
+                    has_next = bool((payload.get("_links") or {}).get("next")) if isinstance(payload, dict) else False
+                    if not has_next and len(results) < page_limit:
+                        return ConfluenceSpacesResponse(spaces=spaces)
+                    start += len(results)
+                else:
+                    last_error = "Confluence returned too many space pages."
         except Exception as exc:
             last_error = str(exc)
 

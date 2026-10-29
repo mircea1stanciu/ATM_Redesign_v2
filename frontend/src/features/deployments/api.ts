@@ -43,6 +43,9 @@ export interface ServiceEntry {
   name: string
   kind: 'backend' | 'frontend'
   description: string | null
+  repository_url: string | null
+  main_branch: string
+  check_portal_url: string | null
   projects: ServiceProjectEntry[]
   last_deployment: { id: number; version: string; environment: string; deployed_at: string } | null
 }
@@ -64,10 +67,16 @@ export const deploymentsApi = {
     return (await api.get('/deployments/services')).data
   },
   /** The answer carries the webhook secret, shown once. */
-  async createService(payload: { name: string; kind: string; description: string }): Promise<ServiceEntry & { secret: string }> {
+  async createService(payload: {
+    name: string; kind: string; description: string; repository_url?: string | null; main_branch?: string;
+    check_portal_url?: string | null
+  }): Promise<ServiceEntry & { secret: string }> {
     return (await api.post('/deployments/services', payload)).data
   },
-  async updateService(id: number, payload: { name?: string; kind?: string; description?: string }): Promise<ServiceEntry> {
+  async updateService(id: number, payload: {
+    name?: string; kind?: string; description?: string; repository_url?: string | null; main_branch?: string;
+    check_portal_url?: string | null
+  }): Promise<ServiceEntry> {
     return (await api.patch(`/deployments/services/${id}`, payload)).data
   },
   async deleteService(id: number): Promise<void> {

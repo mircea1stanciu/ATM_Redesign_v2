@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Copy, KeyRound, Pencil, Plus, Server, Trash2 } from 'lucide-react'
+import { Copy, ExternalLink, GitBranch, Globe, KeyRound, Pencil, Plus, Server, Trash2 } from 'lucide-react'
 import { useAppStore } from '@/store/useAppStore'
 import { apiService } from '@/services/api'
 import { usePermission } from '@/hooks/usePermission'
 import {
-  Badge, Button, Card, ConfirmDialog, Dialog, EmptyState, ErrorState, IconButton, Input, Select, Skeleton, useToast,
+  Badge, Button, Card, ConfirmDialog, Dialog, EmptyState, ErrorState, IconButton, Input, Select, Skeleton, Tabs,
+  useTabParam, useToast,
 } from '@/ui'
 import type { ServiceEntry, ServiceProjectEntry } from './api'
 import { deploymentKeys, deploymentsApi, utc } from './api'
@@ -22,9 +23,12 @@ function exampleScript(url: string, service: string, secret: string): string {
 }
 
 /** The webhook URL and the secret, shown once (ATM keeps the secret encrypted and never shows it again). */
-function SecretDialog({ service, secret, onClose }: { service: string; secret: string; onClose: () => void }) {
+function SecretDialog({ serviceId, service, secret, showGithubWebhook, onClose }: {
+  serviceId: number; service: string; secret: string; showGithubWebhook: boolean; onClose: () => void
+}) {
   const toast = useToast()
   const url = `${window.location.origin}/api/deployments/webhook`
+  const githubUrl = `${window.location.origin}/api/deployments/services/${serviceId}/github-webhook`
   const copy = (text: string, what: string) => {
     void navigator.clipboard?.writeText(text).then(() => toast({ title: `${what} copied`, tone: 'success' }))
   }
@@ -41,6 +45,15 @@ function SecretDialog({ service, secret, onClose }: { service: string; secret: s
           <div className="flex-1"><Input label="Secret" value={secret} readOnly className="font-mono" /></div>
           <IconButton label="Copy the secret" icon={<Copy size={14} />} onClick={() => copy(secret, 'Secret')} />
         </div>
+        {showGithubWebhook && (
+          <>
+            <div className="flex items-end gap-2">
+              <div className="flex-1"><Input label="GitHub pull request webhook URL" value={githubUrl} readOnly /></div>
+              <IconButton label="Copy the GitHub webhook URL" icon={<Copy size={14} />} onClick={() => copy(githubUrl, 'GitHub webhook URL')} />
+            </div>
+            <p className="text-xs text-fg-muted">For GitHub, subscribe to Pull requests and use this service secret.</p>
+          </>
+        )}
         <p className="rounded-lg bg-warning/10 px-3 py-2 text-xs text-fg">
           Copy the secret now and keep it in your pipeline's secret store: ATM does not show it again. You can make a new one at any time.
         </p>
@@ -53,19 +66,50 @@ function SecretDialog({ service, secret, onClose }: { service: string; secret: s
   )
 }
 
-function ServiceDialog({ service, onClose, onCreated }: {
+function ServicePortalDialog({ service, onClose }: { service: ServiceEntry; onClose: () => void }) {
+  const portalUrl = service.check_portal_url
+  if (!portalUrl) return null
+  return (
+    <Dialog open onOpenChange={open => { if (!open) onClose() }} title={`${service.name} check portal`} className="max-w-6xl"
+      footer={(
+        <>
+          <a href={portalUrl} target="_blank" rel="noreferrer" className="btn-secondary inline-flex items-center gap-2">
+            <ExternalLink size={14} />Open in new tab
+          </a>
+          <Button variant="ghost" onClick={onClose}>Close</Button>
+        </>
+      )}>
+      <iframe
+        title={`${service.name} service check portal`}
+        src={portalUrl}
+        sandbox="allow-forms allow-scripts allow-same-origin"
+        referrerPolicy="no-referrer"
+        className="h-[70vh] min-h-[420px] w-full rounded-lg border border-line bg-surface"
+      />
+    </Dialog>
+  )
+}
+
+function ServiceDialog({ service, mode, onClose, onCreated }: {
   service: ServiceEntry | null
+  mode: 'repository' | 'provider'
   onClose: () => void
-  onCreated: (name: string, secret: string) => void
+  onCreated: (id: number, name: string, secret: string, showGithubWebhook: boolean) => void
 }) {
   const queryClient = useQueryClient()
   const toast = useToast()
   const [name, setName] = useState(service?.name ?? '')
   const [kind, setKind] = useState<string>(service?.kind ?? 'backend')
   const [description, setDescription] = useState(service?.description ?? '')
+  const [repositoryUrl, setRepositoryUrl] = useState(service?.repository_url ?? '')
+  const [mainBranch, setMainBranch] = useState(service?.main_branch ?? 'main')
+  const [checkPortalUrl, setCheckPortalUrl] = useState(service?.check_portal_url ?? '')
   const save = useMutation({
     mutationFn: async () => {
-      const payload = { name: name.trim(), kind, description: description.trim() }
+      const common = { name: name.trim(), kind, description: description.trim() }
+      const payload = mode === 'repository'
+        ? { ...common, repository_url: repositoryUrl.trim() || null, main_branch: mainBranch.trim() || 'main' }
+        : { ...common, check_portal_url: checkPortalUrl.trim() || null }
       if (service) return { saved: await deploymentsApi.updateService(service.id, payload), secret: null }
       const created = await deploymentsApi.createService(payload)
       return { saved: created, secret: created.secret }
@@ -74,7 +118,7 @@ function ServiceDialog({ service, onClose, onCreated }: {
       void queryClient.invalidateQueries({ queryKey: deploymentKeys.services })
       toast({ title: `Saved ${saved.name}`, tone: 'success' })
       onClose()
-      if (secret) onCreated(saved.name, secret)
+      if (secret) onCreated(saved.id, saved.name, secret, Boolean(saved.repository_url))
     },
   })
   return (
@@ -87,12 +131,22 @@ function ServiceDialog({ service, onClose, onCreated }: {
       )}>
       <div className="space-y-4">
         <Input label="Name" value={name} onChange={e => setName(e.target.value)} placeholder="payment-service" autoFocus
-          help="Exactly as the pipeline sends it in the deployment event." />
+          help="Service identifier used by deployment events." />
         <Select label="Kind" value={kind} onChange={e => setKind(e.target.value)}>
           <option value="backend">Backend service</option>
           <option value="frontend">Frontend app</option>
         </Select>
         <Input label="Description (optional)" value={description} onChange={e => setDescription(e.target.value)} />
+        {mode === 'repository' ? (
+          <>
+            <Input label="Git repository URL" value={repositoryUrl} onChange={e => setRepositoryUrl(e.target.value)}
+              placeholder="https://github.com/org/repository" />
+            <Input label="Branch to monitor" value={mainBranch} onChange={e => setMainBranch(e.target.value)} placeholder="main" />
+          </>
+        ) : (
+          <Input label="Service check provider portal URL" value={checkPortalUrl}
+            onChange={e => setCheckPortalUrl(e.target.value)} placeholder="https://deploy.example.com/service" />
+        )}
         {save.isError && <ErrorState title="Not saved">{apiService.errorMessage(save.error)}</ErrorState>}
       </div>
     </Dialog>
@@ -162,12 +216,17 @@ function ProjectDialog({ service, entry, onClose }: { service: ServiceEntry; ent
 
 /** Deploys › Services: the service map. Which projects test each service, and the check run after a deployment. */
 export default function ServicesPage() {
+  const activeTab = useTabParam('check', ['repository', 'provider'] as const)
+  const mode = activeTab === 'provider' ? 'provider' : 'repository'
   const canConfigure = usePermission('deployment.configure')
   const queryClient = useQueryClient()
   const toast = useToast()
-  const [editing, setEditing] = useState<ServiceEntry | 'new' | null>(null)
+  const [editing, setEditing] = useState<{ service: ServiceEntry | null; mode: 'repository' | 'provider' } | null>(null)
   const [mapping, setMapping] = useState<{ service: ServiceEntry; entry: ServiceProjectEntry | null } | null>(null)
-  const [secret, setSecret] = useState<{ service: string; secret: string } | null>(null)
+  const [secret, setSecret] = useState<{
+    id: number; service: string; secret: string; showGithubWebhook: boolean
+  } | null>(null)
+  const [portal, setPortal] = useState<ServiceEntry | null>(null)
   const [deleting, setDeleting] = useState<ServiceEntry | null>(null)
   const [renewing, setRenewing] = useState<ServiceEntry | null>(null)
   const services = useQuery({ queryKey: deploymentKeys.services, queryFn: deploymentsApi.services })
@@ -179,7 +238,10 @@ export default function ServicesPage() {
   })
   const renew = useMutation({
     mutationFn: (service: ServiceEntry) => deploymentsApi.newSecret(service.id),
-    onSuccess: (value, service) => { setRenewing(null); setSecret({ service: service.name, secret: value }) },
+    onSuccess: (value, service) => {
+      setRenewing(null)
+      setSecret({ id: service.id, service: service.name, secret: value, showGithubWebhook: Boolean(service.repository_url) })
+    },
     onError: error => toast({ title: 'No new secret', description: apiService.errorMessage(error), tone: 'danger' }),
   })
   const unmap = useMutation({
@@ -190,15 +252,34 @@ export default function ServicesPage() {
 
   return (
     <div className="flex flex-col gap-3">
+      <Tabs
+        label="Deployment check methods"
+        param="check"
+        items={[
+          { to: 'repository', label: 'Git repositories', icon: GitBranch },
+          { to: 'provider', label: 'Service check provider', icon: Globe },
+        ]}
+      />
       <div className="flex items-center justify-between gap-3">
-        <p className="text-[13px] text-fg-muted">The backend services and frontend apps your projects test. A deployment of one notifies the testers of those projects.</p>
-        {canConfigure && <Button variant="primary" icon={<Plus size={14} />} onClick={() => setEditing('new')}>New service</Button>}
+        <p className="text-[13px] text-fg-muted">
+          {mode === 'repository'
+            ? 'Monitor main-branch merges and assign project members to run service checks after deployments.'
+            : 'Open each service check provider in an embedded portal.'}
+        </p>
+        {canConfigure && (
+          <Button variant="primary" icon={<Plus size={14} />}
+            onClick={() => setEditing({ service: null, mode })}>
+            {mode === 'repository' ? 'New repository service' : 'New provider service'}
+          </Button>
+        )}
       </div>
       {services.isPending ? <Skeleton className="h-32" /> : services.isError ? (
         <ErrorState title="Could not load the services">{apiService.errorMessage(services.error)}</ErrorState>
       ) : services.data.length === 0 ? (
-        <Card><EmptyState icon={Server} title="No services yet">{canConfigure ? 'Add the services and apps your projects test.' : 'Your lead adds the services your projects test.'}</EmptyState></Card>
-      ) : (
+        <Card><EmptyState icon={Server} title="No services yet">
+          {canConfigure ? 'Add a service to configure this check method.' : 'Your lead configures services for this check method.'}
+        </EmptyState></Card>
+      ) : mode === 'repository' ? (
         <ul className="flex flex-col gap-3" aria-label="Services">
           {services.data.map(service => (
             <li key={service.id}>
@@ -214,12 +295,21 @@ export default function ServicesPage() {
                         ? `Last: ${service.last_deployment.version} on ${service.last_deployment.environment}, ${utc(service.last_deployment.deployed_at).toLocaleString()}`
                         : 'No deployment yet'}
                     </p>
+                    {service.repository_url && (
+                      <a href={service.repository_url} target="_blank" rel="noreferrer"
+                        className="mt-1 inline-flex max-w-full items-center gap-1 text-xs text-accent hover:underline">
+                        <GitBranch size={12} aria-hidden />{service.main_branch}<span className="truncate">· {service.repository_url}</span>
+                        <ExternalLink size={11} aria-hidden />
+                      </a>
+                    )}
+                    {!service.repository_url && <p className="mt-1 text-xs text-fg-muted">No Git repository linked</p>}
                   </div>
                   {canConfigure && (
                     <div className="flex gap-1">
                       <Button size="sm" icon={<Plus size={13} />} onClick={() => setMapping({ service, entry: null })}>Add project</Button>
                       <IconButton size="sm" label={`New webhook secret for ${service.name}`} icon={<KeyRound size={13} />} onClick={() => setRenewing(service)} />
-                      <IconButton size="sm" label={`Edit ${service.name}`} icon={<Pencil size={13} />} onClick={() => setEditing(service)} />
+                      <IconButton size="sm" label={`Edit repository settings for ${service.name}`} icon={<Pencil size={13} />}
+                        onClick={() => setEditing({ service, mode: 'repository' })} />
                       <IconButton size="sm" label={`Delete ${service.name}`} icon={<Trash2 size={13} />} onClick={() => setDeleting(service)} />
                     </div>
                   )}
@@ -257,11 +347,44 @@ export default function ServicesPage() {
             </li>
           ))}
         </ul>
+      ) : (
+        <ul className="flex flex-col gap-3" aria-label="Service check providers">
+          {services.data.map(service => (
+            <li key={service.id}>
+              <Card className="flex flex-wrap items-center gap-3 px-4 py-3">
+                <div className="min-w-0 flex-1">
+                  <p className="flex items-center gap-2 font-semibold text-fg">
+                    {service.name}<Badge tone={service.kind === 'frontend' ? 'accent' : 'info'}>{service.kind}</Badge>
+                  </p>
+                  {service.check_portal_url ? (
+                    <a href={service.check_portal_url} target="_blank" rel="noreferrer"
+                      className="mt-1 inline-flex max-w-full items-center gap-1 truncate text-xs text-accent hover:underline">
+                      {service.check_portal_url}<ExternalLink size={11} aria-hidden />
+                    </a>
+                  ) : <p className="mt-1 text-xs text-fg-muted">No service check provider configured</p>}
+                </div>
+                {service.check_portal_url && (
+                  <Button size="sm" variant="secondary" icon={<Globe size={13} />} onClick={() => setPortal(service)}>
+                    Open provider
+                  </Button>
+                )}
+                {canConfigure && (
+                  <Button size="sm" icon={<Pencil size={13} />}
+                    onClick={() => setEditing({ service, mode: 'provider' })}>
+                    {service.check_portal_url ? 'Edit provider' : 'Configure provider'}
+                  </Button>
+                )}
+              </Card>
+            </li>
+          ))}
+        </ul>
       )}
-      {editing && <ServiceDialog service={editing === 'new' ? null : editing} onClose={() => setEditing(null)}
-        onCreated={(name, value) => setSecret({ service: name, secret: value })} />}
+      {editing && <ServiceDialog service={editing.service} mode={editing.mode} onClose={() => setEditing(null)}
+        onCreated={(id, name, value, showGithubWebhook) => setSecret({ id, service: name, secret: value, showGithubWebhook })} />}
       {mapping && <ProjectDialog service={mapping.service} entry={mapping.entry} onClose={() => setMapping(null)} />}
-      {secret && <SecretDialog service={secret.service} secret={secret.secret} onClose={() => setSecret(null)} />}
+      {portal && <ServicePortalDialog service={portal} onClose={() => setPortal(null)} />}
+      {secret && <SecretDialog serviceId={secret.id} service={secret.service} secret={secret.secret}
+        showGithubWebhook={secret.showGithubWebhook} onClose={() => setSecret(null)} />}
       <ConfirmDialog open={Boolean(deleting)} onOpenChange={open => { if (!open) setDeleting(null) }} destructive
         title={`Delete ${deleting?.name ?? ''}?`} confirmLabel="Delete" loading={remove.isPending}
         description="Its deployments and their checks are deleted too, and its pipeline can no longer report deployments."

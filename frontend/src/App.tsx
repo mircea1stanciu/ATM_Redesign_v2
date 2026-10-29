@@ -275,7 +275,7 @@ export default function App() {
           <Route element={<AuthGuard><AppShell /></AuthGuard>}>
             <Route index element={<HomePage />} />
             <Route path="work" element={<RequirePermission any={['work.view']}><WorkLayout /></RequirePermission>}>
-              <Route index element={<Navigate to="inbox" replace />} />
+              <Route index element={<Navigate to="workspace" replace />} />
               <Route path="inbox" element={<InboxPage />} />
               <Route path="board" element={<BoardPage />} />
               <Route path="jira" element={<RequirementsTab />} />

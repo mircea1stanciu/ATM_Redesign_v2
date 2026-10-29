@@ -25,7 +25,7 @@ const BRANCH = 'feature/E2E-1-login-shows-an-error-for-a'
 
 test('the inbox lists the project\'s stories and opens one in the detail panel', async ({ page }) => {
   await login(page, 'automation_senior')
-  await page.goto('/work')
+  await page.goto('/work/inbox')
   await expect(page).toHaveURL(/\/work\/inbox$/)
   const list = page.getByRole('list', { name: 'Jira stories' })
   await expect(list.getByRole('button', { name: /E2E-1/ })).toBeVisible()

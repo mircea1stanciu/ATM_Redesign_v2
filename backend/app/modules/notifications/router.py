@@ -25,6 +25,7 @@ socket_router = APIRouter(tags=["Notifications"])
 KIND_LABELS = {
     "deployment": "Deployments to my projects' test environments",
     "deployment_check": "Environment checks after a deployment",
+    "repository_merge": "Merges to monitored service branches",
     "run_finished": "My runs finished",
     "review_request": "Pull requests waiting for my review",
     "review": "Reviews of my pull requests",

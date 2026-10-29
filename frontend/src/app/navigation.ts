@@ -60,12 +60,12 @@ export interface AreaTab {
 /** The tabs of each area; every tab is a URL. Used by the area layouts and the command palette. */
 export const AREA_TABS: Record<string, AreaTab[]> = {
   work: [
+    { to: '/work/workspace', label: 'Workspace' },
     { to: '/work/inbox', label: 'Inbox' },
     { to: '/work/board', label: 'Board' },
     { to: '/work/jira', label: 'Jira tools' },
     { to: '/work/confluence', label: 'Confluence releases' },
     { to: '/work/confluence-analyzer', label: 'Release analyzer' },
-    { to: '/work/workspace', label: 'Workspace' },
   ],
   tests: [
     { to: '/tests/runs', label: 'Runs' },

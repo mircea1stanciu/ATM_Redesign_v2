@@ -1,5 +1,6 @@
 import json
 
+import httpx
 import pytest
 import sqlalchemy as sa
 from fastapi.testclient import TestClient
@@ -8,6 +9,7 @@ from alembic import command
 from app.core.crypto import decrypt
 from app.core.migrations import _alembic_config
 from app.main import app
+from app.modules.settings import account_router
 
 SECRET_SETTINGS = {
     "jira_token": "jira-secret-1234",
@@ -83,3 +85,46 @@ def test_saved_token_is_encrypted_and_never_returned(client):
         [connection] = user.connections
         assert connection.kind == "confluence"
         assert decrypt(connection.secret) == "conf-token-9876"
+
+
+def test_confluence_space_search_includes_later_pages(client, monkeypatch):
+    signup = client.post("/api/auth/register", json={
+        "username": "spaceconn", "email": "spaceconn@example.com", "password": "pw-123456", "full_name": "S",
+    })
+    headers = {"Authorization": f"Bearer {signup.json()['access_token']}"}
+    saved = client.patch("/api/settings/confluence", headers=headers, json={
+        "confluence_token": "conf-token-paged",
+        "confluence_mcp_base_url": "https://wiki.example.com/confluence",
+    })
+    assert saved.status_code == 200
+
+    pages = {
+        0: {"limit": 2, "results": [
+            {"id": "1", "key": "DOCS", "name": "Documentation"},
+            {"id": "2", "key": "ENG", "name": "Engineering"},
+        ], "_links": {"next": "?start=2&limit=2"}},
+        2: {"limit": 2, "results": [{"id": "3", "key": "ARO", "name": "RBRO Athena"}]},
+    }
+    starts = []
+
+    class MockAsyncClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, _url, *, params, **_kwargs):
+            starts.append(params["start"])
+            return httpx.Response(200, json=pages[params["start"]])
+
+    monkeypatch.setattr(account_router.httpx, "AsyncClient", MockAsyncClient)
+
+    response = client.get("/api/settings/confluence/spaces", headers=headers)
+
+    assert response.status_code == 200
+    assert [space["key"] for space in response.json()["spaces"]] == ["DOCS", "ENG", "ARO"]
+    assert starts == [0, 2]

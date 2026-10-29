@@ -1,4 +1,6 @@
 """Deployments, the service map, environment checks and notifications (phase 11)."""
+import hashlib
+import hmac
 import json
 import time
 import uuid
@@ -105,6 +107,65 @@ def test_signed_webhook_records_the_deployment_once(client, setup):
         deployment = db.query(Deployment).filter(Deployment.id == sent.json()["id"]).one()
         assert (deployment.version, deployment.environment, deployment.source) == ("2.4.1", "UAT", "Jenkins #12")
         assert deployment.deployed_at.isoformat() == "2026-10-24T08:00:00"  # stored in UTC
+
+
+def test_merged_pull_request_notifies_service_project_testers_once(client, setup):
+    service_id = setup["service"]["id"]
+    updated = client.patch(f"/api/deployments/services/{service_id}", headers=setup["lead"]["headers"], json={
+        "repository_url": "https://github.com/acme/payments.git",
+        "main_branch": "main",
+        "check_portal_url": "https://deploy.example.com/payments",
+    })
+    assert updated.status_code == 200
+    assert updated.json()["repository_url"] == "https://github.com/acme/payments.git"
+    assert updated.json()["check_portal_url"] == "https://deploy.example.com/payments"
+
+    body = json.dumps({
+        "action": "closed",
+        "repository": {"html_url": "https://github.com/acme/payments"},
+        "pull_request": {
+            "merged": True,
+            "merged_at": "2026-10-25T12:00:00Z",
+            "html_url": "https://github.com/acme/payments/pull/12",
+            "number": 12,
+            "title": "Upgrade payment SDK",
+            "merge_commit_sha": "abc123",
+            "user": {"login": "ana"},
+            "base": {"ref": "main"},
+        },
+    }).encode()
+    signature = "sha256=" + hmac.new(setup["secret"].encode(), body, hashlib.sha256).hexdigest()
+    headers = {
+        "X-GitHub-Event": "pull_request",
+        "X-GitHub-Delivery": str(uuid.uuid4()),
+        "X-Hub-Signature-256": signature,
+    }
+    url = f"/api/deployments/services/{service_id}/github-webhook"
+    bad_signature = {**headers, "X-Hub-Signature-256": "sha256=" + "0" * 64}
+    assert client.post(url, content=body, headers=bad_signature).status_code == 401
+
+    other_branch = json.loads(body)
+    other_branch["pull_request"]["base"]["ref"] = "release"
+    other_branch_body = json.dumps(other_branch).encode()
+    other_branch_headers = {
+        **headers,
+        "X-GitHub-Delivery": str(uuid.uuid4()),
+        "X-Hub-Signature-256": "sha256=" + hmac.new(
+            setup["secret"].encode(), other_branch_body, hashlib.sha256,
+        ).hexdigest(),
+    }
+    ignored = client.post(url, content=other_branch_body, headers=other_branch_headers)
+    assert ignored.status_code == 202 and ignored.json()["ignored"] is True
+
+    first = client.post(url, content=body, headers=headers)
+    assert first.status_code == 202, first.text
+    assert first.json()["duplicate"] is False
+
+    repeated = client.post(url, content=body, headers=headers)
+    assert repeated.status_code == 202 and repeated.json()["duplicate"] is True
+    assert len(_notifications(setup["senior"]["id"], "repository_merge")) == 1
+    assert len(_notifications(setup["lead"]["id"], "repository_merge")) == 1
+    assert _notifications(setup["viewer"]["id"], "repository_merge") == []
 
 
 def test_webhook_rejects_bad_signatures(client, setup):
@@ -222,6 +283,10 @@ def test_who_configures_the_service_map(client, setup):
                        json={"name": "bad name!"}).status_code == 400
     assert client.post("/api/deployments/services", headers=lead["headers"],
                        json={"name": setup["name"]}).status_code == 400  # taken
+    spaced = client.post("/api/deployments/services", headers=lead["headers"],
+                         json={"name": "DEV ops portal"})
+    assert spaced.status_code == 201 and spaced.json()["name"] == "DEV ops portal"
+    assert _send(client, "DEV ops portal", spaced.json()["secret"]).status_code == 202
     listed = client.get("/api/deployments/services", headers=senior["headers"]).json()
     assert [s["name"] for s in listed] == [setup["name"]] and "secret" not in listed[0]
     other_lead = _user("automation_lead")
