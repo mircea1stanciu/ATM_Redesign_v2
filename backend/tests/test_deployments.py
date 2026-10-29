@@ -1,7 +1,7 @@
 """Deployments, the service map, environment checks and notifications (phase 11)."""
-import json
 import hashlib
 import hmac
+import json
 import time
 import uuid
 

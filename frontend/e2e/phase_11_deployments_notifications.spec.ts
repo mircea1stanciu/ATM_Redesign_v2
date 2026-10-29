@@ -62,7 +62,7 @@ test('a lead connects Teams, adds the service, and chooses the check', async ({ 
   await expect(page.getByRole('dialog')).toBeHidden()
 
   await page.goto('/deployments/services')
-  await page.getByRole('button', { name: 'New service' }).click()
+  await page.getByRole('button', { name: 'New repository service' }).click()
   await page.getByLabel('Name').fill(SERVICE)
   await page.getByRole('button', { name: 'Save' }).click()
   const secretDialog = page.getByRole('dialog', { name: `Webhook for ${SERVICE}` })
@@ -138,7 +138,7 @@ test('viewers see the timeline and the service map but configure nothing', async
   await expect(row).toContainText('Passed')
   await page.getByRole('link', { name: 'Services' }).click()
   await expect(page.getByRole('list', { name: 'Services' })).toContainText(SERVICE)
-  await expect(page.getByRole('button', { name: 'New service' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'New repository service' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Add project' })).toHaveCount(0)
 })
 

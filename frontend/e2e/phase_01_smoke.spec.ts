@@ -50,7 +50,7 @@ test.describe('main screens', () => {
 
   test('the side bar opens every area', async ({ page }) => {
     const areas = [
-      { link: 'Work', url: /\/work\/inbox$/ },
+      { link: 'Work', url: /\/work\/workspace$/ },
       { link: 'Tests', url: /\/tests\/runs$/ },
       { link: 'Reports', url: /\/reports\/list$/ },
       { link: 'Reviews', url: /\/reviews\/waiting$/ },
